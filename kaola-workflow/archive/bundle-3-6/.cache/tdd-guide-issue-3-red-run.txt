@@ -1,0 +1,370 @@
+▶ login start paths
+  ✖ GET /login is allowed without a session (24.879625ms)
+  ✖ GET /login/github redirects to GitHub authorize (1.621583ms)
+  ✖ GET /login/gitlab redirects to the configured GitLab authorize URL (1.553583ms)
+  ✖ GET /login/gitea redirects to the configured Gitea authorize URL (0.852875ms)
+✖ login start paths (29.27225ms)
+▶ unauthenticated GET /api/v1/me
+  ✖ browser-like GET /api/v1/me redirects to /login and does not return a user (1.180084ms)
+  ✖ JSON GET /api/v1/me without a session returns 401 and does not return a user (2.760709ms)
+✖ unauthenticated GET /api/v1/me (4.008583ms)
+▶ OAuth callback first login
+  ✖ GitHub first login persists 待批准 claim_only user and a usable session (0.964208ms)
+  ✖ GitHub display_name falls back to login when name is null (0.65425ms)
+  ✖ GitLab first login persists active full user and a usable session (0.567417ms)
+  ✖ Gitea first login persists active full user and a usable session (0.757583ms)
+  ✖ Gitea display_name falls back to login when full_name is empty (0.734583ms)
+  ✖ second GitHub callback with the same remote_id reuses the same user id (0.598375ms)
+  ✖ the same remote_id on GitHub and GitLab is two users (0.559958ms)
+✖ OAuth callback first login (4.955709ms)
+▶ pending GitHub users and approve
+  ✖ pending GitHub user cannot POST /api/v1/users/:id/approve (0.578417ms)
+  ✖ an active full member can approve a GitHub user to active while leaving claim_only (0.595833ms)
+  ✖ approving does not reset on GitHub re-login, and claim_only still cannot approve others (0.775292ms)
+✖ pending GitHub users and approve (1.997084ms)
+ℹ tests 16
+ℹ suites 4
+ℹ pass 0
+ℹ fail 16
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 113.883041
+
+✖ failing tests:
+
+test at apps/server/src/auth.test.ts:178:3
+✖ GET /login is allowed without a session (24.879625ms)
+  AssertionError [ERR_ASSERTION]: GET /login: 404 {"message":"Route GET:/login not found","error":"Not Found","statusCode":404}
+  
+  404 !== 200
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-3-6/apps/server/src/auth.test.ts:181:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/auth.test.ts:184:3
+✖ GET /login/github redirects to GitHub authorize (1.621583ms)
+  AssertionError [ERR_ASSERTION]: GET /login/github: 404
+  
+  404 !== 302
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-3-6/apps/server/src/auth.test.ts:187:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 302,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/auth.test.ts:191:3
+✖ GET /login/gitlab redirects to the configured GitLab authorize URL (1.553583ms)
+  AssertionError [ERR_ASSERTION]: GET /login/gitlab: 404
+  
+  404 !== 302
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-3-6/apps/server/src/auth.test.ts:194:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 302,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/auth.test.ts:198:3
+✖ GET /login/gitea redirects to the configured Gitea authorize URL (0.852875ms)
+  AssertionError [ERR_ASSERTION]: GET /login/gitea: 404
+  
+  404 !== 302
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-3-6/apps/server/src/auth.test.ts:201:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 302,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/auth.test.ts:207:3
+✖ browser-like GET /api/v1/me redirects to /login and does not return a user (1.180084ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  404 !== 302
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-3-6/apps/server/src/auth.test.ts:214:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 302,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/auth.test.ts:225:3
+✖ JSON GET /api/v1/me without a session returns 401 and does not return a user (2.760709ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  404 !== 401
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-3-6/apps/server/src/auth.test.ts:232:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 401,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/auth.test.ts:244:3
+✖ GitHub first login persists 待批准 claim_only user and a usable session (0.964208ms)
+  AssertionError [ERR_ASSERTION]: githubOAuth2.getAccessTokenFromAuthorizationCodeFlow must exist so tests can stub token exchange
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at stubTokenExchange (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-3-6/apps/server/src/auth.test.ts:112:10)
+      at loginViaCallback (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-3-6/apps/server/src/auth.test.ts:136:3)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-3-6/apps/server/src/auth.test.ts:251:28)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/auth.test.ts:267:3
+✖ GitHub display_name falls back to login when name is null (0.65425ms)
+  AssertionError [ERR_ASSERTION]: githubOAuth2.getAccessTokenFromAuthorizationCodeFlow must exist so tests can stub token exchange
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at stubTokenExchange (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-3-6/apps/server/src/auth.test.ts:112:10)
+      at loginViaCallback (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-3-6/apps/server/src/auth.test.ts:136:3)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-3-6/apps/server/src/auth.test.ts:274:28)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/auth.test.ts:289:3
+✖ GitLab first login persists active full user and a usable session (0.567417ms)
+  AssertionError [ERR_ASSERTION]: gitlabOAuth2.getAccessTokenFromAuthorizationCodeFlow must exist so tests can stub token exchange
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at stubTokenExchange (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-3-6/apps/server/src/auth.test.ts:112:10)
+      at loginViaCallback (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-3-6/apps/server/src/auth.test.ts:136:3)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-3-6/apps/server/src/auth.test.ts:296:28)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/auth.test.ts:312:3
+✖ Gitea first login persists active full user and a usable session (0.757583ms)
+  AssertionError [ERR_ASSERTION]: giteaOAuth2.getAccessTokenFromAuthorizationCodeFlow must exist so tests can stub token exchange
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at stubTokenExchange (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-3-6/apps/server/src/auth.test.ts:112:10)
+      at loginViaCallback (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-3-6/apps/server/src/auth.test.ts:136:3)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-3-6/apps/server/src/auth.test.ts:319:28)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/auth.test.ts:335:3
+✖ Gitea display_name falls back to login when full_name is empty (0.734583ms)
+  AssertionError [ERR_ASSERTION]: giteaOAuth2.getAccessTokenFromAuthorizationCodeFlow must exist so tests can stub token exchange
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at stubTokenExchange (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-3-6/apps/server/src/auth.test.ts:112:10)
+      at loginViaCallback (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-3-6/apps/server/src/auth.test.ts:136:3)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-3-6/apps/server/src/auth.test.ts:342:28)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/auth.test.ts:352:3
+✖ second GitHub callback with the same remote_id reuses the same user id (0.598375ms)
+  AssertionError [ERR_ASSERTION]: githubOAuth2.getAccessTokenFromAuthorizationCodeFlow must exist so tests can stub token exchange
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at stubTokenExchange (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-3-6/apps/server/src/auth.test.ts:112:10)
+      at loginViaCallback (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-3-6/apps/server/src/auth.test.ts:136:3)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-3-6/apps/server/src/auth.test.ts:362:25)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/auth.test.ts:370:3
+✖ the same remote_id on GitHub and GitLab is two users (0.559958ms)
+  AssertionError [ERR_ASSERTION]: githubOAuth2.getAccessTokenFromAuthorizationCodeFlow must exist so tests can stub token exchange
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at stubTokenExchange (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-3-6/apps/server/src/auth.test.ts:112:10)
+      at loginViaCallback (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-3-6/apps/server/src/auth.test.ts:136:3)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-3-6/apps/server/src/auth.test.ts:379:26)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/auth.test.ts:391:3
+✖ pending GitHub user cannot POST /api/v1/users/:id/approve (0.578417ms)
+  AssertionError [ERR_ASSERTION]: githubOAuth2.getAccessTokenFromAuthorizationCodeFlow must exist so tests can stub token exchange
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at stubTokenExchange (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-3-6/apps/server/src/auth.test.ts:112:10)
+      at loginViaCallback (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-3-6/apps/server/src/auth.test.ts:136:3)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-3-6/apps/server/src/auth.test.ts:398:27)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/auth.test.ts:422:3
+✖ an active full member can approve a GitHub user to active while leaving claim_only (0.595833ms)
+  AssertionError [ERR_ASSERTION]: githubOAuth2.getAccessTokenFromAuthorizationCodeFlow must exist so tests can stub token exchange
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at stubTokenExchange (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-3-6/apps/server/src/auth.test.ts:112:10)
+      at loginViaCallback (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-3-6/apps/server/src/auth.test.ts:136:3)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-3-6/apps/server/src/auth.test.ts:432:26)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/auth.test.ts:463:3
+✖ approving does not reset on GitHub re-login, and claim_only still cannot approve others (0.775292ms)
+  AssertionError [ERR_ASSERTION]: githubOAuth2.getAccessTokenFromAuthorizationCodeFlow must exist so tests can stub token exchange
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at stubTokenExchange (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-3-6/apps/server/src/auth.test.ts:112:10)
+      at loginViaCallback (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-3-6/apps/server/src/auth.test.ts:136:3)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-3-6/apps/server/src/auth.test.ts:478:27)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
