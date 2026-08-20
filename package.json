@@ -9,7 +9,7 @@
   "scripts": {
     "lint": "eslint .",
     "typecheck": "pnpm -r --if-present typecheck",
-    "test": "node --experimental-strip-types --test packages/shared/src/index.test.ts packages/forge-adapters/src/index.test.ts packages/forge-adapters/src/validate-token.shared.test.ts apps/server/src/placeholder.test.ts apps/server/src/auth.test.ts",
+    "test": "node --experimental-strip-types --test packages/shared/src/index.test.ts packages/forge-adapters/src/index.test.ts packages/forge-adapters/src/validate-token.shared.test.ts apps/server/src/placeholder.test.ts apps/server/src/auth.test.ts apps/server/src/agent-keys.test.ts apps/server/src/vault.test.ts",
     "build": "pnpm -r --if-present build"
   },
   "devDependencies": {

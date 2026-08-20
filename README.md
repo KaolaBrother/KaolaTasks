@@ -2,7 +2,7 @@
 
 > 团队内部任务协作平台：人发任务，Agent 接单，PR 交付。
 >
-> **状态**：M0 脚手架已落地；M1 切片 #3（多源 OAuth + `users`）与 #6（`ForgeAdapter` + `validateToken`）已落地。任务 CRUD / 看板 / 凭证库 / 租约认领 / MCP 尚未实现。设计文档 [v0.2](docs/DESIGN.md)。Backlog 见 [Issues](https://github.com/KaolaBrother/KaolaTasks/issues)。
+> **状态**：M0 脚手架已落地；M1 切片 #3（多源 OAuth + `users`）、#4（Agent API Key）、#5（凭证档案 / vault）、#6（`ForgeAdapter` + `validateToken`）已落地。任务 CRUD / 看板 / 租约认领 / MCP 尚未实现。设计文档 [v0.2](docs/DESIGN.md)。Backlog 见 [Issues](https://github.com/KaolaBrother/KaolaTasks/issues)。
 
 ## 这是什么
 
@@ -12,19 +12,21 @@
 
 ## 核心特性
 
-以下为产品设计（见 [设计文档](docs/DESIGN.md)）。当前已落地的是登录与 token 校验库，不是完整 M1。
+以下为产品设计（见 [设计文档](docs/DESIGN.md)）。当前已落地的是登录、Agent Key、凭证档案 / vault 与 token 校验库，不是完整 M1。
 
-**已落地（#3 / #6）：**
+**已落地（#3 / #4 / #5 / #6）：**
 
 - **多源 OAuth 登录**：GitHub / GitLab / Gitea；会话用户见 `GET /api/v1/me`；正式成员可 `POST /api/v1/users/:id/approve`
-- **三 forge `validateToken`**：`createForgeAdapter(kind)` 对 GitHub / GitLab / Gitea 实测可读 / 可推 / 可开 PR（缺失项为 `读` | `推` | `PR`）；Push/PR 为 REST 权限代理，不实际 git push / POST PR
+- **Agent API Key**：`status === 'active'` 的成员可自助 `POST/GET /api/v1/agent-keys`、`DELETE /api/v1/agent-keys/:id`；明文 `token` 仅创建时返回一次（前缀 `ktk_`）；Bearer `GET /api/v1/agent/whoami`
+- **凭证档案 / vault**：`active` + `full` 可 `GET/POST /api/v1/credential-profiles`、`DELETE /api/v1/credential-profiles/:id`；forge token AES-256-GCM 加密存储；列表/创建响应不含 token。模块导出 `revealCredentialProfile`（不是返回 forge token 的 HTTP）。删除响应用中文提示到 forge 侧撤销
+- **三 forge `validateToken`**：`createForgeAdapter(kind)` 对 GitHub / GitLab / Gitea 实测可读 / 可推 / 可开 PR（缺失项为 `读` | `推` | `PR`）；Push/PR 为 REST 权限代理，不实际 git push / POST PR。创建档案时**不**调用 `validateToken`
 
 **设计中、尚未实现：**
 
 - **任务广场（中文界面）**：列表 / 看板双视图，任务详情含事件时间线
 - **MCP 优先**：Agent 配置一次 MCP 端点，一句"去考拉接单"走完认领 → 实现 → 交付
-- **发布即校验接到任务上板**：库层 `validateToken` 已有；任务发布 / 凭证档案尚未实现
-- **凭证纪律**：token 加密存储、认领时才揭示、全程审计、一键吊销
+- **发布即校验接到任务上板**：库层 `validateToken` 已有；任务发布尚未实现；创建凭证档案不跑校验
+- **认领时揭示**：产品揭示仍是 `claim_task`（未实现）；当前仅有模块导出 `revealCredentialProfile`
 - **租约认领**：TTL + 心跳，Agent 掉线任务自动回板，不会被挂死
 - **自动闭环**：PR 合并 → 任务自动完成（webhook，轮询兜底），状态回写源 Issue
 
@@ -46,7 +48,7 @@ sequenceDiagram
     K->>K: 任务自动完成，回写源 Issue
 ```
 
-认领者**不需要**在目标 forge 上有账号——任务所附 token 即访问权（详见设计文档 §7）。该流程为设计目标；MCP 与任务 API 尚未提供。OAuth 登录与 `validateToken` 已实现（见下）。
+认领者**不需要**在目标 forge 上有账号——任务所附 token 即访问权（详见设计文档 §7）。该流程为设计目标；MCP 与任务 API 尚未提供。OAuth 登录、Agent Key、凭证档案 / vault 与 `validateToken` 已实现（见下）。
 
 ## 快速开始
 
@@ -59,7 +61,9 @@ sequenceDiagram
 - `OAUTH_GITLAB_CLIENT_ID`、`OAUTH_GITLAB_CLIENT_SECRET`、`OAUTH_GITLAB_BASE_URL`
 - `OAUTH_GITEA_CLIENT_ID`、`OAUTH_GITEA_CLIENT_SECRET`、`OAUTH_GITEA_BASE_URL`
 
-可选：`PUBLIC_URL` 默认 `http://localhost:3000`（去掉尾斜杠）；`PORT` 默认 `3000`；`HOST` 默认 `0.0.0.0`；`SQLITE_PATH` 默认 `:memory:`。仓库没有 `.env.example`。
+可选：`PUBLIC_URL` 默认 `http://localhost:3000`（去掉尾斜杠）；`PORT` 默认 `3000`；`HOST` 默认 `0.0.0.0`；`SQLITE_PATH` 默认 `:memory:`。
+
+`VAULT_MASTER_KEY`：64 位 hex（`^[0-9a-fA-F]{64}$`，解码后 32 字节）。**不是** `buildApp()` / `registerAuth` 的启动条件；在 `encryptToken` / `decryptToken` 时读取。缺失或非法时 `POST /api/v1/credential-profiles` 返回 `500` `{ error: 'vault_unconfigured' }`。仓库没有 `.env.example`。
 
 ```bash
 pnpm install
@@ -86,7 +90,7 @@ Vite 将 `/api` 与 `/login` 代理到 `http://127.0.0.1:3000`。页面标题为
 docker compose up -d --build
 ```
 
-该命令需要本机 Docker daemon。compose **未**注入 `SESSION_SECRET` 与 OAuth 变量；进程启动时 `registerAuth` 仍会读取它们。卷已声明，但服务默认 SQLite 路径仍是代码里的 `:memory:`，compose 未设置 `SQLITE_PATH`。
+该命令需要本机 Docker daemon。compose **未**注入 `SESSION_SECRET`、OAuth 变量或 `VAULT_MASTER_KEY`；进程启动时 `registerAuth` 仍会读取 OAuth / session 变量。创建凭证档案时才会读取 `VAULT_MASTER_KEY`。卷已声明，但服务默认 SQLite 路径仍是代码里的 `:memory:`，compose 未设置 `SQLITE_PATH`。
 
 ### 首次使用 / 发布 / 认领
 
@@ -99,7 +103,9 @@ docker compose up -d --build
 
 实现对照（`apps/server/src/auth.ts` / `schema.ts`）：GitHub 首次 `status`=`待批准`、`permission_level`=`claim_only`；GitLab / Gitea 首次 `active` + `full`。`POST /api/v1/users/:id/approve` 仅 `active` + `full` 可调用，将目标 `status` 设为 `active`；GitHub 批准后仍为 `claim_only`。待批准用户的 `GET /api/v1/me` 含 `message`：`你的账号待正式成员批准后方可认领任务。`
 
-发布任务、凭证档案、Agent Key、MCP 端点、任务卡尚未实现。目标流程见 [设计文档](docs/DESIGN.md) §3、§7、§9。
+Agent Key（`apps/web/src/App.vue` 在 `status === 'active'` 时显示）：自助生成 / 列表 / 吊销；明文仅创建时显示一次。凭证档案（`active` 且 `permission_level === 'full'` 时显示）：按 forge + `base_url` + `repo_full_name` 保存加密 token；删除后界面展示 `请同时到 forge 侧撤销该 token。`。GitHub `claim_only` 可管理自己的 Agent Key，不能管理凭证档案。
+
+发布任务、MCP 端点、任务卡尚未实现。目标流程见 [设计文档](docs/DESIGN.md) §3、§7、§9。
 
 ## 项目结构
 
@@ -107,8 +113,8 @@ pnpm workspaces（`pnpm-workspace.yaml`：`apps/*` + `packages/*`）：
 
 ```text
 apps/
-  web/             # @kaola/web — Vue 3 + Vite + Naive UI（登录 / 待批准 / 批准）
-  server/          # @kaola/server — Fastify + drizzle-orm + better-sqlite3 + OAuth/session
+  web/             # @kaola/web — Vue 3 + Vite + Naive UI（登录 / 待批准 / 批准 / Agent Key / 凭证档案）
+  server/          # @kaola/server — Fastify + drizzle-orm + better-sqlite3 + OAuth/session + agent keys + vault/profiles
 packages/
   shared/          # @kaola/shared — 任务卡 zod schema + 状态机；getSharedHealth() → kaola-shared-ready
   forge-adapters/  # @kaola/forge-adapters — ForgeAdapter + validateToken；getForgeAdaptersHealth() → kaola-forge-adapters-ready
@@ -127,7 +133,7 @@ docker-compose.yml
 pnpm install
 pnpm lint          # eslint .
 pnpm typecheck     # pnpm -r --if-present typecheck
-pnpm test          # node --experimental-strip-types --test packages/shared/src/index.test.ts packages/forge-adapters/src/index.test.ts packages/forge-adapters/src/validate-token.shared.test.ts apps/server/src/placeholder.test.ts apps/server/src/auth.test.ts
+pnpm test          # node --experimental-strip-types --test packages/shared/src/index.test.ts packages/forge-adapters/src/index.test.ts packages/forge-adapters/src/validate-token.shared.test.ts apps/server/src/placeholder.test.ts apps/server/src/auth.test.ts apps/server/src/agent-keys.test.ts apps/server/src/vault.test.ts
 pnpm build         # pnpm -r --if-present build
 
 pnpm --filter @kaola/server start    # node --experimental-strip-types src/index.ts
@@ -155,7 +161,7 @@ CI：`.github/workflows/ci.yml` job `lint-test` 在 Node 22 上执行 `pnpm inst
 | M2 导入与自动闭环 | Issue 导入、webhook、状态回写 | #12–#14 |
 | M3 打磨 | 审计界面、统计、认领确认策略 | #15–#16 |
 
-当前仓库已落地 issue #1–#2（M0）、#3（OAuth / `users`）、#6（`ForgeAdapter.validateToken`）。M1 其余项（凭证库、任务板、租约、MCP、PR 轮询）仍未实现。
+当前仓库已落地 issue #1–#2（M0）、#3（OAuth / `users`）、#4（Agent API Key）、#5（凭证档案 / vault）、#6（`ForgeAdapter.validateToken`）。M1 其余项（任务板、租约、MCP、PR 轮询）仍未实现。
 
 ## 许可
 

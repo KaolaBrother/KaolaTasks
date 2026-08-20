@@ -1,5 +1,7 @@
 import Fastify from 'fastify'
+import { registerAgentKeys } from './agent-keys.ts'
 import { registerAuth } from './auth.ts'
+import { registerCredentialProfiles } from './credential-profiles.ts'
 import { createDb } from './db.ts'
 import { getPlaceholderBody } from './placeholder.ts'
 
@@ -13,5 +15,7 @@ export function buildApp(options?: { sqlitePath?: string }) {
     return reply.type('text/plain; charset=utf-8').send(getPlaceholderBody())
   })
   registerAuth(app, db)
+  registerAgentKeys(app, db)
+  registerCredentialProfiles(app, db)
   return app
 }

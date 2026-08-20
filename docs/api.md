@@ -4,11 +4,11 @@ Document public APIs, endpoints, schemas, events, and integration contracts.
 
 Product contracts that are not yet in source remain in [DESIGN.md](DESIGN.md) §6 (任务卡 Schema), §8 (ForgeAdapter), §9 (MCP 工具面 / REST). This file records what is implemented.
 
-MCP tools (`list_tasks`, `get_task_brief`, `claim_task`, `report_progress`, `submit_pr`, `release_task`) are not implemented. Task CRUD, vault, and claim HTTP are not implemented.
+MCP tools (`list_tasks`, `get_task_brief`, `claim_task`, `report_progress`, `submit_pr`, `release_task`) are not implemented. Task CRUD and claim HTTP are not implemented. There is no HTTP that returns a forge token. `revealCredentialProfile` is a module export from `apps/server/src/vault.ts`.
 
 ## HTTP (`@kaola/server`)
 
-Sources: `apps/server/src/app.ts`, `auth.ts`, `schema.ts`, `db.ts`, `placeholder.ts`, `index.ts`.
+Sources: `apps/server/src/app.ts`, `auth.ts`, `agent-keys.ts`, `credential-profiles.ts`, `vault.ts`, `schema.ts`, `db.ts`, `placeholder.ts`, `index.ts`.
 
 `buildApp({ sqlitePath? })` creates its own SQLite via `createDb`. Process `index.ts` uses `SQLITE_PATH ?? ':memory:'`.
 
@@ -48,6 +48,58 @@ Actor must be session user with `status` `active` and `permission_level` `full`.
 
 Errors: no session → `401` `{ error: 'unauthorized' }`; actor not `active`+`full` → `403` `{ error: 'forbidden' }`; non-integer or `<= 0` id → `400` `{ error: 'invalid_id' }`; missing user → `404` `{ error: 'not_found' }`.
 
+### `POST /api/v1/agent-keys`
+
+Session cookie. Body: optional `{ "label"?: string }`; missing or non-string `label` becomes `''`.
+
+Requires `status === 'active'` (approved GitHub `claim_only` may generate). Pending → `403` `{ error: 'forbidden', message: '你的账号待正式成员批准后方可生成 Agent Key。' }`.
+
+`201` `{ id, label, token, last_used_at: null }`. `token` is returned only here. Plaintext is `ktk_` plus 64 hex chars (`randomBytes(32).toString('hex')`). Stored `key_hash` is `createHash('sha256').update(plaintext, 'utf8').digest('hex')`.
+
+Unauthenticated: same oracle as `GET /api/v1/me` (`401` `{ error: 'unauthorized' }` or `302` `/login`).
+
+### `GET /api/v1/agent-keys`
+
+Session cookie. Requires `status === 'active'`. Pending → `403` `{ error: 'forbidden' }` (no `message` field).
+
+`200` `{ keys: [{ id, label, last_used_at }] }`. No `token`, no `key_hash`. `last_used_at` is unix seconds or `null`.
+
+### `DELETE /api/v1/agent-keys/:id`
+
+Session cookie. Requires `status === 'active'`. Pending → `403` `{ error: 'forbidden' }`. Deletes the row when `id` belongs to the session user.
+
+`200` `{ ok: true }`. Non-integer / `<= 0` id, missing row, or not owned → `404` `{ error: 'not_found' }`.
+
+### `GET /api/v1/agent/whoami`
+
+Bearer only (child Fastify `onRequest` in `agent-keys.ts`). Header `authorization` must match `/^Bearer\s+(\S+)/i`; remainder is the plaintext key. Lookup is by sha256 hex `key_hash`. Successful auth updates `last_used_at` to unix seconds (`Math.floor(Date.now() / 1000)`). Failed / missing / revoked key does not tick `last_used_at`.
+
+`200` `{ id, key_id, label, status, permission_level }` (`id` is the user id). `401` `{ error: 'unauthorized' }` with `WWW-Authenticate: Bearer`. Session `GET /api/v1/me` is unchanged (no `WWW-Authenticate`; Bearer is not accepted there).
+
+### `GET /api/v1/credential-profiles`
+
+Session cookie. Gate: `status === 'active'` AND `permission_level === 'full'`. Otherwise `403` `{ error: 'forbidden' }`. Lists every row (team-shared).
+
+`200` `{ profiles: [{ id, forge, base_url, repo_full_name, scopes_checked, created_by }] }`. Never includes `token` or `token_encrypted`. `scopes_checked` is JSON parsed to an array (`[]` if parse fails or value is not an array).
+
+Unauthenticated: same oracle as `GET /api/v1/me`.
+
+### `POST /api/v1/credential-profiles`
+
+Session cookie. Same `active`+`full` gate (`403` `{ error: 'forbidden' }`).
+
+Body `{ forge, base_url, repo_full_name, token }`: `forge` must be `github` | `gitlab` | `gitea`; `base_url`, `repo_full_name`, and `token` must be non-empty strings. Otherwise `400` `{ error: 'invalid_body' }`.
+
+Encrypts `token` with `encryptToken` (does not call `validateToken`). Inserts `scopes_checked` `'[]'`. Writes `events` row `type` `变更`, `details` `{"action":"create","profile_id":<n>}`.
+
+`201` same public shape as a list item. Duplicate UNIQUE `(forge, base_url, repo_full_name)` → `409` `{ error: 'conflict' }`. Missing or invalid `VAULT_MASTER_KEY` → `500` `{ error: 'vault_unconfigured' }`.
+
+### `DELETE /api/v1/credential-profiles/:id`
+
+Session cookie. Same `active`+`full` gate. Deletes the row (any `full` member may delete any profile).
+
+`200` `{ ok: true, message: '请同时到 forge 侧撤销该 token。' }`. Writes `events` row `type` `变更`, `details` `{"action":"delete","profile_id":<n>}`. Non-integer / `<= 0` id or missing row → `404` `{ error: 'not_found' }`.
+
 ### `users` table
 
 SQL from `createDb` (`CREATE TABLE IF NOT EXISTS users`): `id`, `provider`, `remote_id`, `username`, `display_name`, `status`, `permission_level`; UNIQUE `(provider, remote_id)`.
@@ -55,6 +107,33 @@ SQL from `createDb` (`CREATE TABLE IF NOT EXISTS users`): `id`, `provider`, `rem
 Drizzle enums in `apps/server/src/schema.ts`: `provider` `github` | `gitlab` | `gitea`; `status` `active` | `待批准`; `permission_level` `full` | `claim_only`.
 
 First insert (`mapProfile`): GitHub → `status` `待批准`, `permission_level` `claim_only`; GitLab / Gitea → `active` + `full`. Subsequent login updates `username` and `display_name` only.
+
+### `agent_keys` table
+
+SQL from `createDb` (`CREATE TABLE IF NOT EXISTS agent_keys`): `id INTEGER PRIMARY KEY AUTOINCREMENT`, `user_id INTEGER NOT NULL`, `key_hash TEXT NOT NULL UNIQUE`, `label TEXT NOT NULL DEFAULT ''`, `last_used_at INTEGER`.
+
+### `credential_profiles` table
+
+SQL from `createDb` (`CREATE TABLE IF NOT EXISTS credential_profiles`): `id INTEGER PRIMARY KEY AUTOINCREMENT`, `forge TEXT NOT NULL`, `base_url TEXT NOT NULL`, `repo_full_name TEXT NOT NULL`, `token_encrypted TEXT NOT NULL`, `scopes_checked TEXT NOT NULL DEFAULT '[]'`, `created_by INTEGER NOT NULL`; UNIQUE `(forge, base_url, repo_full_name)`.
+
+Drizzle enum in `schema.ts`: `forge` `github` | `gitlab` | `gitea`.
+
+### `events` table
+
+SQL from `createDb` (`CREATE TABLE IF NOT EXISTS events`): `id INTEGER PRIMARY KEY AUTOINCREMENT`, `type TEXT NOT NULL`, `actor_user_id INTEGER`, `created_at INTEGER NOT NULL`, `details TEXT NOT NULL`.
+
+No events HTTP. Rows written in source:
+
+- profile create/delete: `type` `变更`, `details` JSON `{ "action": "create" | "delete", "profile_id": <n> }`
+- `revealCredentialProfile`: `type` `token 揭示`, `details` JSON `{ "agent_key_id": <n>, "profile_id": <n> }`
+
+`created_at` is unix seconds. There is no `tasks` table.
+
+### Vault (`apps/server/src/vault.ts`)
+
+`encryptToken(plaintext: string): string` / `decryptToken(encoded: string | Buffer): string`. Algorithm `'aes-256-gcm'`, `{ authTagLength: 16 }`, IV `randomBytes(12)`. Stored blob is `iv || ciphertext || tag` as base64 TEXT in `token_encrypted`.
+
+`revealCredentialProfile(db, { profileId, actorUserId, agentKeyId })` decrypts the profile row and returns the plaintext string. Missing row throws `Error('credential profile not found')`. Writes a `token 揭示` event. Does not log the token. Not an HTTP handler.
 
 ### Env (`registerAuth`)
 
@@ -64,7 +143,15 @@ Optional: `PUBLIC_URL` default `http://localhost:3000` (trailing slash stripped)
 
 Callback URIs: `${PUBLIC_URL}/login/{github|gitlab|gitea}/callback`.
 
-Server dependencies added: `@fastify/oauth2@^8.3.0`, `@fastify/cookie@^11.1.2`, `@fastify/session@^11.1.2` (plus existing `fastify`, `drizzle-orm`, `better-sqlite3`).
+### Env (`VAULT_MASTER_KEY`)
+
+Read by `encryptToken` / `decryptToken` in `vault.ts` when encrypting or decrypting. Not required at `buildApp()` or `registerAuth` boot.
+
+Must match `/^[0-9a-fA-F]{64}$/` and decode to 32 bytes. Missing, empty, or invalid → `VaultUnconfiguredError` (`code` `vault_unconfigured`). Create-profile HTTP maps that to `500` `{ error: 'vault_unconfigured' }`. Not `SESSION_SECRET`.
+
+There is no `.env.example` in the repository.
+
+Server dependencies: `@fastify/oauth2@^8.3.0`, `@fastify/cookie@^11.1.2`, `@fastify/session@^11.1.2` (plus existing `fastify`, `drizzle-orm`, `better-sqlite3`). Vault and agent-key hashing use `node:crypto` (no extra npm package).
 
 ## `@kaola/forge-adapters`
 

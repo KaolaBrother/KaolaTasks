@@ -54,9 +54,16 @@ function nonemptyString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() !== '' ? value : undefined
 }
 
-function wantsJson(request: FastifyRequest): boolean {
+export function wantsJson(request: FastifyRequest): boolean {
   const accept = request.headers.accept
   return typeof accept === 'string' && accept.includes('application/json')
+}
+
+export function sendUnauthorized(request: FastifyRequest, reply: FastifyReply) {
+  if (wantsJson(request)) {
+    return reply.code(401).send({ error: 'unauthorized' })
+  }
+  return reply.redirect('/login')
 }
 
 function publicUser(user: User) {
@@ -165,7 +172,7 @@ function upsertUser(
   return inserted
 }
 
-function getSessionUser(db: AppDb, request: FastifyRequest): User | undefined {
+export function getSessionUser(db: AppDb, request: FastifyRequest): User | undefined {
   const userId = request.session.userId
   if (userId == null) return undefined
   return db.select().from(users).where(eq(users.id, userId)).get()
