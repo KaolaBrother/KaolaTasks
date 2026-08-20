@@ -1,0 +1,1825 @@
+✔ getSharedHealth returns the pinned non-empty shared package health string (0.249125ms)
+▶ parseTaskBrief
+  ✖ parseTaskBrief accepts the DESIGN.md §6 Task Brief example including Chinese ellipsis description (0.529792ms)
+  ✖ parseTaskBrief accepts a valid brief whose source is native with no issue_url (0.104875ms)
+  ✖ parseTaskBrief accepts status 待认领 (0.088083ms)
+  ✖ parseTaskBrief accepts status 进行中 (0.053375ms)
+  ✖ parseTaskBrief accepts status 待验收 (0.070459ms)
+  ✖ parseTaskBrief accepts status 已完成 (0.054708ms)
+  ✖ parseTaskBrief accepts status 已退回 (0.045ms)
+  ✖ parseTaskBrief accepts status 已取消 (0.078583ms)
+  ✖ parseTaskBrief accepts repo.forge github (0.08275ms)
+  ✖ parseTaskBrief accepts repo.forge gitlab (0.069042ms)
+  ✖ parseTaskBrief accepts repo.forge gitea (0.0435ms)
+  ✖ parseTaskBrief accepts priority P0 (0.045875ms)
+  ✖ parseTaskBrief accepts priority P1 (0.0405ms)
+  ✖ parseTaskBrief accepts priority P2 (0.063458ms)
+  ✖ parseTaskBrief accepts priority P3 (0.057166ms)
+  ✖ parseTaskBrief rejects a brief missing required field id (0.050792ms)
+  ✖ parseTaskBrief rejects a brief missing required field title (0.035833ms)
+  ✖ parseTaskBrief rejects a brief missing required field description_md (0.039417ms)
+  ✖ parseTaskBrief rejects a brief missing required field source (0.041542ms)
+  ✖ parseTaskBrief rejects a brief missing required field repo (0.04ms)
+  ✖ parseTaskBrief rejects a brief missing required field acceptance_criteria (0.032709ms)
+  ✖ parseTaskBrief rejects a brief missing required field test_command (0.045542ms)
+  ✖ parseTaskBrief rejects a brief missing required field constraints (0.036833ms)
+  ✖ parseTaskBrief rejects a brief missing required field pr_convention (0.049625ms)
+  ✖ parseTaskBrief rejects a brief missing required field credential (0.031416ms)
+  ✖ parseTaskBrief rejects a brief missing required field priority (0.039375ms)
+  ✖ parseTaskBrief rejects a brief missing required field tags (0.028959ms)
+  ✖ parseTaskBrief rejects a brief missing required field poster (0.02875ms)
+  ✖ parseTaskBrief rejects a brief missing required field status (0.0275ms)
+  ✖ parseTaskBrief rejects a brief missing required field created_at (0.026667ms)
+  ✖ parseTaskBrief rejects a brief missing repo.forge (0.035333ms)
+  ✖ parseTaskBrief rejects a brief missing repo.base_url (0.027ms)
+  ✖ parseTaskBrief rejects a brief missing repo.full_name (0.027708ms)
+  ✖ parseTaskBrief rejects a brief missing repo.base_branch (0.027375ms)
+  ✖ parseTaskBrief rejects a brief missing repo.suggested_dir (0.038417ms)
+  ✖ parseTaskBrief rejects a brief missing constraints.allowed_paths (0.031375ms)
+  ✖ parseTaskBrief rejects a brief missing constraints.forbidden_paths (0.028833ms)
+  ✖ parseTaskBrief rejects a brief missing pr_convention.branch_prefix (0.02775ms)
+  ✖ parseTaskBrief rejects a brief missing pr_convention.title_prefix (0.251875ms)
+  ✖ parseTaskBrief rejects status that is not one of the six Chinese labels (0.033458ms)
+  ✖ parseTaskBrief rejects repo.forge outside github | gitlab | gitea (0.030917ms)
+  ✖ parseTaskBrief rejects imported source without issue_url (0.031125ms)
+  ✖ parseTaskBrief rejects native source that includes issue_url (0.031125ms)
+  ✖ parseTaskBrief rejects priority outside P0|P1|P2|P3 (0.02975ms)
+  ✖ parseTaskBrief rejects a raw token field on the brief (0.02925ms)
+  ✖ parseTaskBrief rejects credential that has no profile_id (0.029417ms)
+  ✖ parseTaskBrief rejects a raw token field inside credential (0.029375ms)
+  ✖ parseTaskBrief rejects credential that includes both profile_id and a raw token (0.037292ms)
+✖ parseTaskBrief (3.114917ms)
+▶ transitionTaskStatus
+  ✖ transitionTaskStatus rejects 待认领 → 待认领 (0.107917ms)
+  ✖ transitionTaskStatus allows 待认领 → 进行中 (0.031584ms)
+  ✖ transitionTaskStatus rejects 待认领 → 待验收 (0.025375ms)
+  ✖ transitionTaskStatus rejects 待认领 → 已完成 (0.033334ms)
+  ✖ transitionTaskStatus rejects 待认领 → 已退回 (0.02725ms)
+  ✖ transitionTaskStatus allows 待认领 → 已取消 (0.027417ms)
+  ✖ transitionTaskStatus allows 进行中 → 待认领 (0.026ms)
+  ✖ transitionTaskStatus rejects 进行中 → 进行中 (0.025417ms)
+  ✖ transitionTaskStatus allows 进行中 → 待验收 (0.031667ms)
+  ✖ transitionTaskStatus rejects 进行中 → 已完成 (0.02525ms)
+  ✖ transitionTaskStatus rejects 进行中 → 已退回 (0.026417ms)
+  ✖ transitionTaskStatus rejects 进行中 → 已取消 (0.026292ms)
+  ✖ transitionTaskStatus rejects 待验收 → 待认领 (0.02725ms)
+  ✖ transitionTaskStatus rejects 待验收 → 进行中 (0.026583ms)
+  ✖ transitionTaskStatus rejects 待验收 → 待验收 (0.026625ms)
+  ✖ transitionTaskStatus allows 待验收 → 已完成 (0.025916ms)
+  ✖ transitionTaskStatus allows 待验收 → 已退回 (0.025625ms)
+  ✖ transitionTaskStatus rejects 待验收 → 已取消 (0.025917ms)
+  ✖ transitionTaskStatus rejects 已完成 → 待认领 (0.026459ms)
+  ✖ transitionTaskStatus rejects 已完成 → 进行中 (0.026375ms)
+  ✖ transitionTaskStatus rejects 已完成 → 待验收 (0.026ms)
+  ✖ transitionTaskStatus rejects 已完成 → 已完成 (0.026125ms)
+  ✖ transitionTaskStatus rejects 已完成 → 已退回 (0.025208ms)
+  ✖ transitionTaskStatus rejects 已完成 → 已取消 (0.025375ms)
+  ✖ transitionTaskStatus allows 已退回 → 待认领 (0.025417ms)
+  ✖ transitionTaskStatus rejects 已退回 → 进行中 (0.026834ms)
+  ✖ transitionTaskStatus rejects 已退回 → 待验收 (0.025916ms)
+  ✖ transitionTaskStatus rejects 已退回 → 已完成 (0.025666ms)
+  ✖ transitionTaskStatus rejects 已退回 → 已退回 (0.026541ms)
+  ✖ transitionTaskStatus allows 已退回 → 已取消 (0.026375ms)
+  ✖ transitionTaskStatus rejects 已取消 → 待认领 (0.026333ms)
+  ✖ transitionTaskStatus rejects 已取消 → 进行中 (0.025625ms)
+  ✖ transitionTaskStatus rejects 已取消 → 待验收 (0.215167ms)
+  ✖ transitionTaskStatus rejects 已取消 → 已完成 (0.034625ms)
+  ✖ transitionTaskStatus rejects 已取消 → 已退回 (0.02525ms)
+  ✖ transitionTaskStatus rejects 已取消 → 已取消 (0.024416ms)
+  ✖ transitionTaskStatus rejects an unknown from status (0.032583ms)
+  ✖ transitionTaskStatus rejects an unknown to status (0.0295ms)
+✖ transitionTaskStatus (1.467708ms)
+ℹ tests 87
+ℹ suites 2
+ℹ pass 1
+ℹ fail 86
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 58.7375
+
+✖ failing tests:
+
+test at packages/shared/src/index.test.ts:102:3
+✖ parseTaskBrief accepts the DESIGN.md §6 Task Brief example including Chinese ellipsis description (0.529792ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:103:28)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:110:3
+✖ parseTaskBrief accepts a valid brief whose source is native with no issue_url (0.104875ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:111:28)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:118:5
+✖ parseTaskBrief accepts status 待认领 (0.088083ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:119:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:118:5
+✖ parseTaskBrief accepts status 进行中 (0.053375ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:119:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:118:5
+✖ parseTaskBrief accepts status 待验收 (0.070459ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:119:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:118:5
+✖ parseTaskBrief accepts status 已完成 (0.054708ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:119:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:118:5
+✖ parseTaskBrief accepts status 已退回 (0.045ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:119:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:118:5
+✖ parseTaskBrief accepts status 已取消 (0.078583ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:119:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:127:5
+✖ parseTaskBrief accepts repo.forge github (0.08275ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:128:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:127:5
+✖ parseTaskBrief accepts repo.forge gitlab (0.069042ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:128:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:127:5
+✖ parseTaskBrief accepts repo.forge gitea (0.0435ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:128:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:136:5
+✖ parseTaskBrief accepts priority P0 (0.045875ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:137:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:136:5
+✖ parseTaskBrief accepts priority P1 (0.0405ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:137:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:136:5
+✖ parseTaskBrief accepts priority P2 (0.063458ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:137:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:136:5
+✖ parseTaskBrief accepts priority P3 (0.057166ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:137:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:145:5
+✖ parseTaskBrief rejects a brief missing required field id (0.050792ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:146:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:145:5
+✖ parseTaskBrief rejects a brief missing required field title (0.035833ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:146:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:145:5
+✖ parseTaskBrief rejects a brief missing required field description_md (0.039417ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:146:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:145:5
+✖ parseTaskBrief rejects a brief missing required field source (0.041542ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:146:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:145:5
+✖ parseTaskBrief rejects a brief missing required field repo (0.04ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:146:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:145:5
+✖ parseTaskBrief rejects a brief missing required field acceptance_criteria (0.032709ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:146:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:145:5
+✖ parseTaskBrief rejects a brief missing required field test_command (0.045542ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:146:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:145:5
+✖ parseTaskBrief rejects a brief missing required field constraints (0.036833ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:146:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:145:5
+✖ parseTaskBrief rejects a brief missing required field pr_convention (0.049625ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:146:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:145:5
+✖ parseTaskBrief rejects a brief missing required field credential (0.031416ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:146:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:145:5
+✖ parseTaskBrief rejects a brief missing required field priority (0.039375ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:146:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:145:5
+✖ parseTaskBrief rejects a brief missing required field tags (0.028959ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:146:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:145:5
+✖ parseTaskBrief rejects a brief missing required field poster (0.02875ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:146:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:145:5
+✖ parseTaskBrief rejects a brief missing required field status (0.0275ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:146:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:145:5
+✖ parseTaskBrief rejects a brief missing required field created_at (0.026667ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:146:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:154:5
+✖ parseTaskBrief rejects a brief missing repo.forge (0.035333ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:155:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:154:5
+✖ parseTaskBrief rejects a brief missing repo.base_url (0.027ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:155:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:154:5
+✖ parseTaskBrief rejects a brief missing repo.full_name (0.027708ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:155:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:154:5
+✖ parseTaskBrief rejects a brief missing repo.base_branch (0.027375ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:155:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:154:5
+✖ parseTaskBrief rejects a brief missing repo.suggested_dir (0.038417ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:155:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:154:5
+✖ parseTaskBrief rejects a brief missing constraints.allowed_paths (0.031375ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:155:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:154:5
+✖ parseTaskBrief rejects a brief missing constraints.forbidden_paths (0.028833ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:155:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:154:5
+✖ parseTaskBrief rejects a brief missing pr_convention.branch_prefix (0.02775ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:155:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:154:5
+✖ parseTaskBrief rejects a brief missing pr_convention.title_prefix (0.251875ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:155:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:164:3
+✖ parseTaskBrief rejects status that is not one of the six Chinese labels (0.033458ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:165:28)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:171:3
+✖ parseTaskBrief rejects repo.forge outside github | gitlab | gitea (0.030917ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:172:28)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:178:3
+✖ parseTaskBrief rejects imported source without issue_url (0.031125ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:179:28)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:185:3
+✖ parseTaskBrief rejects native source that includes issue_url (0.031125ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:186:28)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:195:3
+✖ parseTaskBrief rejects priority outside P0|P1|P2|P3 (0.02975ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:196:28)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:202:3
+✖ parseTaskBrief rejects a raw token field on the brief (0.02925ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:203:28)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:209:3
+✖ parseTaskBrief rejects credential that has no profile_id (0.029417ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:210:28)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:216:3
+✖ parseTaskBrief rejects a raw token field inside credential (0.029375ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:217:28)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:223:3
+✖ parseTaskBrief rejects credential that includes both profile_id and a raw token (0.037292ms)
+  AssertionError [ERR_ASSERTION]: parseTaskBrief must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:224:28)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:245:9
+✖ transitionTaskStatus rejects 待认领 → 待认领 (0.107917ms)
+  AssertionError [ERR_ASSERTION]: transitionTaskStatus must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:246:40)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:240:9
+✖ transitionTaskStatus allows 待认领 → 进行中 (0.031584ms)
+  AssertionError [ERR_ASSERTION]: transitionTaskStatus must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:241:40)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:245:9
+✖ transitionTaskStatus rejects 待认领 → 待验收 (0.025375ms)
+  AssertionError [ERR_ASSERTION]: transitionTaskStatus must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:246:40)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:245:9
+✖ transitionTaskStatus rejects 待认领 → 已完成 (0.033334ms)
+  AssertionError [ERR_ASSERTION]: transitionTaskStatus must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:246:40)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:245:9
+✖ transitionTaskStatus rejects 待认领 → 已退回 (0.02725ms)
+  AssertionError [ERR_ASSERTION]: transitionTaskStatus must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:246:40)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:240:9
+✖ transitionTaskStatus allows 待认领 → 已取消 (0.027417ms)
+  AssertionError [ERR_ASSERTION]: transitionTaskStatus must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:241:40)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:240:9
+✖ transitionTaskStatus allows 进行中 → 待认领 (0.026ms)
+  AssertionError [ERR_ASSERTION]: transitionTaskStatus must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:241:40)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:245:9
+✖ transitionTaskStatus rejects 进行中 → 进行中 (0.025417ms)
+  AssertionError [ERR_ASSERTION]: transitionTaskStatus must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:246:40)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:240:9
+✖ transitionTaskStatus allows 进行中 → 待验收 (0.031667ms)
+  AssertionError [ERR_ASSERTION]: transitionTaskStatus must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:241:40)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:245:9
+✖ transitionTaskStatus rejects 进行中 → 已完成 (0.02525ms)
+  AssertionError [ERR_ASSERTION]: transitionTaskStatus must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:246:40)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:245:9
+✖ transitionTaskStatus rejects 进行中 → 已退回 (0.026417ms)
+  AssertionError [ERR_ASSERTION]: transitionTaskStatus must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:246:40)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:245:9
+✖ transitionTaskStatus rejects 进行中 → 已取消 (0.026292ms)
+  AssertionError [ERR_ASSERTION]: transitionTaskStatus must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:246:40)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:245:9
+✖ transitionTaskStatus rejects 待验收 → 待认领 (0.02725ms)
+  AssertionError [ERR_ASSERTION]: transitionTaskStatus must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:246:40)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:245:9
+✖ transitionTaskStatus rejects 待验收 → 进行中 (0.026583ms)
+  AssertionError [ERR_ASSERTION]: transitionTaskStatus must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:246:40)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:245:9
+✖ transitionTaskStatus rejects 待验收 → 待验收 (0.026625ms)
+  AssertionError [ERR_ASSERTION]: transitionTaskStatus must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:246:40)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:240:9
+✖ transitionTaskStatus allows 待验收 → 已完成 (0.025916ms)
+  AssertionError [ERR_ASSERTION]: transitionTaskStatus must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:241:40)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:240:9
+✖ transitionTaskStatus allows 待验收 → 已退回 (0.025625ms)
+  AssertionError [ERR_ASSERTION]: transitionTaskStatus must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:241:40)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:245:9
+✖ transitionTaskStatus rejects 待验收 → 已取消 (0.025917ms)
+  AssertionError [ERR_ASSERTION]: transitionTaskStatus must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:246:40)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:245:9
+✖ transitionTaskStatus rejects 已完成 → 待认领 (0.026459ms)
+  AssertionError [ERR_ASSERTION]: transitionTaskStatus must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:246:40)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:245:9
+✖ transitionTaskStatus rejects 已完成 → 进行中 (0.026375ms)
+  AssertionError [ERR_ASSERTION]: transitionTaskStatus must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:246:40)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:245:9
+✖ transitionTaskStatus rejects 已完成 → 待验收 (0.026ms)
+  AssertionError [ERR_ASSERTION]: transitionTaskStatus must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:246:40)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:245:9
+✖ transitionTaskStatus rejects 已完成 → 已完成 (0.026125ms)
+  AssertionError [ERR_ASSERTION]: transitionTaskStatus must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:246:40)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:245:9
+✖ transitionTaskStatus rejects 已完成 → 已退回 (0.025208ms)
+  AssertionError [ERR_ASSERTION]: transitionTaskStatus must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:246:40)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:245:9
+✖ transitionTaskStatus rejects 已完成 → 已取消 (0.025375ms)
+  AssertionError [ERR_ASSERTION]: transitionTaskStatus must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:246:40)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:240:9
+✖ transitionTaskStatus allows 已退回 → 待认领 (0.025417ms)
+  AssertionError [ERR_ASSERTION]: transitionTaskStatus must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:241:40)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:245:9
+✖ transitionTaskStatus rejects 已退回 → 进行中 (0.026834ms)
+  AssertionError [ERR_ASSERTION]: transitionTaskStatus must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:246:40)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:245:9
+✖ transitionTaskStatus rejects 已退回 → 待验收 (0.025916ms)
+  AssertionError [ERR_ASSERTION]: transitionTaskStatus must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:246:40)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:245:9
+✖ transitionTaskStatus rejects 已退回 → 已完成 (0.025666ms)
+  AssertionError [ERR_ASSERTION]: transitionTaskStatus must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:246:40)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:245:9
+✖ transitionTaskStatus rejects 已退回 → 已退回 (0.026541ms)
+  AssertionError [ERR_ASSERTION]: transitionTaskStatus must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:246:40)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:240:9
+✖ transitionTaskStatus allows 已退回 → 已取消 (0.026375ms)
+  AssertionError [ERR_ASSERTION]: transitionTaskStatus must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:241:40)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:245:9
+✖ transitionTaskStatus rejects 已取消 → 待认领 (0.026333ms)
+  AssertionError [ERR_ASSERTION]: transitionTaskStatus must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:246:40)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:245:9
+✖ transitionTaskStatus rejects 已取消 → 进行中 (0.025625ms)
+  AssertionError [ERR_ASSERTION]: transitionTaskStatus must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:246:40)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:245:9
+✖ transitionTaskStatus rejects 已取消 → 待验收 (0.215167ms)
+  AssertionError [ERR_ASSERTION]: transitionTaskStatus must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:246:40)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:245:9
+✖ transitionTaskStatus rejects 已取消 → 已完成 (0.034625ms)
+  AssertionError [ERR_ASSERTION]: transitionTaskStatus must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:246:40)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:245:9
+✖ transitionTaskStatus rejects 已取消 → 已退回 (0.02525ms)
+  AssertionError [ERR_ASSERTION]: transitionTaskStatus must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:246:40)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:245:9
+✖ transitionTaskStatus rejects 已取消 → 已取消 (0.024416ms)
+  AssertionError [ERR_ASSERTION]: transitionTaskStatus must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:246:40)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:253:3
+✖ transitionTaskStatus rejects an unknown from status (0.032583ms)
+  AssertionError [ERR_ASSERTION]: transitionTaskStatus must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:254:34)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/shared/src/index.test.ts:258:3
+✖ transitionTaskStatus rejects an unknown to status (0.0295ms)
+  AssertionError [ERR_ASSERTION]: transitionTaskStatus must be exported as a function
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at loadExport (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:97:10)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-2/packages/shared/src/index.test.ts:259:34)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
