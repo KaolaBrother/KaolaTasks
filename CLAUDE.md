@@ -4,7 +4,7 @@
 
 - Purpose: 考拉任务 (Kaola Tasks) — an internal Chinese-language task board where team members post/import coding tasks (GitHub / GitLab / Gitea issues) with a forge token attached, and teammates' agents claim them via MCP, implement on the real repo, and deliver a PR. Platform is routing/coordination only — no agent execution, no code hosting.
 - Stack: TypeScript full-stack — Vue 3 + Vite + Naive UI (web), Node 22 + Fastify (API), Drizzle ORM + SQLite, official MCP TypeScript SDK, pnpm workspaces monorepo.
-- Architecture: `apps/web` (前端) + `apps/server` (API + MCP server + webhooks) + `packages/shared` (task-brief zod schema, state machine) + `packages/forge-adapters` (GitHub/GitLab/Gitea behind one interface). Full design: `docs/DESIGN.md`. M0 ships package shells only (`getSharedHealth` → `kaola-shared-ready`, `getForgeAdaptersHealth` → `kaola-forge-adapters-ready`, server `GET /` body `考拉任务服务占位`); schema, MCP, and adapters are not implemented.
+- Architecture: `apps/web` (前端) + `apps/server` (API + MCP server + webhooks) + `packages/shared` (task-brief zod schema, state machine) + `packages/forge-adapters` (GitHub/GitLab/Gitea behind one interface). Full design: `docs/DESIGN.md`. M0 ships package shells (`getSharedHealth` → `kaola-shared-ready`, `getForgeAdaptersHealth` → `kaola-forge-adapters-ready`, server `GET /` body `考拉任务服务占位`); `@kaola/shared` implements the Task Brief zod schema (`taskBriefSchema` / `parseTaskBrief`) and `transitionTaskStatus`; MCP and adapters are not implemented.
 - UI language is Chinese (中文界面); code identifiers and docs comments in English.
 
 ## Commands

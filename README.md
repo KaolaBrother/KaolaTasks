@@ -2,7 +2,7 @@
 
 > 团队内部任务协作平台：人发任务，Agent 接单，PR 交付。
 >
-> **状态**：M0 脚手架已落地（占位包与占位 HTTP；登录 / MCP / 看板尚未实现）。设计文档 [v0.2](docs/DESIGN.md)。Backlog 见 [Issues](https://github.com/KaolaBrother/KaolaTasks/issues)。
+> **状态**：M0 脚手架已落地（`@kaola/shared` 已导出任务卡 schema 与状态机；HTTP 仍为占位；登录 / MCP / 看板尚未实现）。设计文档 [v0.2](docs/DESIGN.md)。Backlog 见 [Issues](https://github.com/KaolaBrother/KaolaTasks/issues)。
 
 ## 这是什么
 
@@ -91,14 +91,14 @@ apps/
   web/             # @kaola/web — Vue 3 + Vite + Naive UI（占位「考拉任务」）
   server/          # @kaola/server — Fastify + drizzle-orm + better-sqlite3
 packages/
-  shared/          # @kaola/shared — getSharedHealth() → kaola-shared-ready
+  shared/          # @kaola/shared — 任务卡 zod schema + 状态机；getSharedHealth() → kaola-shared-ready
   forge-adapters/  # @kaola/forge-adapters — getForgeAdaptersHealth() → kaola-forge-adapters-ready
 docs/              # 设计与文档（DESIGN.md 为产品源头）
 docker-compose.yml
 .github/workflows/ci.yml
 ```
 
-`packages/shared` 与 `packages/forge-adapters` 目前只有健康检查占位导出，没有任务卡 schema、状态机或 forge 适配实现。
+`@kaola/shared` 导出任务卡 zod schema（`taskBriefSchema` / `parseTaskBrief`）与状态机（`transitionTaskStatus`），并保留 `getSharedHealth()` → `kaola-shared-ready`。依赖 `zod` `^4.4.3`。`@kaola/forge-adapters` 仍只有健康检查占位导出（`getForgeAdaptersHealth()` → `kaola-forge-adapters-ready`），没有 forge 适配实现。
 
 ## 开发
 
@@ -134,7 +134,7 @@ CI：`.github/workflows/ci.yml` job `lint-test` 在 Node 22 上执行 `pnpm inst
 | M2 导入与自动闭环 | Issue 导入、webhook、状态回写 | #12–#14 |
 | M3 打磨 | 审计界面、统计、认领确认策略 | #15–#16 |
 
-当前仓库对应 issue #1 的 M0 脚手架；issue #2（任务卡 schema / 状态机）尚未实现。
+当前仓库已落地 issue #1 的 M0 脚手架与 issue #2 的任务卡 schema / 状态机（`@kaola/shared`）。登录 / MCP / 看板仍未实现。
 
 ## 许可
 
