@@ -4,15 +4,17 @@
 
 - Purpose: 考拉任务 (Kaola Tasks) — an internal Chinese-language task board where team members post/import coding tasks (GitHub / GitLab / Gitea issues) with a forge token attached, and teammates' agents claim them via MCP, implement on the real repo, and deliver a PR. Platform is routing/coordination only — no agent execution, no code hosting.
 - Stack: TypeScript full-stack — Vue 3 + Vite + Naive UI (web), Node 22 + Fastify (API), Drizzle ORM + SQLite, official MCP TypeScript SDK, pnpm workspaces monorepo.
-- Architecture: `apps/web` (前端) + `apps/server` (API + MCP server + webhooks) + `packages/shared` (task-brief zod schema, state machine) + `packages/forge-adapters` (GitHub/GitLab/Gitea behind one interface). Full design: `docs/DESIGN.md`.
+- Architecture: `apps/web` (前端) + `apps/server` (API + MCP server + webhooks) + `packages/shared` (task-brief zod schema, state machine) + `packages/forge-adapters` (GitHub/GitLab/Gitea behind one interface). Full design: `docs/DESIGN.md`. M0 ships package shells only (`getSharedHealth` → `kaola-shared-ready`, `getForgeAdaptersHealth` → `kaola-forge-adapters-ready`, server `GET /` body `考拉任务服务占位`); schema, MCP, and adapters are not implemented.
 - UI language is Chinese (中文界面); code identifiers and docs comments in English.
 
 ## Commands
 
-- Install: `unknown` (planned: `pnpm install` after M0 scaffold)
-- Test: `unknown` (planned: `pnpm test`)
-- Lint/typecheck/build: `unknown` (planned: `pnpm lint` / `pnpm typecheck` / `pnpm build`)
-- Dev server: `unknown` (planned: `pnpm dev`)
+- Install: `pnpm install` (`packageManager` `pnpm@11.19.0`; `engines.node` `>=22`)
+- Test: `pnpm test` → `node --experimental-strip-types --test packages/shared/src/index.test.ts packages/forge-adapters/src/index.test.ts apps/server/src/placeholder.test.ts`
+- Lint: `pnpm lint` → `eslint .`
+- Typecheck: `pnpm typecheck` → `pnpm -r --if-present typecheck`
+- Build: `pnpm build` → `pnpm -r --if-present build`
+- Dev server: `pnpm --filter @kaola/server start` (`node --experimental-strip-types src/index.ts`; `HOST` default `0.0.0.0`, `PORT` default `3000`; `GET /` body `考拉任务服务占位`); `pnpm --filter @kaola/server dev` (`node --watch --experimental-strip-types src/index.ts`); `pnpm --filter @kaola/web dev` (`vite`). No root `pnpm dev`.
 
 ## Non-Negotiable Rules
 
@@ -105,11 +107,15 @@ added or changed it in this file, is yours.
 - `README.md` — project overview and usage.
 - `CHANGELOG.md` — user-visible changes.
 - `docs/README.md` — documentation index.
-- `docs/DESIGN.md` — full product & system design (v0.1, source of truth).
+- `docs/DESIGN.md` — full product & system design (v0.2, source of truth).
 - `docs/architecture.md` — system structure and data flow.
 - `docs/api.md` — APIs, schemas, events, and external contracts.
 - `docs/conventions.md` — coding, testing, Git, and review rules.
 - `docs/decisions/` — architecture decision records.
+
+## Documentation Update Checklist
+
+When install/lint/test/build commands, workspace members, or HTTP surface change: `README.md`, `CHANGELOG.md`, this Commands section, `docs/architecture.md`, `docs/api.md`. Do not change `docs/DESIGN.md` contracts as a side effect of scaffolding.
 
 ## Maintenance
 

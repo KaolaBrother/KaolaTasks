@@ -6,3 +6,5 @@ dist/
 *.sqlite-journal
 .kw/
 .DS_Store
+*.tsbuildinfo
+

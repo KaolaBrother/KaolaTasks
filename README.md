@@ -2,7 +2,7 @@
 
 > 团队内部任务协作平台：人发任务，Agent 接单，PR 交付。
 >
-> **状态**：设计阶段（设计文档 v0.2，实现未开始）。Backlog 见 [Issues](https://github.com/KaolaBrother/KaolaTasks/issues)。
+> **状态**：M0 脚手架已落地（占位包与占位 HTTP；登录 / MCP / 看板尚未实现）。设计文档 [v0.2](docs/DESIGN.md)。Backlog 见 [Issues](https://github.com/KaolaBrother/KaolaTasks/issues)。
 
 ## 这是什么
 
@@ -11,6 +11,8 @@
 平台**不跑 Agent、不托管代码、不做沙箱**——Agent 运行在各自主人的机器上，代码在团队既有的 forge 上。
 
 ## 核心特性
+
+以下为产品设计（见 [设计文档](docs/DESIGN.md)），M0 **尚未实现**：
 
 - **任务广场（中文界面）**：列表 / 看板双视图，任务详情含事件时间线
 - **三 forge 统一接入**：GitHub / GitLab（自托管）/ Gitea（自托管），一套适配层
@@ -38,69 +40,82 @@ sequenceDiagram
     K->>K: 任务自动完成，回写源 Issue
 ```
 
-认领者**不需要**在目标 forge 上有账号——任务所附 token 即访问权（详见设计文档 §7）。
+认领者**不需要**在目标 forge 上有账号——任务所附 token 即访问权（详见设计文档 §7）。该流程为设计目标，M0 尚未提供 MCP 或任务 API。
 
 ## 快速开始
 
-> ⏳ 待 M0/M1 落地后补全具体命令与截图。
-
-### 部署（管理员）
-
-```bash
-# 待补充：docker compose up -d
-# 主密钥、OAuth 应用配置经环境变量注入
-```
-
-### 首次使用（成员）
-
-1. 打开考拉任务，选择登录方式（权限按登录来源分级）：
-
-   | 登录方式 | 查看 | 发布 / 凭证管理 | 认领 |
-   |----------|------|----------------|------|
-   | GitLab / Gitea（自托管） | ✓ | ✓ | ✓ |
-   | GitHub | ✓ | ✗ | ✓（首次登录需成员批准） |
-
-2. 在「设置 → Agent Key」生成个人 API Key（明文只显示一次）。
-3. 把考拉 MCP 端点 + API Key 配到你的 Agent（以 Claude Code 为例）：
-
-   ```jsonc
-   // 待补充：MCP 配置示例（端点 URL、鉴权头）
-   ```
-
-### 发布任务
-
-在网页端填写任务卡：仓库、基准分支、**验收标准**、测试命令、路径约束，选择凭证档案（或粘贴单任务 token）。校验通过即上板。
-
-### 认领任务
-
-对你的 Agent 说：
-
-> 去考拉看看有什么任务，认领 kt-xxxx
-
-Agent 会自动完成：认领 → 领 token → clone → 实现 → 跑测试 → push 分支 → 开 PR → 提交回考拉。之后发布者在 forge 上正常 review，合并即完结。
-
-## 项目结构（规划）
-
-```text
-apps/
-  web/          # Vue 3 + Naive UI 前端（中文界面）
-  server/       # Fastify API + MCP Server + webhook 接收
-packages/
-  shared/       # 任务卡 zod schema、生命周期状态机
-  forge-adapters/  # GitHub / GitLab / Gitea 适配器
-docs/           # 设计与文档（DESIGN.md 为源头）
-```
-
-## 开发
-
-> ⏳ M0 脚手架（Issue #1）完成后生效。
+需要 Node.js `>=22`（`package.json` `engines.node`）与 pnpm `11.19.0`（`packageManager`）。
 
 ```bash
 pnpm install
-pnpm dev        # 开发服务
-pnpm test       # 测试
-pnpm lint && pnpm typecheck && pnpm build
+pnpm --filter @kaola/server start
 ```
+
+`@kaola/server` 默认 `HOST=0.0.0.0`、`PORT=3000`（可用环境变量覆盖）。`GET /` 响应 `text/plain; charset=utf-8`，正文为 `考拉任务服务占位`（由 `getPlaceholderBody()` 返回）。
+
+前端占位界面：
+
+```bash
+pnpm --filter @kaola/web dev
+```
+
+页面标题为「考拉任务」，卡片文案为「占位界面」。
+
+热重载服务：`pnpm --filter @kaola/server dev`（`node --watch --experimental-strip-types src/index.ts`）。根目录没有 `pnpm dev`。
+
+### 部署（管理员）
+
+仓库含 `docker-compose.yml` 骨架：服务名 `server`，端口 `3000:3000`，环境变量 `PORT=3000`、`HOST=0.0.0.0`，卷 `kaola-data:/data`。镜像由 `apps/server/Dockerfile` 构建（基础镜像 `node:22-bookworm-slim`），`CMD` 为 `pnpm --filter @kaola/server start`。
+
+```bash
+docker compose up -d --build
+```
+
+该命令需要本机 Docker daemon。仓库没有 `.env.example`；主密钥 / OAuth 尚未实现，compose 也未注入它们。卷已声明，但服务默认 SQLite 路径仍是代码里的 `:memory:`，compose 未设置 `SQLITE_PATH`。
+
+### 首次使用 / 发布 / 认领
+
+尚未实现（无登录、无 Agent Key、无 MCP 端点、无任务卡）。目标流程见 [设计文档](docs/DESIGN.md) §3、§7、§9。设计中的登录分级：
+
+| 登录方式 | 查看 | 发布 / 凭证管理 | 认领 |
+|----------|------|----------------|------|
+| GitLab / Gitea（自托管） | ✓ | ✓ | ✓ |
+| GitHub | ✓ | ✗ | ✓（首次登录需成员批准） |
+
+## 项目结构
+
+pnpm workspaces（`pnpm-workspace.yaml`：`apps/*` + `packages/*`）：
+
+```text
+apps/
+  web/             # @kaola/web — Vue 3 + Vite + Naive UI（占位「考拉任务」）
+  server/          # @kaola/server — Fastify + drizzle-orm + better-sqlite3
+packages/
+  shared/          # @kaola/shared — getSharedHealth() → kaola-shared-ready
+  forge-adapters/  # @kaola/forge-adapters — getForgeAdaptersHealth() → kaola-forge-adapters-ready
+docs/              # 设计与文档（DESIGN.md 为产品源头）
+docker-compose.yml
+.github/workflows/ci.yml
+```
+
+`packages/shared` 与 `packages/forge-adapters` 目前只有健康检查占位导出，没有任务卡 schema、状态机或 forge 适配实现。
+
+## 开发
+
+```bash
+pnpm install
+pnpm lint          # eslint .
+pnpm typecheck     # pnpm -r --if-present typecheck
+pnpm test          # node --experimental-strip-types --test packages/shared/src/index.test.ts packages/forge-adapters/src/index.test.ts apps/server/src/placeholder.test.ts
+pnpm build         # pnpm -r --if-present build
+
+pnpm --filter @kaola/server start    # node --experimental-strip-types src/index.ts
+pnpm --filter @kaola/server dev      # node --watch --experimental-strip-types src/index.ts
+pnpm --filter @kaola/web dev         # vite
+pnpm --filter @kaola/web preview     # vite preview
+```
+
+CI：`.github/workflows/ci.yml` job `lint-test` 在 Node 22 上执行 `pnpm install --frozen-lockfile`、`pnpm lint`、`pnpm test`。远程 Actions 尚未跑过，不要把 GitHub 上的 CI 当成已绿。
 
 贡献流程遵循仓库根目录 `CLAUDE.md`（Kaola-Workflow：Issues 即 backlog，comments 覆盖正文）。
 
@@ -118,6 +133,8 @@ pnpm lint && pnpm typecheck && pnpm build
 | M1 核心闭环 | 登录、凭证库、任务板、租约认领、MCP Server、PR 轮询 | #3–#11 |
 | M2 导入与自动闭环 | Issue 导入、webhook、状态回写 | #12–#14 |
 | M3 打磨 | 审计界面、统计、认领确认策略 | #15–#16 |
+
+当前仓库对应 issue #1 的 M0 脚手架；issue #2（任务卡 schema / 状态机）尚未实现。
 
 ## 许可
 
