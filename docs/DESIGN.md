@@ -1,6 +1,6 @@
 # 考拉任务（Kaola Tasks）设计文档
 
-> 版本：v0.1（2026-08-20）· 状态：草案，已完成首轮头脑风暴与关键决策
+> 版本：v0.2（2026-08-20）· 状态：草案；v0.2 增补：多源登录分级权限、认领即授权、Agent 侧 token 卫生、无 forge 账号认领者
 
 ---
 
@@ -25,6 +25,7 @@
 | D5 | 技术栈 | TypeScript 全栈：Vue 3 前端 + Node API + 官方 MCP TS SDK + Drizzle/SQLite |
 | D6 | 登录方式 | 通过团队自有 forge 的 OAuth 登录（GitLab 或 Gitea） |
 | D7 | Token 附着方式 | 凭证档案（Credential Profile）复用为主，允许单任务临时 token 覆盖 |
+| D8 | 登录与权限分级 | 多源 OAuth：GitLab/Gitea（自托管）= 完整权限；GitHub = 仅认领，且首次登录需任一正式成员批准；发布任务与凭证管理仅限自托管身份 |
 
 ## 3. 角色与核心概念
 
@@ -114,7 +115,8 @@ stateDiagram-v2
     "forge": "gitea",                // github | gitlab | gitea
     "base_url": "https://gitea.internal.example",
     "full_name": "team/orders",
-    "base_branch": "main"
+    "base_branch": "main",
+    "suggested_dir": "orders"      // 建议的本地克隆目录名（Agent 可覆盖）
   },
   "acceptance_criteria": [           // 验收标准，逐条可核对
     "GET /api/orders/export 支持 page/page_size 参数",
@@ -146,6 +148,8 @@ stateDiagram-v2
 - **推荐 token 类型**：GitHub fine-grained PAT（限定单仓库）、GitLab Project Access Token、Gitea 仓库级 scoped token——三者都天然按仓库隔离。
 - **加密存储**：AES-256-GCM，主密钥来自环境变量/密钥文件，不入库、不入代码。
 - **认领时揭示（reveal-on-claim）**：token 只在 `claim_task` 成功时下发给认领 Agent；`list_tasks` / `get_task_brief` 永不含 token。
+- **认领即授权（MVP）**：Agent API Key 即用户授权——用户明确指示 Agent 认领时无需二次确认；"人确认认领"开关只针对自主轮询式 Agent（M3，Issue #16）。"待批准"状态的 GitHub 登录用户无法认领（见 §11）。
+- **Agent 侧 token 卫生**：`claim_task` 返回中附带使用指引——token 走环境变量或 `git -c http.extraHeader` 按次传递，**不要**拼进 remote URL（会落盘到 `.git/config` 并在任务结束后残留）。
 - **全量审计**：每次揭示记录"谁的哪个 Agent Key、何时、拿走了哪个档案的 token"；档案页提供一键吊销（删除档案 + 提示去 forge 侧撤销）。
 - **无账号认领者（token 即访问权）**：认领者**不需要**在目标 forge 上有账号。Agent 用揭示的 token 走 HTTPS clone、向**同一仓库**推分支（不走 fork——fork 才需要账号）、再用同一 token 调 API 开 PR/MR。因此发布校验必须包含"能否推分支"。身份归属：PR 显示的是 token 所属身份（发布者或项目 bot），但 commit author 可自由设置为认领者姓名/邮箱（无需账号），PR 描述底部附"claimed by @认领者 via Kaola Tasks"，考拉侧审计日志保存真实认领记录。推荐用 GitLab Project Access Token（Developer 角色，`api` + `write_repository`）/ Gitea 仓库 token / GitHub fine-grained PAT 实现此模式。
 - **提示注入提醒**：任务描述是进入 Agent 上下文的非受信文本。即使是内部平台，导入的 Issue 正文也可能包含外部人写的内容，UI 对导入内容打来源标记，默认保留"人确认认领"这一道闸。
@@ -184,7 +188,7 @@ MCP Server 以个人 API Key 鉴权（key 在 Web 端自助生成，绑定用户
 |------|------|------|
 | `list_tasks` | `status?` `tags?` `forge?` | 列出任务（不含 token） |
 | `get_task_brief` | `task_id` | 返回 §6 的完整 JSON（不含 token） |
-| `claim_task` | `task_id` | 建立租约；返回任务卡 + **揭示 token** + 租约 TTL。默认触发主人确认流程 |
+| `claim_task` | `task_id` | 建立租约；返回任务卡 + **揭示 token** + 租约 TTL + 克隆指引（`suggested_dir`、token 使用方式）。API Key 即授权，无需二次确认（自主轮询场景见 M3） |
 | `report_progress` | `task_id` `note` | 心跳续约 + 进度记录（展示在任务详情时间线） |
 | `submit_pr` | `task_id` `pr_url` `summary` | 提交交付物，任务转"待验收" |
 | `release_task` | `task_id` `reason` | 主动放弃，任务回"待认领" |
@@ -195,7 +199,7 @@ REST 端点一一对应（`/api/v1/tasks` 等），另加 Web 端专用的档案
 
 | 表 | 关键字段 |
 |----|----------|
-| `users` | forge OAuth 身份（provider, remote_id, username）、显示名 |
+| `users` | forge OAuth 身份（provider, remote_id, username）、显示名、状态（active / 待批准）、权限级（full / claim_only） |
 | `agent_keys` | user_id、key_hash、label、last_used_at |
 | `credential_profiles` | forge、base_url、repo_full_name、token_encrypted、scopes_checked、created_by |
 | `tasks` | §6 各字段 + status、credential_profile_id / inline_token_encrypted（二选一） |
@@ -207,7 +211,15 @@ SQLite 足够内部团队规模；Drizzle 之上留好升级 Postgres 的余地�
 
 ## 11. 认证
 
-- **人（Web）**：OAuth 走团队自托管 GitLab 或 Gitea（二选一作为身份源，配置项决定）。forge 上的成员即平台成员，无需单独账号体系。
+- **人（Web）**：多源 OAuth，无独立账号体系，首次登录自动建号，权限按登录来源分级：
+
+  | 能力 | GitLab / Gitea 登录（自托管 = 团队身份） | GitHub 登录 |
+  |------|------------------------------------------|-------------|
+  | 查看任务板 | ✓ | ✓ |
+  | 发布任务 / 管理凭证档案 | ✓ | ✗ |
+  | 认领任务 / 生成 Agent Key | ✓ | ✓（需先通过首登批准） |
+
+  GitHub 账号任何人都能注册，而认领即 token 揭示，故 GitHub 登录首次进入"待批准"状态，由任一正式成员在 Web 端一键批准后方可认领。同一人多账号在 MVP 中视为多个用户，如有需要后续加身份关联。
 - **Agent（MCP/REST）**：Bearer API Key，用户在 Web 端自助生成/吊销，服务端只存哈希。
 - **Webhook**：各 forge 的签名校验（GitHub HMAC、Gitea/GitLab secret token）。
 
@@ -245,4 +257,4 @@ KaolaTasks/
 1. **token 外泄面**：token 到达 Agent 侧后平台无法控制其存储环境。缓解：仓库级细粒度 token + 审计 + 易吊销；团队约定 Agent 侧不落盘。
 2. **内网 webhook 可达性**：部署位置需与三个 forge 网络互通；不通的实例走轮询（已设计）。
 3. **提示注入**：导入 Issue 的正文可能含诱导 Agent 的内容。缓解：来源标记 + 人确认认领；后续可加简单的注入模式扫描。
-4. **待定**：OAuth 身份源选 GitLab 还是 Gitea（配置支持二者，需定默认）；租约 TTL 默认值；是否需要"补丁文件"作为 PR 之外的备用交付通道（当前范围内暂不做）。
+4. **待定**：租约 TTL 默认值（暂定 24h）；是否需要"补丁文件"作为 PR 之外的备用交付通道（当前范围内暂不做）。
