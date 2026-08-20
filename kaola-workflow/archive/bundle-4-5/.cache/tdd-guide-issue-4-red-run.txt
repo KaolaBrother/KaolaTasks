@@ -1,0 +1,211 @@
+▶ unauthenticated session agent-key routes
+  ✖ JSON Accept is 401 unauthorized without WWW-Authenticate; browser-like requests redirect to /login (40.324083ms)
+✖ unauthenticated session agent-key routes (40.786125ms)
+▶ GET /api/v1/agent/whoami Bearer failures
+  ✖ missing, wrong, and non-Bearer credentials are 401 with WWW-Authenticate Bearer (2.713625ms)
+  ✖ a session cookie does not authorize whoami; GET /api/v1/me does not accept Bearer (15.196083ms)
+✖ GET /api/v1/agent/whoami Bearer failures (18.054458ms)
+▶ pending GitHub cannot generate Agent Keys
+  ✖ pending GitHub POST /api/v1/agent-keys returns 403 with the generate-gate message (6.176667ms)
+✖ pending GitHub cannot generate Agent Keys (6.27775ms)
+▶ approved GitHub claim_only self-service
+  ✖ approved GitHub claim_only can generate, list without plaintext, update last_used_at, and revoke immediately (3.974708ms)
+✖ approved GitHub claim_only self-service (4.06375ms)
+▶ GitLab and Gitea full+active self-service
+  ✖ GitLab full+active can generate keys without VAULT_MASTER_KEY; GET / stays 考拉任务服务占位 (2.531875ms)
+  ✖ Gitea full+active can generate, list, and use Bearer whoami (1.913792ms)
+✖ GitLab and Gitea full+active self-service (4.536375ms)
+▶ list and revoke are own keys only
+  ✖ a full member cannot list or revoke another user's key; missing and not-owned DELETE are 404 not_found (2.168083ms)
+✖ list and revoke are own keys only (2.217166ms)
+▶ agent_keys hashed storage
+  ✖ SQLite stores sha256 hex of plaintext utf8, never the token, unique key_hash; failed Bearer does not set last_used_at (3.799292ms)
+✖ agent_keys hashed storage (3.869125ms)
+ℹ tests 9
+ℹ suites 7
+ℹ pass 0
+ℹ fail 9
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 294.221375
+
+✖ failing tests:
+
+test at apps/server/src/agent-keys.test.ts:280:3
+✖ JSON Accept is 401 unauthorized without WWW-Authenticate; browser-like requests redirect to /login (40.324083ms)
+  AssertionError [ERR_ASSERTION]: expected 401, got 404: {"message":"Route GET:/api/v1/agent-keys not found","error":"Not Found","statusCode":404}
+  
+  404 !== 401
+  
+      at assertSessionUnauthorized (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-4-5/apps/server/src/agent-keys.test.ts:186:10)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-4-5/apps/server/src/agent-keys.test.ts:284:5)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 401,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/agent-keys.test.ts:324:3
+✖ missing, wrong, and non-Bearer credentials are 401 with WWW-Authenticate Bearer (2.713625ms)
+  AssertionError [ERR_ASSERTION]: expected 401, got 404: {"message":"Route GET:/api/v1/agent/whoami not found","error":"Not Found","statusCode":404}
+  
+  404 !== 401
+  
+      at assertBearerUnauthorized (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-4-5/apps/server/src/agent-keys.test.ts:192:10)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-4-5/apps/server/src/agent-keys.test.ts:329:5)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 401,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/agent-keys.test.ts:341:3
+✖ a session cookie does not authorize whoami; GET /api/v1/me does not accept Bearer (15.196083ms)
+  AssertionError [ERR_ASSERTION]: POST /api/v1/agent-keys: 404 {"message":"Route POST:/api/v1/agent-keys not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-4-5/apps/server/src/agent-keys.test.ts:350:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/agent-keys.test.ts:376:3
+✖ pending GitHub POST /api/v1/agent-keys returns 403 with the generate-gate message (6.176667ms)
+  AssertionError [ERR_ASSERTION]: pending generate: 404 {"message":"Route POST:/api/v1/agent-keys not found","error":"Not Found","statusCode":404}
+  
+  404 !== 403
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-4-5/apps/server/src/agent-keys.test.ts:387:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 403,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/agent-keys.test.ts:395:3
+✖ approved GitHub claim_only can generate, list without plaintext, update last_used_at, and revoke immediately (3.974708ms)
+  AssertionError [ERR_ASSERTION]: GET /api/v1/agent-keys: 404 {"message":"Route GET:/api/v1/agent-keys not found","error":"Not Found","statusCode":404}
+  
+  404 !== 200
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-4-5/apps/server/src/agent-keys.test.ts:426:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/agent-keys.test.ts:489:3
+✖ GitLab full+active can generate keys without VAULT_MASTER_KEY; GET / stays 考拉任务服务占位 (2.531875ms)
+  AssertionError [ERR_ASSERTION]: POST unlabeled: 404 {"message":"Route POST:/api/v1/agent-keys not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-4-5/apps/server/src/agent-keys.test.ts:505:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/agent-keys.test.ts:545:3
+✖ Gitea full+active can generate, list, and use Bearer whoami (1.913792ms)
+  AssertionError [ERR_ASSERTION]: POST /api/v1/agent-keys: 404 {"message":"Route POST:/api/v1/agent-keys not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-4-5/apps/server/src/agent-keys.test.ts:556:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/agent-keys.test.ts:575:3
+✖ a full member cannot list or revoke another user's key; missing and not-owned DELETE are 404 not_found (2.168083ms)
+  AssertionError [ERR_ASSERTION]: alice create: 404 {"message":"Route POST:/api/v1/agent-keys not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-4-5/apps/server/src/agent-keys.test.ts:588:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/agent-keys.test.ts:624:3
+✖ SQLite stores sha256 hex of plaintext utf8, never the token, unique key_hash; failed Bearer does not set last_used_at (3.799292ms)
+  AssertionError [ERR_ASSERTION]: first create: 404 {"message":"Route POST:/api/v1/agent-keys not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-4-5/apps/server/src/agent-keys.test.ts:634:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

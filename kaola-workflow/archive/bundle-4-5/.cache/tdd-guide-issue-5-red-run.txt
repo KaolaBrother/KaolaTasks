@@ -1,0 +1,324 @@
+▶ issue #5 credential vault
+  ▶ placeholder pin
+    ✔ GET / still returns 考拉任务服务占位 (32.887625ms)
+  ✔ placeholder pin (33.104333ms)
+  ▶ unauthenticated credential-profile routes
+    ✖ JSON GET/POST/DELETE without a session return 401 unauthorized (2.613042ms)
+    ✖ browser-like GET /api/v1/credential-profiles redirects to /login (1.885959ms)
+  ✖ unauthenticated credential-profile routes (4.628167ms)
+  ▶ credential profile CRUD (session, active full)
+    ✖ GitLab POST returns 201 public fields and GET lists them without secrets (9.687541ms)
+    ✖ Gitea active full member can POST a credential profile (3.042042ms)
+    ✖ duplicate (forge, base_url, repo_full_name) returns 409 conflict (2.857709ms)
+    ✖ DELETE returns forge-revoke copy; missing id is 404 not_found (2.141916ms)
+    ✖ any active full member lists and deletes team-shared profiles (2.21725ms)
+  ✖ credential profile CRUD (session, active full) (20.106ms)
+  ▶ permission gate (profiles are active+full only)
+    ✖ pending GitHub user gets 403 forbidden on POST/GET/DELETE (1.964917ms)
+    ✖ approved GitHub claim_only still gets 403 forbidden on POST/GET/DELETE (3.278667ms)
+  ✖ permission gate (profiles are active+full only) (5.327708ms)
+  ▶ SQLite: no plaintext token; 变更 events
+    ✖ token_encrypted TEXT omits plaintext and create writes 变更 (3.420125ms)
+    ✖ DELETE writes 变更 action delete (3.005708ms)
+  ✖ SQLite: no plaintext token; 变更 events (6.501416ms)
+  ▶ vault_unconfigured
+    ✖ HTTP POST without VAULT_MASTER_KEY returns 500 vault_unconfigured (1.890125ms)
+  ✖ vault_unconfigured (1.95125ms)
+  ▶ encryptToken / decryptToken (dynamic import ./vault.ts)
+    ✖ round-trips a one-off token string and ciphertext omits plaintext (0.21475ms)
+    ✖ encryptToken throws when VAULT_MASTER_KEY is missing (0.096083ms)
+  ✖ encryptToken / decryptToken (dynamic import ./vault.ts) (0.333042ms)
+  ▶ revealCredentialProfile (dynamic import ./vault.ts)
+    ✖ returns plaintext, writes token 揭示 audit, and throws after DELETE (3.2395ms)
+  ✖ revealCredentialProfile (dynamic import ./vault.ts) (3.2915ms)
+✖ issue #5 credential vault (75.516ms)
+ℹ tests 16
+ℹ suites 9
+ℹ pass 1
+ℹ fail 15
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 300.874042
+
+✖ failing tests:
+
+test at apps/server/src/vault.test.ts:317:3
+✖ JSON GET/POST/DELETE without a session return 401 unauthorized (2.613042ms)
+  AssertionError [ERR_ASSERTION]: GET list: 404 {"message":"Route GET:/api/v1/credential-profiles not found","error":"Not Found","statusCode":404}
+  
+  404 !== 401
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-4-5/apps/server/src/vault.test.ts:321:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 401,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/vault.test.ts:333:3
+✖ browser-like GET /api/v1/credential-profiles redirects to /login (1.885959ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  404 !== 302
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-4-5/apps/server/src/vault.test.ts:340:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 302,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/vault.test.ts:346:3
+✖ GitLab POST returns 201 public fields and GET lists them without secrets (9.687541ms)
+  AssertionError [ERR_ASSERTION]: POST: 404 {"message":"Route POST:/api/v1/credential-profiles not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-4-5/apps/server/src/vault.test.ts:353:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/vault.test.ts:386:3
+✖ Gitea active full member can POST a credential profile (3.042042ms)
+  AssertionError [ERR_ASSERTION]: POST: 404 {"message":"Route POST:/api/v1/credential-profiles not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-4-5/apps/server/src/vault.test.ts:396:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/vault.test.ts:409:3
+✖ duplicate (forge, base_url, repo_full_name) returns 409 conflict (2.857709ms)
+  AssertionError [ERR_ASSERTION]: first POST: 404 {"message":"Route POST:/api/v1/credential-profiles not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-4-5/apps/server/src/vault.test.ts:417:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/vault.test.ts:429:3
+✖ DELETE returns forge-revoke copy; missing id is 404 not_found (2.141916ms)
+  AssertionError [ERR_ASSERTION]: POST: 404 {"message":"Route POST:/api/v1/credential-profiles not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-4-5/apps/server/src/vault.test.ts:435:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/vault.test.ts:454:3
+✖ any active full member lists and deletes team-shared profiles (2.21725ms)
+  AssertionError [ERR_ASSERTION]: POST: 404 {"message":"Route POST:/api/v1/credential-profiles not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-4-5/apps/server/src/vault.test.ts:462:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/vault.test.ts:478:3
+✖ pending GitHub user gets 403 forbidden on POST/GET/DELETE (1.964917ms)
+  AssertionError [ERR_ASSERTION]: POST: 404 {"message":"Route POST:/api/v1/credential-profiles not found","error":"Not Found","statusCode":404}
+  
+  404 !== 403
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-4-5/apps/server/src/vault.test.ts:486:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 403,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/vault.test.ts:498:3
+✖ approved GitHub claim_only still gets 403 forbidden on POST/GET/DELETE (3.278667ms)
+  AssertionError [ERR_ASSERTION]: member POST: 404 {"message":"Route POST:/api/v1/credential-profiles not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-4-5/apps/server/src/vault.test.ts:525:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/vault.test.ts:543:3
+✖ token_encrypted TEXT omits plaintext and create writes 变更 (3.420125ms)
+  AssertionError [ERR_ASSERTION]: POST: 404 {"message":"Route POST:/api/v1/credential-profiles not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-4-5/apps/server/src/vault.test.ts:551:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/vault.test.ts:580:3
+✖ DELETE writes 变更 action delete (3.005708ms)
+  AssertionError [ERR_ASSERTION]: POST: 404 {"message":"Route POST:/api/v1/credential-profiles not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-4-5/apps/server/src/vault.test.ts:588:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/vault.test.ts:607:3
+✖ HTTP POST without VAULT_MASTER_KEY returns 500 vault_unconfigured (1.890125ms)
+  AssertionError [ERR_ASSERTION]: POST: 404 {"message":"Route POST:/api/v1/credential-profiles not found","error":"Not Found","statusCode":404}
+  
+  404 !== 500
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-4-5/apps/server/src/vault.test.ts:618:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 500,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/vault.test.ts:624:3
+✖ round-trips a one-off token string and ciphertext omits plaintext (0.21475ms)
+  Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-4-5/apps/server/src/vault.ts' imported from /Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-4-5/apps/server/src/vault.test.ts
+      at finalizeResolution (node:internal/modules/esm/resolve:275:11)
+      at moduleResolve (node:internal/modules/esm/resolve:865:10)
+      at defaultResolve (node:internal/modules/esm/resolve:991:11)
+      at #cachedDefaultResolve (node:internal/modules/esm/loader:719:20)
+      at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:736:38)
+      at ModuleLoader.resolveSync (node:internal/modules/esm/loader:765:52)
+      at #resolve (node:internal/modules/esm/loader:701:17)
+      at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:621:35)
+      at onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:650:32)
+      at TracingChannel.tracePromise (node:diagnostics_channel:350:14) {
+    code: 'ERR_MODULE_NOT_FOUND',
+    url: 'file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-4-5/apps/server/src/vault.ts'
+  }
+
+test at apps/server/src/vault.test.ts:635:3
+✖ encryptToken throws when VAULT_MASTER_KEY is missing (0.096083ms)
+  Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-4-5/apps/server/src/vault.ts' imported from /Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-4-5/apps/server/src/vault.test.ts
+      at finalizeResolution (node:internal/modules/esm/resolve:275:11)
+      at moduleResolve (node:internal/modules/esm/resolve:865:10)
+      at defaultResolve (node:internal/modules/esm/resolve:991:11)
+      at #cachedDefaultResolve (node:internal/modules/esm/loader:719:20)
+      at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:736:38)
+      at ModuleLoader.resolveSync (node:internal/modules/esm/loader:765:52)
+      at #resolve (node:internal/modules/esm/loader:701:17)
+      at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:621:35)
+      at onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:650:32)
+      at TracingChannel.tracePromise (node:diagnostics_channel:350:14) {
+    code: 'ERR_MODULE_NOT_FOUND',
+    url: 'file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-4-5/apps/server/src/vault.ts'
+  }
+
+test at apps/server/src/vault.test.ts:650:3
+✖ returns plaintext, writes token 揭示 audit, and throws after DELETE (3.2395ms)
+  AssertionError [ERR_ASSERTION]: POST: 404 {"message":"Route POST:/api/v1/credential-profiles not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-4-5/apps/server/src/vault.test.ts:672:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
