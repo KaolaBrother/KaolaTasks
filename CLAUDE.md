@@ -4,17 +4,17 @@
 
 - Purpose: 考拉任务 (Kaola Tasks) — an internal Chinese-language task board where team members post/import coding tasks (GitHub / GitLab / Gitea issues) with a forge token attached, and teammates' agents claim them via MCP, implement on the real repo, and deliver a PR. Platform is routing/coordination only — no agent execution, no code hosting.
 - Stack: TypeScript full-stack — Vue 3 + Vite + Naive UI (web), Node 22 + Fastify (API), Drizzle ORM + SQLite, official MCP TypeScript SDK, pnpm workspaces monorepo.
-- Architecture: `apps/web` (前端) + `apps/server` (API + MCP server + webhooks) + `packages/shared` (task-brief zod schema, state machine) + `packages/forge-adapters` (GitHub/GitLab/Gitea behind one interface). Full design: `docs/DESIGN.md`. M0 ships package shells (`getSharedHealth` → `kaola-shared-ready`, `getForgeAdaptersHealth` → `kaola-forge-adapters-ready`, server `GET /` body `考拉任务服务占位`); `@kaola/shared` implements the Task Brief zod schema (`taskBriefSchema` / `parseTaskBrief`) and `transitionTaskStatus`; MCP and adapters are not implemented.
+- Architecture: `apps/web` (前端) + `apps/server` (API + MCP server + webhooks) + `packages/shared` (task-brief zod schema, state machine) + `packages/forge-adapters` (GitHub/GitLab/Gitea behind one interface). Full design: `docs/DESIGN.md`. M0 shells remain (`getSharedHealth` → `kaola-shared-ready`, `getForgeAdaptersHealth` → `kaola-forge-adapters-ready`, server `GET /` body `考拉任务服务占位`); `@kaola/shared` implements the Task Brief zod schema (`taskBriefSchema` / `parseTaskBrief`) and `transitionTaskStatus`; `@kaola/forge-adapters` exports `createForgeAdapter` / `validateToken` (other `ForgeAdapter` methods throw `Error('not implemented')`); `@kaola/server` has multi-source OAuth + `users` (`GET /login`, `/login/{github|gitlab|gitea}`, `GET /api/v1/me`, `POST /api/v1/users/:id/approve`). MCP, task CRUD, vault, and claim are not implemented.
 - UI language is Chinese (中文界面); code identifiers and docs comments in English.
 
 ## Commands
 
 - Install: `pnpm install` (`packageManager` `pnpm@11.19.0`; `engines.node` `>=22`)
-- Test: `pnpm test` → `node --experimental-strip-types --test packages/shared/src/index.test.ts packages/forge-adapters/src/index.test.ts apps/server/src/placeholder.test.ts`
+- Test: `pnpm test` → `node --experimental-strip-types --test packages/shared/src/index.test.ts packages/forge-adapters/src/index.test.ts packages/forge-adapters/src/validate-token.shared.test.ts apps/server/src/placeholder.test.ts apps/server/src/auth.test.ts`
 - Lint: `pnpm lint` → `eslint .`
 - Typecheck: `pnpm typecheck` → `pnpm -r --if-present typecheck`
 - Build: `pnpm build` → `pnpm -r --if-present build`
-- Dev server: `pnpm --filter @kaola/server start` (`node --experimental-strip-types src/index.ts`; `HOST` default `0.0.0.0`, `PORT` default `3000`; `GET /` body `考拉任务服务占位`); `pnpm --filter @kaola/server dev` (`node --watch --experimental-strip-types src/index.ts`); `pnpm --filter @kaola/web dev` (`vite`). No root `pnpm dev`.
+- Dev server: `pnpm --filter @kaola/server start` (`node --experimental-strip-types src/index.ts`; `HOST` default `0.0.0.0`, `PORT` default `3000`; `GET /` body `考拉任务服务占位`). `registerAuth` requires non-empty `SESSION_SECRET`, `OAUTH_GITHUB_CLIENT_ID`, `OAUTH_GITHUB_CLIENT_SECRET`, `OAUTH_GITLAB_CLIENT_ID`, `OAUTH_GITLAB_CLIENT_SECRET`, `OAUTH_GITLAB_BASE_URL`, `OAUTH_GITEA_CLIENT_ID`, `OAUTH_GITEA_CLIENT_SECRET`, `OAUTH_GITEA_BASE_URL`. Optional `PUBLIC_URL` default `http://localhost:3000`; `SQLITE_PATH` default `:memory:`. `pnpm --filter @kaola/server dev` (`node --watch --experimental-strip-types src/index.ts`); `pnpm --filter @kaola/web dev` (`vite`). No root `pnpm dev`.
 
 ## Non-Negotiable Rules
 

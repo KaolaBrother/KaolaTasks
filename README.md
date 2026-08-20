@@ -2,7 +2,7 @@
 
 > 团队内部任务协作平台：人发任务，Agent 接单，PR 交付。
 >
-> **状态**：M0 脚手架已落地（`@kaola/shared` 已导出任务卡 schema 与状态机；HTTP 仍为占位；登录 / MCP / 看板尚未实现）。设计文档 [v0.2](docs/DESIGN.md)。Backlog 见 [Issues](https://github.com/KaolaBrother/KaolaTasks/issues)。
+> **状态**：M0 脚手架已落地；M1 切片 #3（多源 OAuth + `users`）与 #6（`ForgeAdapter` + `validateToken`）已落地。任务 CRUD / 看板 / 凭证库 / 租约认领 / MCP 尚未实现。设计文档 [v0.2](docs/DESIGN.md)。Backlog 见 [Issues](https://github.com/KaolaBrother/KaolaTasks/issues)。
 
 ## 这是什么
 
@@ -12,12 +12,18 @@
 
 ## 核心特性
 
-以下为产品设计（见 [设计文档](docs/DESIGN.md)），M0 **尚未实现**：
+以下为产品设计（见 [设计文档](docs/DESIGN.md)）。当前已落地的是登录与 token 校验库，不是完整 M1。
+
+**已落地（#3 / #6）：**
+
+- **多源 OAuth 登录**：GitHub / GitLab / Gitea；会话用户见 `GET /api/v1/me`；正式成员可 `POST /api/v1/users/:id/approve`
+- **三 forge `validateToken`**：`createForgeAdapter(kind)` 对 GitHub / GitLab / Gitea 实测可读 / 可推 / 可开 PR（缺失项为 `读` | `推` | `PR`）；Push/PR 为 REST 权限代理，不实际 git push / POST PR
+
+**设计中、尚未实现：**
 
 - **任务广场（中文界面）**：列表 / 看板双视图，任务详情含事件时间线
-- **三 forge 统一接入**：GitHub / GitLab（自托管）/ Gitea（自托管），一套适配层
 - **MCP 优先**：Agent 配置一次 MCP 端点，一句"去考拉接单"走完认领 → 实现 → 交付
-- **发布即校验**：任务上板前实测 token 权限（可读 / 可推分支 / 可开 PR）
+- **发布即校验接到任务上板**：库层 `validateToken` 已有；任务发布 / 凭证档案尚未实现
 - **凭证纪律**：token 加密存储、认领时才揭示、全程审计、一键吊销
 - **租约认领**：TTL + 心跳，Agent 掉线任务自动回板，不会被挂死
 - **自动闭环**：PR 合并 → 任务自动完成（webhook，轮询兜底），状态回写源 Issue
@@ -40,26 +46,35 @@ sequenceDiagram
     K->>K: 任务自动完成，回写源 Issue
 ```
 
-认领者**不需要**在目标 forge 上有账号——任务所附 token 即访问权（详见设计文档 §7）。该流程为设计目标，M0 尚未提供 MCP 或任务 API。
+认领者**不需要**在目标 forge 上有账号——任务所附 token 即访问权（详见设计文档 §7）。该流程为设计目标；MCP 与任务 API 尚未提供。OAuth 登录与 `validateToken` 已实现（见下）。
 
 ## 快速开始
 
 需要 Node.js `>=22`（`package.json` `engines.node`）与 pnpm `11.19.0`（`packageManager`）。
+
+`@kaola/server` 在 `buildApp` → `registerAuth` 时要求以下环境变量**非空**，否则抛出 `missing required environment variable …`：
+
+- `SESSION_SECRET`
+- `OAUTH_GITHUB_CLIENT_ID`、`OAUTH_GITHUB_CLIENT_SECRET`
+- `OAUTH_GITLAB_CLIENT_ID`、`OAUTH_GITLAB_CLIENT_SECRET`、`OAUTH_GITLAB_BASE_URL`
+- `OAUTH_GITEA_CLIENT_ID`、`OAUTH_GITEA_CLIENT_SECRET`、`OAUTH_GITEA_BASE_URL`
+
+可选：`PUBLIC_URL` 默认 `http://localhost:3000`（去掉尾斜杠）；`PORT` 默认 `3000`；`HOST` 默认 `0.0.0.0`；`SQLITE_PATH` 默认 `:memory:`。仓库没有 `.env.example`。
 
 ```bash
 pnpm install
 pnpm --filter @kaola/server start
 ```
 
-`@kaola/server` 默认 `HOST=0.0.0.0`、`PORT=3000`（可用环境变量覆盖）。`GET /` 响应 `text/plain; charset=utf-8`，正文为 `考拉任务服务占位`（由 `getPlaceholderBody()` 返回）。
+`GET /` 响应 `text/plain; charset=utf-8`，正文为 `考拉任务服务占位`（由 `getPlaceholderBody()` 返回）。登录页 `GET /login`（HTML）。OAuth 起始路径：`GET /login/github`、`/login/gitlab`、`/login/gitea`；回调：`GET /login/github/callback`、`/login/gitlab/callback`、`/login/gitea/callback`。
 
-前端占位界面：
+前端（Naive UI，`zhCN`）：
 
 ```bash
 pnpm --filter @kaola/web dev
 ```
 
-页面标题为「考拉任务」，卡片文案为「占位界面」。
+Vite 将 `/api` 与 `/login` 代理到 `http://127.0.0.1:3000`。页面标题为「考拉任务」；登录按钮指向 `/login/github`、`/login/gitlab`、`/login/gitea`。无 vue-router。
 
 热重载服务：`pnpm --filter @kaola/server dev`（`node --watch --experimental-strip-types src/index.ts`）。根目录没有 `pnpm dev`。
 
@@ -71,16 +86,20 @@ pnpm --filter @kaola/web dev
 docker compose up -d --build
 ```
 
-该命令需要本机 Docker daemon。仓库没有 `.env.example`；主密钥 / OAuth 尚未实现，compose 也未注入它们。卷已声明，但服务默认 SQLite 路径仍是代码里的 `:memory:`，compose 未设置 `SQLITE_PATH`。
+该命令需要本机 Docker daemon。compose **未**注入 `SESSION_SECRET` 与 OAuth 变量；进程启动时 `registerAuth` 仍会读取它们。卷已声明，但服务默认 SQLite 路径仍是代码里的 `:memory:`，compose 未设置 `SQLITE_PATH`。
 
 ### 首次使用 / 发布 / 认领
 
-尚未实现（无登录、无 Agent Key、无 MCP 端点、无任务卡）。目标流程见 [设计文档](docs/DESIGN.md) §3、§7、§9。设计中的登录分级：
+**登录已实现**（GitHub / GitLab / Gitea OAuth）。设计中的登录分级（[设计文档](docs/DESIGN.md) §11）：
 
 | 登录方式 | 查看 | 发布 / 凭证管理 | 认领 |
 |----------|------|----------------|------|
 | GitLab / Gitea（自托管） | ✓ | ✓ | ✓ |
 | GitHub | ✓ | ✗ | ✓（首次登录需成员批准） |
+
+实现对照（`apps/server/src/auth.ts` / `schema.ts`）：GitHub 首次 `status`=`待批准`、`permission_level`=`claim_only`；GitLab / Gitea 首次 `active` + `full`。`POST /api/v1/users/:id/approve` 仅 `active` + `full` 可调用，将目标 `status` 设为 `active`；GitHub 批准后仍为 `claim_only`。待批准用户的 `GET /api/v1/me` 含 `message`：`你的账号待正式成员批准后方可认领任务。`
+
+发布任务、凭证档案、Agent Key、MCP 端点、任务卡尚未实现。目标流程见 [设计文档](docs/DESIGN.md) §3、§7、§9。
 
 ## 项目结构
 
@@ -88,17 +107,19 @@ pnpm workspaces（`pnpm-workspace.yaml`：`apps/*` + `packages/*`）：
 
 ```text
 apps/
-  web/             # @kaola/web — Vue 3 + Vite + Naive UI（占位「考拉任务」）
-  server/          # @kaola/server — Fastify + drizzle-orm + better-sqlite3
+  web/             # @kaola/web — Vue 3 + Vite + Naive UI（登录 / 待批准 / 批准）
+  server/          # @kaola/server — Fastify + drizzle-orm + better-sqlite3 + OAuth/session
 packages/
   shared/          # @kaola/shared — 任务卡 zod schema + 状态机；getSharedHealth() → kaola-shared-ready
-  forge-adapters/  # @kaola/forge-adapters — getForgeAdaptersHealth() → kaola-forge-adapters-ready
+  forge-adapters/  # @kaola/forge-adapters — ForgeAdapter + validateToken；getForgeAdaptersHealth() → kaola-forge-adapters-ready
 docs/              # 设计与文档（DESIGN.md 为产品源头）
 docker-compose.yml
 .github/workflows/ci.yml
 ```
 
-`@kaola/shared` 导出任务卡 zod schema（`taskBriefSchema` / `parseTaskBrief`）与状态机（`transitionTaskStatus`），并保留 `getSharedHealth()` → `kaola-shared-ready`。依赖 `zod` `^4.4.3`。`@kaola/forge-adapters` 仍只有健康检查占位导出（`getForgeAdaptersHealth()` → `kaola-forge-adapters-ready`），没有 forge 适配实现。
+`@kaola/shared` 导出任务卡 zod schema（`taskBriefSchema` / `parseTaskBrief`）与状态机（`transitionTaskStatus`），并保留 `getSharedHealth()` → `kaola-shared-ready`。依赖 `zod` `^4.4.3`。
+
+`@kaola/forge-adapters` 导出 `getForgeAdaptersHealth()` → `kaola-forge-adapters-ready`，以及 `createForgeAdapter(kind, options?: { baseUrl?: string })`。类型：`ForgeKind`、`Credential` `{ token: string }`、`RepoRef` `{ full_name: string; base_url: string }`、`TokenCapability` `'读'|'推'|'PR'`、`TokenCheck` `{ missing: TokenCapability[] }`、`CreateForgeAdapterOptions`、`ForgeAdapter`。`ImportedIssue` / `PrStatus` / `ForgeEvent` / `IssueRef` 为 `unknown`。已实现 `kind` + `validateToken`（全局 `fetch`，仅 GET）。其余接口方法抛出 `Error('not implemented')`。GitHub API 主机固定 `https://api.github.com`（忽略 `baseUrl`）；GitLab 去掉尾斜杠后拼 `/api/v4`；Gitea 拼 `/api/v1`。`package.json` 无运行时 HTTP 依赖。服务端尚未引用该包。
 
 ## 开发
 
@@ -106,7 +127,7 @@ docker-compose.yml
 pnpm install
 pnpm lint          # eslint .
 pnpm typecheck     # pnpm -r --if-present typecheck
-pnpm test          # node --experimental-strip-types --test packages/shared/src/index.test.ts packages/forge-adapters/src/index.test.ts apps/server/src/placeholder.test.ts
+pnpm test          # node --experimental-strip-types --test packages/shared/src/index.test.ts packages/forge-adapters/src/index.test.ts packages/forge-adapters/src/validate-token.shared.test.ts apps/server/src/placeholder.test.ts apps/server/src/auth.test.ts
 pnpm build         # pnpm -r --if-present build
 
 pnpm --filter @kaola/server start    # node --experimental-strip-types src/index.ts
@@ -134,7 +155,7 @@ CI：`.github/workflows/ci.yml` job `lint-test` 在 Node 22 上执行 `pnpm inst
 | M2 导入与自动闭环 | Issue 导入、webhook、状态回写 | #12–#14 |
 | M3 打磨 | 审计界面、统计、认领确认策略 | #15–#16 |
 
-当前仓库已落地 issue #1 的 M0 脚手架与 issue #2 的任务卡 schema / 状态机（`@kaola/shared`）。登录 / MCP / 看板仍未实现。
+当前仓库已落地 issue #1–#2（M0）、#3（OAuth / `users`）、#6（`ForgeAdapter.validateToken`）。M1 其余项（凭证库、任务板、租约、MCP、PR 轮询）仍未实现。
 
 ## 许可
 
