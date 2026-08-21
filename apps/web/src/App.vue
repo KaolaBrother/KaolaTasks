@@ -96,6 +96,10 @@
                     <n-text data-testid="board-detail-tags">{{ selectedTask.tags.join(' ') }}</n-text>
                     <n-text data-testid="board-detail-forge">{{ selectedTask.repo.forge }}</n-text>
                     <n-text data-testid="board-detail-credential">{{ credentialChrome(selectedTask.credential) }}</n-text>
+                    <n-text
+                      v-if="selectedTask.source.type === 'imported'"
+                      data-testid="board-detail-import-label"
+                    >导入内容</n-text>
                     <div v-if="boardIssueUrl(selectedTask) != null" data-testid="board-detail-issue-url">
                       <a
                         v-if="boardIssueUrlIsHttp(selectedTask)"
@@ -187,6 +191,7 @@
                   :options="sourceTypeOptions"
                 />
               </n-form-item>
+              <n-text v-if="taskSourceType === 'imported'" data-testid="task-import-source-label">导入内容</n-text>
               <n-form-item v-if="taskSourceType === 'imported'" label="Issue URL">
                 <n-input data-testid="task-issue-url" v-model:value="taskIssueUrl" placeholder="https://…" />
               </n-form-item>
@@ -276,6 +281,13 @@
                   />
                 </n-space>
               </n-form-item>
+              <n-button
+                v-if="taskSourceType === 'imported'"
+                data-testid="task-import"
+                @click="importTask"
+              >
+                导入
+              </n-button>
               <n-button
                 data-testid="task-submit"
                 type="primary"
@@ -830,6 +842,44 @@ async function createTask() {
     taskMessage.value = '发布请求失败'
   } finally {
     taskCreating.value = false
+  }
+}
+
+async function importTask() {
+  const credential =
+    taskCredentialMode.value === 'inline'
+      ? { token: taskCredentialToken.value }
+      : { profile_id: taskCredentialProfileId.value as number }
+
+  taskMessage.value = ''
+  taskOk.value = false
+  try {
+    const res = await fetch('/api/v1/tasks/import', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        issue_url: taskIssueUrl.value.trim(),
+        repo: { forge: taskForge.value, base_url: taskBaseUrl.value.trim() },
+        credential,
+      }),
+    })
+    const body = await readJson(res)
+    if (!res.ok) {
+      taskMessage.value =
+        typeof body?.message === 'string' ? body.message : `导入失败（${res.status}）`
+      return
+    }
+    if (typeof body?.title === 'string') taskTitle.value = body.title
+    if (typeof body?.description_md === 'string') taskDescription.value = body.description_md
+    const repo = body?.repo
+    if (repo != null && typeof repo === 'object') {
+      const fullName = (repo as { full_name?: unknown }).full_name
+      if (typeof fullName === 'string') taskRepo.value = fullName
+    }
+    taskSourceType.value = 'imported'
+  } catch {
+    taskMessage.value = '导入请求失败'
   }
 }
 </script>

@@ -667,6 +667,21 @@ describe('任务看板 — XSS', () => {
   })
 })
 
+describe('任务看板 — 导入内容来源标记（issue #12）', () => {
+  it('imported 详情显示 board-detail-import-label，文案恰好是「导入内容」；native 不渲染', async () => {
+    const { wrapper } = await mountBoard()
+
+    await openDetail(wrapper, TASK_OPEN.id)
+    expect(node(wrapper, 'board-detail').exists()).toBe(true)
+    expect(node(wrapper, 'board-detail-import-label').exists()).toBe(false)
+
+    await openDetail(wrapper, TASK_IN_PROGRESS.id)
+    expect(node(wrapper, 'board-detail-import-label').exists()).toBe(true)
+    expect(textOf(wrapper, 'board-detail-import-label').trim()).toBe('导入内容')
+    expect(node(wrapper, 'board-detail-issue-url').exists()).toBe(true)
+  })
+})
+
 describe('任务看板 — 中文文案', () => {
     it('界面文案是中文：任务看板 / 列表 / 看板 / 全部 / 关闭，不含 Kanban 或 Timeline', async () => {
     const { wrapper } = await mountBoard(ME_CLAIM_ONLY)

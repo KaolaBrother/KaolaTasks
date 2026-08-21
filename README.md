@@ -2,7 +2,7 @@
 
 > 团队内部任务协作平台：人发任务，Agent 接单，PR 交付。
 >
-> **状态**：M0 脚手架已落地；M1 切片 #3（多源 OAuth + `users`）、#4（Agent API Key）、#5（凭证档案 / vault）、#6（`ForgeAdapter` + `validateToken`）、#7（任务 CRUD / 发布即校验）、#8（任务看板 UI）、#9（REST 租约认领）、#10（MCP Server）、#11（PR 轮询）、#17（单端口 31415）已落地。webhook 自动闭环 / 状态回写源 Issue 尚未实现。设计文档 [v0.2](docs/DESIGN.md)。Backlog 见 [Issues](https://github.com/KaolaBrother/KaolaTasks/issues)。
+> **状态**：M0 脚手架已落地；M1 切片 #3（多源 OAuth + `users`）、#4（Agent API Key）、#5（凭证档案 / vault）、#6（`ForgeAdapter` + `validateToken`）、#7（任务 CRUD / 发布即校验）、#8（任务看板 UI）、#9（REST 租约认领）、#10（MCP Server）、#11（PR 轮询）、#17（单端口 31415）已落地；M2 切片 #12（三 forge Issue 导入 + UI「导入内容」来源标记）已落地。webhook 自动闭环 / 状态回写源 Issue 尚未实现。设计文档 [v0.2](docs/DESIGN.md)。Backlog 见 [Issues](https://github.com/KaolaBrother/KaolaTasks/issues)。
 
 ## 这是什么
 
@@ -12,15 +12,16 @@
 
 ## 核心特性
 
-以下为产品设计（见 [设计文档](docs/DESIGN.md)）。当前已落地的是登录、Agent Key、凭证档案 / vault、token 校验库、任务 CRUD（发布即校验）、任务看板、REST 租约认领、MCP Server 与 PR 轮询，即完整 M1（#3–#11）。
+以下为产品设计（见 [设计文档](docs/DESIGN.md)）。当前已落地的是登录、Agent Key、凭证档案 / vault、token 校验库、任务 CRUD（发布即校验）、任务看板、REST 租约认领、MCP Server、PR 轮询与 Issue 导入，即完整 M1（#3–#11）加上 M2 的 #12。
 
-**已落地（#3 / #4 / #5 / #6 / #7 / #8 / #9 / #10 / #11 / #17）：**
+**已落地（#3 / #4 / #5 / #6 / #7 / #8 / #9 / #10 / #11 / #12 / #17）：**
 
 - **多源 OAuth 登录**：GitHub / GitLab / Gitea；会话用户见 `GET /api/v1/me`；正式成员可 `POST /api/v1/users/:id/approve`
 - **Agent API Key**：`status === 'active'` 的成员可自助 `POST/GET /api/v1/agent-keys`、`DELETE /api/v1/agent-keys/:id`；明文 `token` 仅创建时返回一次（前缀 `ktk_`）；Bearer `GET /api/v1/agent/whoami`
-- **凭证档案 / vault**：`active` + `full` 可 `GET/POST /api/v1/credential-profiles`、`DELETE /api/v1/credential-profiles/:id`；forge token AES-256-GCM 加密存储；列表/创建响应不含 token。模块导出 `revealCredentialProfile`（本身不是 HTTP）。揭示 forge token 的通道：成功的 Bearer `POST /api/v1/tasks/:publicId/claim` `201` 顶层 `token`，以及 MCP `claim_task` 成功信封的 `token`。删除响应用中文提示到 forge 侧撤销
+- **凭证档案 / vault**：`active` + `full` 可 `GET/POST /api/v1/credential-profiles`、`DELETE /api/v1/credential-profiles/:id`；forge token AES-256-GCM 加密存储；列表/创建响应不含 token。模块导出 `revealCredentialProfile`（本身不是 HTTP）。揭示 forge token 的通道：成功的 Bearer `POST /api/v1/tasks/:publicId/claim` `201` 顶层 `token`，以及 MCP `claim_task` 成功信封的 `token`。`POST /api/v1/tasks/import` 的 `200` 永不含 token。删除响应用中文提示到 forge 侧撤销
 - **三 forge `validateToken`**：`createForgeAdapter(kind)` 对 GitHub / GitLab / Gitea 实测可读 / 可推 / 可开 PR（缺失项为 `读` | `推` | `PR`）；Push/PR 为 REST 权限代理，不实际 git push / POST PR。创建档案时**不**调用 `validateToken`；任务发布时作为适配器方法调用
 - **任务 CRUD / 发布即校验**：`GET/POST /api/v1/tasks`、`GET/PATCH /api/v1/tasks/:publicId`；`tasks` 表；发布即校验（`422` `token_check_failed` / `502` `forge_unreachable`）。中文「发布任务」表单（`active`+`full`）
+- **Issue 导入（#12）**：三 forge `importIssue`；会话 `POST /api/v1/tasks/import` 返回 `200` 草稿（标题 / `description_md` / `source: { type: 'imported', issue_url }` / `repo.{forge,base_url,full_name}`），不写入 `tasks` 行、不调用 `validateToken`、响应永不含 forge token。用户补全表单后仍走现有 `POST /api/v1/tasks` 发布即校验。UI 来源标记文案恰好是「导入内容」（表单 `task-import-source-label`、看板详情 `board-detail-import-label`）；按钮文案「导入」。Host 规则与 `getPullRequest` 相同（GitHub 固定 `api.github.com`；GitLab/Gitea 用构造函数 `baseUrl`，不用粘贴 URL 的主机）。`registerWebhook` / `parseWebhook` / `commentOnIssue` 仍未实现
 - **任务看板（#8）**：成员工作台中文「任务看板」，列表 / 看板双视图，客户端筛选（状态 / 标签 / Forge），详情含一条由 `created_at`+`poster` 合成的「发布」时间线。拉取 `GET /api/v1/tasks`（无 query）。无事件 HTTP。无 vue-router。无认领 UI。待批准用户仍看「账号待批准」卡（无看板）。`claim_only` 可见看板，不可见发布表单
 - **REST 租约认领（#9）**：Bearer `Authorization: Bearer ktk_…`；`POST /api/v1/tasks/:publicId/claim` `201` 键 `clone`、`lease`、`task`、`token`（`token` 为 forge 明文；`lease.ttl_seconds` 为数字 `86400`）；`POST …/progress` `200` `{ task, lease }` 无 token；`POST …/release` `200` `{ task }` 状态 `待认领` 无 token。会话 `GET` 列表/单条仍不含 token。过期靠 `sweepExpiredLeases`（读/写时检查），无 cron。无 REST `POST …/submit_pr`
 - **MCP Server（#10）**：Agent 将 Bearer API Key 配到 `POST {origin}/api/mcp`（Streamable HTTP；测试里 `initialize` 的 `protocolVersion` 为 `2025-11-25`；有状态 `mcp-session-id`）。未鉴权 → HTTP `401` `{ error: 'unauthorized' }` + `WWW-Authenticate: Bearer`（在 JSON-RPC 之前）。`GET`/`DELETE /api/mcp` 为 `405`。六个工具：`list_tasks` `{ tasks }`、`get_task_brief` 顶层 brief、`claim_task` 信封 `clone`/`lease`/`task`/`token`、`report_progress` `{ task, lease }`、`release_task` `{ task }`、`submit_pr` `{ task, pr_url, summary }` 且状态 `待验收`。业务错误为 JSON-RPC result `isError` + REST `{ error, message? }`（HTTP 200）。依赖 `@modelcontextprotocol/sdk` `1.30.0`、`zod` `^4.4.3`
@@ -29,7 +30,7 @@
 
 **设计中、尚未实现：**
 
-- **webhook 触发 / 状态回写源 Issue**：轮询兜底已落地（见上 #11）；forge webhook 触发与合并后状态回写源 Issue 仍未实现
+- **webhook 触发 / 状态回写源 Issue**：Issue 导入已落地（见上 #12）；轮询兜底已落地（见上 #11）；forge webhook 触发与合并后状态回写源 Issue 仍未实现
 
 ## 工作原理
 
@@ -39,7 +40,7 @@ sequenceDiagram
     participant K as 考拉任务
     participant A as 认领者的 Agent
     participant F as Forge
-    P->>K: 发布任务（附凭证，发布即校验）
+    P->>K: 导入 Issue 为草稿（可选）后发布任务（附凭证，发布即校验）
     A->>K: claim_task（API Key 鉴权）
     K-->>A: 任务卡 + 揭示 token + 租约
     A->>F: clone / 实现 / push 分支 / 开 PR
@@ -49,7 +50,7 @@ sequenceDiagram
     K->>K: 任务自动完成，回写源 Issue
 ```
 
-认领者**不需要**在目标 forge 上有账号——任务所附 token 即访问权（详见设计文档 §7）。MCP `claim_task` / `submit_pr` 已落地：Agent 将 Bearer API Key 配到 `POST {origin}/api/mcp`。Bearer REST 认领（`POST /api/v1/tasks/:publicId/claim` 等）仍可用。图中「轮询」一环已落地（`pollPendingReviews`，见上 #11）；「webhook」触发与状态回写源 Issue 仍是设计目标、尚未实现。OAuth 登录、Agent Key、凭证档案 / vault、`validateToken`、任务 CRUD、任务看板、REST 认领、MCP 与 PR 轮询已实现（见下）。
+认领者**不需要**在目标 forge 上有账号——任务所附 token 即访问权（详见设计文档 §7）。MCP `claim_task` / `submit_pr` 已落地：Agent 将 Bearer API Key 配到 `POST {origin}/api/mcp`。Bearer REST 认领（`POST /api/v1/tasks/:publicId/claim` 等）仍可用。图中「轮询」一环已落地（`pollPendingReviews`，见上 #11）；「webhook」触发与状态回写源 Issue 仍是设计目标、尚未实现。OAuth 登录、Agent Key、凭证档案 / vault、`validateToken`、任务 CRUD、Issue 导入、任务看板、REST 认领、MCP 与 PR 轮询已实现（见下）。
 
 ## 快速开始
 
@@ -116,7 +117,7 @@ docker compose up -d --build
 
 Agent Key（`apps/web/src/App.vue` 在 `status === 'active'` 时显示）：自助生成 / 列表 / 吊销；明文仅创建时显示一次。凭证档案（`active` 且 `permission_level === 'full'` 时显示）：按 forge + `base_url` + `repo_full_name` 保存加密 token；删除后界面展示 `请同时到 forge 侧撤销该 token。`。GitHub `claim_only` 可管理自己的 Agent Key，不能管理凭证档案。
 
-发布任务与看板已实现：`active` 且 `permission_level === 'full'` 时显示中文「发布任务」表单，`POST /api/v1/tasks`（发布即校验）。成员工作台（含 `claim_only`）显示「任务看板」（无认领按钮；详情仍只有一条合成「发布」时间线）。REST 认领已实现（Bearer `POST /api/v1/tasks/:publicId/claim` 等，见上）。Agent 将 Bearer API Key 配到 `POST {origin}/api/mcp`（六个 MCP 工具，见上）。目标流程见 [设计文档](docs/DESIGN.md) §3、§7、§9。
+发布任务与看板已实现：`active` 且 `permission_level === 'full'` 时显示中文「发布任务」表单，`POST /api/v1/tasks`（发布即校验）。来源选「从 Issue 导入」时可点「导入」走 `POST /api/v1/tasks/import`（`200` 草稿，不落库）；补全后仍点「发布」。导入正文带来源标记「导入内容」。成员工作台（含 `claim_only`）显示「任务看板」（无认领按钮；详情仍只有一条合成「发布」时间线）。REST 认领已实现（Bearer `POST /api/v1/tasks/:publicId/claim` 等，见上）。Agent 将 Bearer API Key 配到 `POST {origin}/api/mcp`（六个 MCP 工具，见上）。目标流程见 [设计文档](docs/DESIGN.md) §3、§7、§9。
 
 ## 项目结构
 
@@ -128,7 +129,7 @@ apps/
   server/          # @kaola/server — Fastify + drizzle-orm + better-sqlite3 + OAuth/session + agent keys + vault/profiles + tasks + claim/leases + mcp + poller；workspace 依赖 @kaola/shared、@kaola/forge-adapters
 packages/
   shared/          # @kaola/shared — 任务卡 zod schema + 状态机；getSharedHealth() → kaola-shared-ready
-  forge-adapters/  # @kaola/forge-adapters — ForgeAdapter + validateToken；getForgeAdaptersHealth() → kaola-forge-adapters-ready
+  forge-adapters/  # @kaola/forge-adapters — ForgeAdapter + validateToken + getPullRequest + importIssue；getForgeAdaptersHealth() → kaola-forge-adapters-ready
 docs/              # 设计与文档（DESIGN.md 为产品源头）
 scripts/dev.mjs    # 根目录 pnpm dev：Fastify :31415 + 本机 Vite 5173
 docker-compose.yml
@@ -137,7 +138,7 @@ docker-compose.yml
 
 `@kaola/shared` 导出任务卡 zod schema（`taskBriefSchema` / `parseTaskBrief`）与状态机（`transitionTaskStatus`），并保留 `getSharedHealth()` → `kaola-shared-ready`。`credential` 为 `z.union`：`{ profile_id: z.string() }` 或 `{ inline: z.literal(true) }`。依赖 `zod` `^4.4.3`。
 
-`@kaola/forge-adapters` 导出 `getForgeAdaptersHealth()` → `kaola-forge-adapters-ready`，以及 `createForgeAdapter(kind, options?: { baseUrl?: string })`。`validateToken` 是适配器方法，不是包级导出。类型：`ForgeKind`、`Credential` `{ token: string }`、`RepoRef` `{ full_name: string; base_url: string }`、`TokenCapability` `'读'|'推'|'PR'`、`TokenCheck` `{ missing: TokenCapability[] }`、`CreateForgeAdapterOptions`、`ForgeAdapter`。`ImportedIssue` / `ForgeEvent` / `IssueRef` 为 `unknown`；`PrStatus` 为 `{ state: 'open' | 'merged' | 'closed' }`（#11）。已实现 `kind` + `validateToken` + `getPullRequest`（全局 `fetch`，仅 GET）。其余接口方法抛出 `Error('not implemented')`。GitHub API 主机固定 `https://api.github.com`（忽略 `baseUrl`）；GitLab 去掉尾斜杠后拼 `/api/v4`；Gitea 拼 `/api/v1`。`getPullRequest(cred, prUrl)` 从传入的 PR/MR 网页 URL 解析出 owner/repo/number（GitHub `/pull/`、Gitea `/pulls/`、GitLab `/-/merge_requests/`；GitHub 支持 `.diff`/`.patch` 后缀与尾斜杠），拼出对应 forge 的 REST 端点；GitHub 端点固定用 `api.github.com`，GitLab / Gitea 用构造函数的 `baseUrl`（不是 prUrl 自身的主机）；`state` 由响应体推导（`merged: true` → `merged`；GitLab `state: 'merged'|'closed'`，其余（含 `opened`/`locked`）→ `open`；GitHub/Gitea `state: 'closed'` 且非 merged → `closed`，否则 `open`）；无法解析的 URL 或非 2xx 响应会 reject，且不会先发出请求。`package.json` 无运行时 HTTP 依赖。`@kaola/server` 以 `workspace:*` 引用该包（`createForgeAdapter`）。
+`@kaola/forge-adapters` 导出 `getForgeAdaptersHealth()` → `kaola-forge-adapters-ready`，以及 `createForgeAdapter(kind, options?: { baseUrl?: string })`。`validateToken`、`getPullRequest`、`importIssue` 是适配器方法，不是包级导出。包级另导出 `parseIssueUrl(kind, issueUrl)` → `{ full_name: string } | undefined`。类型：`ForgeKind`、`Credential` `{ token: string }`、`RepoRef` `{ full_name: string; base_url: string }`、`TokenCapability` `'读'|'推'|'PR'`、`TokenCheck` `{ missing: TokenCapability[] }`、`CreateForgeAdapterOptions`、`ForgeAdapter`。`ImportedIssue` 为 `{ title, description_md, issue_url, repo: { full_name } }`（#12）；`ForgeEvent` / `IssueRef` 为 `unknown`；`PrStatus` 为 `{ state: 'open' | 'merged' | 'closed' }`（#11）。已实现 `kind` + `validateToken` + `getPullRequest` + `importIssue`（全局 `fetch`，仅 GET）。`registerWebhook` / `parseWebhook` / `commentOnIssue` 抛出 `Error('not implemented')`。GitHub API 主机固定 `https://api.github.com`（忽略 `baseUrl`）；GitLab 去掉尾斜杠后拼 `/api/v4`；Gitea 拼 `/api/v1`。`getPullRequest(cred, prUrl)` 从传入的 PR/MR 网页 URL 解析出 owner/repo/number（GitHub `/pull/`、Gitea `/pulls/`、GitLab `/-/merge_requests/`；GitHub 支持 `.diff`/`.patch` 后缀与尾斜杠），拼出对应 forge 的 REST 端点；GitHub 端点固定用 `api.github.com`，GitLab / Gitea 用构造函数的 `baseUrl`（不是 prUrl 自身的主机）；`state` 由响应体推导（`merged: true` → `merged`；GitLab `state: 'merged'|'closed'`，其余（含 `opened`/`locked`）→ `open`；GitHub/Gitea `state: 'closed'` 且非 merged → `closed`，否则 `open`）；无法解析的 URL 或非 2xx 响应会 reject，无法解析时不会先发出请求。`importIssue(cred, issueUrl)` 用同一套 host 规则从 Issue 网页 URL 解析（GitHub/Gitea `/issues/{n}`，GitLab 先 `/-/issues/{iid}` 再遗留 `/issues/{iid}`），GET 对应 REST；`description_md` 来自 GitLab JSON `description`、GitHub/Gitea JSON `body`；返回的 `issue_url` 是去掉尾斜杠后的粘贴地址。`package.json` 无运行时 HTTP 依赖。`@kaola/server` 以 `workspace:*` 引用该包（`createForgeAdapter`、`parseIssueUrl`）。
 
 ## 开发
 
@@ -145,7 +146,7 @@ docker-compose.yml
 pnpm install
 pnpm lint          # eslint .
 pnpm typecheck     # pnpm -r --if-present typecheck
-pnpm test          # node --experimental-strip-types --test packages/shared/src/index.test.ts packages/forge-adapters/src/index.test.ts packages/forge-adapters/src/validate-token.shared.test.ts packages/forge-adapters/src/get-pull-request.shared.test.ts apps/server/src/placeholder.test.ts apps/server/src/auth.test.ts apps/server/src/agent-keys.test.ts apps/server/src/vault.test.ts apps/server/src/tasks.test.ts apps/server/src/hosting.test.ts apps/server/src/claim.test.ts apps/server/src/mcp.test.ts apps/server/src/poller.test.ts && pnpm --filter @kaola/web test
+pnpm test          # node --experimental-strip-types --test packages/shared/src/index.test.ts packages/forge-adapters/src/index.test.ts packages/forge-adapters/src/validate-token.shared.test.ts packages/forge-adapters/src/get-pull-request.shared.test.ts packages/forge-adapters/src/import-issue.shared.test.ts apps/server/src/import.test.ts apps/server/src/placeholder.test.ts apps/server/src/auth.test.ts apps/server/src/agent-keys.test.ts apps/server/src/vault.test.ts apps/server/src/tasks.test.ts apps/server/src/hosting.test.ts apps/server/src/claim.test.ts apps/server/src/mcp.test.ts apps/server/src/poller.test.ts && pnpm --filter @kaola/web test
 pnpm build         # pnpm -r --if-present build
 
 pnpm dev                             # node scripts/dev.mjs（Fastify :31415 + Vite 127.0.0.1:5173）
@@ -174,7 +175,7 @@ CI：`.github/workflows/ci.yml` job `lint-test` 在 Node 22 上执行 `pnpm inst
 | M2 导入与自动闭环 | Issue 导入、webhook、状态回写 | #12–#14 |
 | M3 打磨 | 审计界面、统计、认领确认策略 | #15–#16 |
 
-当前仓库已落地 issue #1–#2（M0）、#3（OAuth / `users`）、#4（Agent API Key）、#5（凭证档案 / vault）、#6（`ForgeAdapter.validateToken`）、#7（任务 CRUD / 发布即校验）、#8（任务看板 UI）、#9（REST 租约认领）、#10（MCP Server）、#11（PR 轮询）、#17（单端口 31415）。M1（#3–#11）已全部落地；M2 的 webhook 与状态回写源 Issue 尚未实现。
+当前仓库已落地 issue #1–#2（M0）、#3（OAuth / `users`）、#4（Agent API Key）、#5（凭证档案 / vault）、#6（`ForgeAdapter.validateToken`）、#7（任务 CRUD / 发布即校验）、#8（任务看板 UI）、#9（REST 租约认领）、#10（MCP Server）、#11（PR 轮询）、#12（Issue 导入）、#17（单端口 31415）。M1（#3–#11）已全部落地；M2 的 #12 已落地，webhook 与状态回写源 Issue 尚未实现。
 
 ## 许可
 

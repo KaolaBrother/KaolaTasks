@@ -1,5 +1,5 @@
-import { createForgeAdapter } from '@kaola/forge-adapters'
-import type { ForgeKind, TokenCapability, TokenCheck } from '@kaola/forge-adapters'
+import { createForgeAdapter, parseIssueUrl } from '@kaola/forge-adapters'
+import type { ForgeKind, ImportedIssue, TokenCapability, TokenCheck } from '@kaola/forge-adapters'
 import { taskStatusSchema, transitionTaskStatus } from '@kaola/shared'
 import type { TaskStatus } from '@kaola/shared'
 import { desc, eq, like, sql } from 'drizzle-orm'
@@ -20,8 +20,15 @@ const FORGE_UNREACHABLE_MESSAGE = '无法连接 forge 校验 token，任务未�
 const PROFILE_MISSING_MESSAGE = '所选凭证档案不存在。'
 const PROFILE_REPO_MISMATCH_MESSAGE = '所选凭证档案与仓库不匹配。'
 const REPO_BASE_URL_INVALID_MESSAGE = '仓库地址不是合法的 http 或 https 地址。'
+const UNPARSEABLE_ISSUE_URL_MESSAGE = '无法解析 Issue 地址。'
+const ISSUE_REPO_MISMATCH_MESSAGE = 'Issue 地址与仓库不匹配。'
+const IMPORT_ISSUE_NOT_FOUND_MESSAGE = '无法读取该 Issue。'
+const IMPORT_TOKEN_INVALID_MESSAGE = 'token 无效或无权读取该 Issue。'
+const IMPORT_FORGE_UNREACHABLE_MESSAGE = '无法连接 forge 导入 Issue。'
 const STATUS_TRANSITION_EVENT = '状态迁移'
 const TOKEN_REVEAL_EVENT = 'token 揭示'
+
+type TokenRevealOutcome = 'ok' | 'token_check_failed' | 'forge_unreachable' | 'issue_not_found'
 
 const FORGES = new Set(['github', 'gitlab', 'gitea'])
 const PRIORITIES = new Set(['P0', 'P1', 'P2', 'P3'])
@@ -164,7 +171,7 @@ function insertTokenRevealEvent(
     forge: ForgeKind
     baseUrl: string
     fullName: string
-    outcome: 'ok' | 'token_check_failed' | 'forge_unreachable'
+    outcome: TokenRevealOutcome
   },
 ): void {
   insertAuditEvent(db, {
@@ -201,6 +208,79 @@ function readProfileId(value: unknown): number | undefined {
     return Number.isInteger(id) && id > 0 ? id : undefined
   }
   return undefined
+}
+
+type ImportRepoInput = {
+  forge: ForgeKind
+  baseUrl: string
+  fullName?: string
+}
+
+type ImportTaskInput = {
+  issueUrl: string
+  repo: ImportRepoInput
+  credential: CredentialInput
+}
+
+function readImportRepo(value: unknown): ImportRepoInput | undefined {
+  if (value == null || typeof value !== 'object') return undefined
+  const raw = value as { forge?: unknown; base_url?: unknown; full_name?: unknown }
+  if (typeof raw.forge !== 'string' || !FORGES.has(raw.forge)) return undefined
+  if (typeof raw.base_url !== 'string' || raw.base_url === '') return undefined
+  if (raw.full_name === undefined) {
+    return { forge: raw.forge as ForgeKind, baseUrl: raw.base_url }
+  }
+  if (typeof raw.full_name !== 'string' || raw.full_name === '') return undefined
+  return { forge: raw.forge as ForgeKind, baseUrl: raw.base_url, fullName: raw.full_name }
+}
+
+function readImportBody(body: unknown): ImportTaskInput | undefined {
+  if (body == null || typeof body !== 'object') return undefined
+  const raw = body as { issue_url?: unknown; repo?: unknown; credential?: unknown }
+  if (typeof raw.issue_url !== 'string' || raw.issue_url === '') return undefined
+  const repo = readImportRepo(raw.repo)
+  if (repo == null) return undefined
+  const credential = readCredential(raw.credential)
+  if (credential == null) return undefined
+  return { issueUrl: raw.issue_url, repo, credential }
+}
+
+function forgeResponseStatus(err: unknown): number | undefined {
+  if (!(err instanceof Error)) return undefined
+  const match = /responded (\d+)\s*$/u.exec(err.message)
+  if (match == null) return undefined
+  return Number(match[1])
+}
+
+function importForgeFailure(err: unknown): {
+  status: number
+  body: Record<string, unknown>
+  outcome: Exclude<TokenRevealOutcome, 'ok'>
+} {
+  const forgeStatus = forgeResponseStatus(err)
+  if (forgeStatus === 404 || forgeStatus === 410) {
+    return {
+      status: 404,
+      body: { error: 'issue_not_found', message: IMPORT_ISSUE_NOT_FOUND_MESSAGE },
+      outcome: 'issue_not_found',
+    }
+  }
+  if (forgeStatus === 401) {
+    return {
+      status: 422,
+      body: {
+        error: 'token_check_failed',
+        missing: ['读'],
+        message: IMPORT_TOKEN_INVALID_MESSAGE,
+      },
+      outcome: 'token_check_failed',
+    }
+  }
+  return {
+    status: 502,
+    body: { error: 'forge_unreachable', message: IMPORT_FORGE_UNREACHABLE_MESSAGE },
+    outcome: 'forge_unreachable',
+  }
 }
 
 // The request carries real token material, so it is a { profile_id } XOR { token } union — a
@@ -555,6 +635,115 @@ export function registerTasks(app: FastifyInstance, db: AppDb) {
     })
 
     return reply.code(201).send(taskBrief({ task: inserted, posterUsername: user.username }))
+  })
+
+  // Issue #12: pre-publish draft. Does not persist a task and does not call validateToken.
+  app.post('/api/v1/tasks/import', async (request, reply) => {
+    const user = getSessionUser(db, request)
+    if (user == null) return sendUnauthorized(request, reply)
+    if (!canPostTasks(user)) {
+      return reply.code(403).send({ error: 'forbidden' })
+    }
+
+    const input = readImportBody(request.body)
+    if (input == null) {
+      return reply.code(400).send({ error: 'invalid_body' })
+    }
+    if (!isHttpOrHttpsUrlWithHost(input.repo.baseUrl)) {
+      return reply.code(400).send({
+        error: 'invalid_body',
+        message: REPO_BASE_URL_INVALID_MESSAGE,
+      })
+    }
+
+    const parsed = parseIssueUrl(input.repo.forge, input.issueUrl)
+    if (parsed == null) {
+      return reply.code(400).send({
+        error: 'invalid_body',
+        message: UNPARSEABLE_ISSUE_URL_MESSAGE,
+      })
+    }
+    if (input.repo.fullName != null && input.repo.fullName !== parsed.full_name) {
+      return reply.code(400).send({
+        error: 'invalid_body',
+        message: ISSUE_REPO_MISMATCH_MESSAGE,
+      })
+    }
+
+    let credentialProfileId: number | null = null
+    let plaintext: string
+    if ('profileId' in input.credential) {
+      const profile = db
+        .select()
+        .from(credentialProfiles)
+        .where(eq(credentialProfiles.id, input.credential.profileId))
+        .get()
+      if (profile == null) {
+        return reply.code(400).send({ error: 'invalid_body', message: PROFILE_MISSING_MESSAGE })
+      }
+      if (
+        input.repo.forge !== profile.forge ||
+        input.repo.baseUrl !== profile.baseUrl ||
+        parsed.full_name !== profile.repoFullName
+      ) {
+        return reply.code(400).send({
+          error: 'invalid_body',
+          message: PROFILE_REPO_MISMATCH_MESSAGE,
+        })
+      }
+      credentialProfileId = profile.id
+      try {
+        plaintext = decryptToken(profile.tokenEncrypted)
+      } catch (err) {
+        if (isVaultUnconfiguredError(err)) {
+          return reply.code(500).send({ error: 'vault_unconfigured' })
+        }
+        throw err
+      }
+    } else {
+      plaintext = input.credential.token
+    }
+
+    const adapter = createForgeAdapter(input.repo.forge, { baseUrl: input.repo.baseUrl })
+    let imported: ImportedIssue
+    try {
+      imported = await adapter.importIssue({ token: plaintext }, input.issueUrl)
+    } catch (err) {
+      const failure = importForgeFailure(err)
+      if (credentialProfileId != null) {
+        insertTokenRevealEvent(db, {
+          actorUserId: user.id,
+          profileId: credentialProfileId,
+          forge: input.repo.forge,
+          baseUrl: input.repo.baseUrl,
+          fullName: parsed.full_name,
+          outcome: failure.outcome,
+        })
+      }
+      return reply.code(failure.status).send(failure.body)
+    }
+
+    if (credentialProfileId != null) {
+      insertTokenRevealEvent(db, {
+        actorUserId: user.id,
+        profileId: credentialProfileId,
+        forge: input.repo.forge,
+        baseUrl: input.repo.baseUrl,
+        fullName: parsed.full_name,
+        outcome: 'ok',
+      })
+    }
+
+    return reply.code(200).send({
+      title: imported.title,
+      description_md: imported.description_md,
+      source: { type: 'imported', issue_url: imported.issue_url },
+      repo: {
+        forge: input.repo.forge,
+        base_url: input.repo.baseUrl,
+        full_name: imported.repo.full_name,
+      },
+    })
   })
 
   // DESIGN.md §5: 发布者取消 / 发布者重新开放. Claiming and 验收 are not poster edits.

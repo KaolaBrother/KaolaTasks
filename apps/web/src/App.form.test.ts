@@ -650,3 +650,134 @@ describe('发布任务表单 — 发布成功', () => {
     expect(textOf(wrapper, 'task-message')).toContain(CREATED_ID)
   })
 })
+
+// Issue #12 — pre-publish Issue import + 「导入内容」来源标记. Do not weaken the cases above.
+
+const IMPORT_TITLE = '从 Issue 导入的标题'
+const IMPORT_DESCRIPTION = '从 Issue 导入的正文'
+const IMPORT_ISSUE_URL = `${FORGE_BASE_URL}/team/orders/issues/87`
+const IMPORT_DRAFT = {
+  title: IMPORT_TITLE,
+  description_md: IMPORT_DESCRIPTION,
+  source: { type: 'imported', issue_url: IMPORT_ISSUE_URL },
+  repo: { forge: 'gitea', base_url: FORGE_BASE_URL, full_name: 'team/orders' },
+}
+
+function importCalls(calls: FetchCall[]): FetchCall[] {
+  return calls.filter((call) => call.method === 'POST' && call.url === '/api/v1/tasks/import')
+}
+
+async function clickImport(wrapper: VueWrapper) {
+  const button = node(wrapper, 'task-import')
+  if (!button.exists()) throw new Error('missing [data-testid="task-import"]')
+  await button.trigger('click')
+  await settle()
+}
+
+async function fillImportPrereqs(wrapper: VueWrapper) {
+  await setSelect(wrapper, 'task-source-type', 'imported')
+  await setField(wrapper, 'task-issue-url', IMPORT_ISSUE_URL)
+  await setSelect(wrapper, 'task-forge', 'gitea')
+  await setField(wrapper, 'task-base-url', FORGE_BASE_URL)
+  await setSelect(wrapper, 'task-credential-profile', 3)
+}
+
+describe('发布任务表单 — Issue 导入（issue #12）', () => {
+  it('来源为 imported 时显示导入按钮，文案是「导入」；native 时不渲染', async () => {
+    const { wrapper } = await mountApp()
+    expect(node(wrapper, 'task-import').exists()).toBe(false)
+
+    await setSelect(wrapper, 'task-source-type', 'imported')
+    expect(node(wrapper, 'task-import').exists()).toBe(true)
+    expect(textOf(wrapper, 'task-import').trim()).toBe('导入')
+
+    await setSelect(wrapper, 'task-source-type', 'native')
+    expect(node(wrapper, 'task-import').exists()).toBe(false)
+  })
+
+  it('来源标记 task-import-source-label 仅在 imported 可见，文案恰好是「导入内容」', async () => {
+    const { wrapper } = await mountApp()
+    expect(node(wrapper, 'task-import-source-label').exists()).toBe(false)
+
+    await setSelect(wrapper, 'task-source-type', 'imported')
+    expect(node(wrapper, 'task-import-source-label').exists()).toBe(true)
+    expect(textOf(wrapper, 'task-import-source-label').trim()).toBe('导入内容')
+
+    await setSelect(wrapper, 'task-source-type', 'native')
+    expect(node(wrapper, 'task-import-source-label').exists()).toBe(false)
+  })
+
+  it('点击导入：POST /api/v1/tasks/import，Accept + credentials，snake_case 体来自当前表单', async () => {
+    const { wrapper, calls, routes } = await mountApp()
+    routes.set('POST /api/v1/tasks/import', () => jsonResponse(200, IMPORT_DRAFT))
+    await fillImportPrereqs(wrapper)
+    await clickImport(wrapper)
+
+    expect(importCalls(calls)).toHaveLength(1)
+    const post = importCalls(calls)[0]
+    expect(post.method).toBe('POST')
+    expect(post.url).toBe('/api/v1/tasks/import')
+    expect(post.headers.accept).toBe('application/json')
+    expect(post.headers['content-type']).toBe('application/json')
+    expect(post.credentials).toBe('include')
+    expect(post.body).toEqual({
+      issue_url: IMPORT_ISSUE_URL,
+      repo: { forge: 'gitea', base_url: FORGE_BASE_URL },
+      credential: { profile_id: 3 },
+    })
+  })
+
+  it('内联 token 路径的导入请求发送 credential: { token }', async () => {
+    const { wrapper, calls, routes } = await mountApp()
+    routes.set('POST /api/v1/tasks/import', () => jsonResponse(200, IMPORT_DRAFT))
+    await setSelect(wrapper, 'task-source-type', 'imported')
+    await setField(wrapper, 'task-issue-url', IMPORT_ISSUE_URL)
+    await setSelect(wrapper, 'task-forge', 'gitea')
+    await setField(wrapper, 'task-base-url', FORGE_BASE_URL)
+    await setSelect(wrapper, 'task-credential-mode', 'inline')
+    await setField(wrapper, 'task-credential-token', 'ghp_oneoff_secret')
+    await clickImport(wrapper)
+    expect(importCalls(calls)[0].body).toEqual({
+      issue_url: IMPORT_ISSUE_URL,
+      repo: { forge: 'gitea', base_url: FORGE_BASE_URL },
+      credential: { token: 'ghp_oneoff_secret' },
+    })
+  })
+
+  it('200 后填入标题、描述、仓库 full_name，并保持来源为 imported', async () => {
+    const { wrapper, routes } = await mountApp()
+    routes.set('POST /api/v1/tasks/import', () => jsonResponse(200, IMPORT_DRAFT))
+    await fillImportPrereqs(wrapper)
+    await setField(wrapper, 'task-title', '旧标题')
+    await setField(wrapper, 'task-description', '旧描述')
+    await clickImport(wrapper)
+
+    expect(fieldValue(wrapper, 'task-title')).toBe(IMPORT_TITLE)
+    expect(fieldValue(wrapper, 'task-description')).toBe(IMPORT_DESCRIPTION)
+    expect(fieldValue(wrapper, 'task-repo')).toBe('team/orders')
+    expect(selectOf(wrapper, 'task-source-type').props('value')).toBe('imported')
+    expect(node(wrapper, 'task-issue-url').exists()).toBe(true)
+    expect(node(wrapper, 'task-import-source-label').exists()).toBe(true)
+    expect(textOf(wrapper, 'task-import-source-label').trim()).toBe('导入内容')
+  })
+
+  it('失败时展示服务端 message；没有 message 时用「导入失败（status）」且不改写发布失败文案', async () => {
+    const withMessage = await mountApp()
+    withMessage.routes.set('POST /api/v1/tasks/import', () =>
+      jsonResponse(400, { error: 'invalid_body', message: '无法解析 Issue 地址。' }),
+    )
+    await fillImportPrereqs(withMessage.wrapper)
+    await clickImport(withMessage.wrapper)
+    expect(textOf(withMessage.wrapper, 'task-message')).toContain('无法解析 Issue 地址。')
+    expect(textOf(withMessage.wrapper, 'task-message')).not.toContain('发布失败')
+    withMessage.wrapper.unmount()
+
+    const generic = await mountApp()
+    generic.routes.set('POST /api/v1/tasks/import', () => jsonResponse(404, { error: 'issue_not_found' }))
+    await fillImportPrereqs(generic.wrapper)
+    await clickImport(generic.wrapper)
+    expect(textOf(generic.wrapper, 'task-message')).toContain('导入失败（404）')
+    expect(textOf(generic.wrapper, 'task-message')).not.toContain('发布失败')
+    generic.wrapper.unmount()
+  })
+})

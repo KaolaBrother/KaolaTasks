@@ -17,8 +17,12 @@ export type TokenCheck = {
   missing: TokenCapability[]
 }
 
-/** Placeholder until later issues define DESIGN §8 payloads. */
-export type ImportedIssue = unknown
+export type ImportedIssue = {
+  title: string
+  description_md: string
+  issue_url: string
+  repo: { full_name: string }
+}
 export type PrStatus = { state: 'open' | 'merged' | 'closed' }
 export type ForgeEvent = unknown
 export type IssueRef = unknown
@@ -52,7 +56,7 @@ export function createForgeAdapter(
   return {
     kind,
     validateToken: (cred, repo) => validateToken(kind, options, cred, repo),
-    importIssue: notImplemented,
+    importIssue: (cred, issueUrl) => importIssue(kind, options, cred, issueUrl),
     getPullRequest: (cred, prUrl) => getPullRequest(kind, options, cred, prUrl),
     registerWebhook: notImplemented,
     parseWebhook: notImplemented,
@@ -194,6 +198,116 @@ async function getPullRequest(
   }
   const body: unknown = await res.json()
   return { state: derivePrState(kind, body) }
+}
+
+// Issue #12: import a forge Issue by its web URL. Host rule matches getPullRequest (GitHub always
+// api.github.com; GitLab/Gitea use constructor baseUrl, never the pasted host).
+type ParsedOwnerRepoIssue = { owner: string; repo: string; number: string }
+type ParsedGitlabIssue = { namespace: string; iid: string }
+
+function parsedIssueUrl(url: string): URL | undefined {
+  try {
+    return new URL(url.replace(/\/+$/u, ''))
+  } catch {
+    return undefined
+  }
+}
+
+function parseOwnerRepoIssueUrl(issueUrl: string): ParsedOwnerRepoIssue | undefined {
+  const url = parsedIssueUrl(issueUrl)
+  if (url == null) return undefined
+  const match = /^\/([^/]+)\/([^/]+)\/issues\/(\d+)$/u.exec(url.pathname)
+  if (match == null) return undefined
+  return { owner: match[1] as string, repo: match[2] as string, number: match[3] as string }
+}
+
+function parseGitlabIssueUrl(issueUrl: string): ParsedGitlabIssue | undefined {
+  const url = parsedIssueUrl(issueUrl)
+  if (url == null) return undefined
+  const canonical = /^\/(.+)\/-\/issues\/(\d+)$/u.exec(url.pathname)
+  if (canonical != null) {
+    return { namespace: canonical[1] as string, iid: canonical[2] as string }
+  }
+  const legacy = /^\/(.+)\/issues\/(\d+)$/u.exec(url.pathname)
+  if (legacy == null) return undefined
+  return { namespace: legacy[1] as string, iid: legacy[2] as string }
+}
+
+export function parseIssueUrl(
+  kind: ForgeKind,
+  issueUrl: string,
+): { full_name: string } | undefined {
+  if (kind === 'gitlab') {
+    const parsed = parseGitlabIssueUrl(issueUrl)
+    return parsed == null ? undefined : { full_name: parsed.namespace }
+  }
+  const parsed = parseOwnerRepoIssueUrl(issueUrl)
+  return parsed == null ? undefined : { full_name: `${parsed.owner}/${parsed.repo}` }
+}
+
+function resolveImportedIssue(
+  kind: ForgeKind,
+  options: CreateForgeAdapterOptions | undefined,
+  issueUrl: string,
+): { apiUrl: string; fullName: string } {
+  const origin = prApiOrigin(kind, options)
+  if (kind === 'github') {
+    const parsed = parseOwnerRepoIssueUrl(issueUrl)
+    if (parsed == null) {
+      throw new Error(`unparseable GitHub issue URL: ${issueUrl}`)
+    }
+    return {
+      apiUrl: `${origin}/repos/${encodeURIComponent(parsed.owner)}/${encodeURIComponent(parsed.repo)}/issues/${parsed.number}`,
+      fullName: `${parsed.owner}/${parsed.repo}`,
+    }
+  }
+  if (kind === 'gitlab') {
+    const parsed = parseGitlabIssueUrl(issueUrl)
+    if (parsed == null) {
+      throw new Error(`unparseable GitLab issue URL: ${issueUrl}`)
+    }
+    return {
+      apiUrl: `${origin}/api/v4/projects/${encodeURIComponent(parsed.namespace)}/issues/${parsed.iid}`,
+      fullName: parsed.namespace,
+    }
+  }
+  const parsed = parseOwnerRepoIssueUrl(issueUrl)
+  if (parsed == null) {
+    throw new Error(`unparseable Gitea issue URL: ${issueUrl}`)
+  }
+  return {
+    apiUrl: `${origin}/api/v1/repos/${encodeURIComponent(parsed.owner)}/${encodeURIComponent(parsed.repo)}/issues/${parsed.number}`,
+    fullName: `${parsed.owner}/${parsed.repo}`,
+  }
+}
+
+function readIssueDescription(kind: ForgeKind, body: Record<string, unknown> | undefined): string {
+  const raw = kind === 'gitlab' ? body?.description : body?.body
+  return typeof raw === 'string' ? raw : ''
+}
+
+async function importIssue(
+  kind: ForgeKind,
+  options: CreateForgeAdapterOptions | undefined,
+  cred: Credential,
+  issueUrl: string,
+): Promise<ImportedIssue> {
+  const resolved = resolveImportedIssue(kind, options, issueUrl)
+  const res = await forgeGet(kind, resolved.apiUrl, cred.token)
+  if (!res.ok) {
+    throw new Error(`importIssue: ${kind} responded ${res.status}`)
+  }
+  const payload: unknown = await res.json()
+  const obj = asObject(payload)
+  if (typeof obj?.title !== 'string') {
+    throw new Error(`importIssue: ${kind} issue is missing a title`)
+  }
+  return {
+    title: obj.title,
+    description_md: readIssueDescription(kind, obj),
+    issue_url: issueUrl.replace(/\/+$/u, ''),
+    repo: { full_name: resolved.fullName },
+  }
 }
 
 function userPath(): string {

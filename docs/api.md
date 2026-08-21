@@ -4,7 +4,7 @@ Document public APIs, endpoints, schemas, events, and integration contracts.
 
 Product contracts that are not yet in source remain in [DESIGN.md](DESIGN.md) §6 (任务卡 Schema), §8 (ForgeAdapter), §9 (MCP 工具面 / REST). This file records what is implemented.
 
-MCP tools (`list_tasks`, `get_task_brief`, `claim_task`, `report_progress`, `submit_pr`, `release_task`) are implemented (`registerMcp` in `apps/server/src/mcp.ts`): Bearer `POST /api/mcp` Streamable HTTP. Claim HTTP is also implemented (`registerClaim` in `apps/server/src/claim.ts`): Bearer `POST /api/v1/tasks/:publicId/claim`, `…/progress`, `…/release` (no REST `submit_pr`). Forge token reveal channels: successful `POST …/claim` `201` top-level `token` **and** MCP `claim_task` success `token`. Session `GET /api/v1/tasks` and `GET /api/v1/tasks/:publicId` never contain it. Task CRUD HTTP is implemented (`registerTasks` in `apps/server/src/tasks.ts`). `revealCredentialProfile` is a module export from `apps/server/src/vault.ts` (not itself HTTP). PR polling (`pollPendingReviews` in `apps/server/src/poller.ts`) is **not** an HTTP route — it is either called directly (tests) or driven by an internal `setInterval` registered by `buildApp({ pollIntervalMs })`; it is the only thing that moves a task out of `待验收`. There is still no webhook route.
+MCP tools (`list_tasks`, `get_task_brief`, `claim_task`, `report_progress`, `submit_pr`, `release_task`) are implemented (`registerMcp` in `apps/server/src/mcp.ts`): Bearer `POST /api/mcp` Streamable HTTP. Claim HTTP is also implemented (`registerClaim` in `apps/server/src/claim.ts`): Bearer `POST /api/v1/tasks/:publicId/claim`, `…/progress`, `…/release` (no REST `submit_pr`). Forge token reveal channels: successful `POST …/claim` `201` top-level `token` **and** MCP `claim_task` success `token`. Session `GET /api/v1/tasks` and `GET /api/v1/tasks/:publicId` never contain it. `POST /api/v1/tasks/import` `200` never contains a forge token. Task CRUD HTTP is implemented (`registerTasks` in `apps/server/src/tasks.ts`), including the pre-publish draft `POST /api/v1/tasks/import`. `revealCredentialProfile` is a module export from `apps/server/src/vault.ts` (not itself HTTP). PR polling (`pollPendingReviews` in `apps/server/src/poller.ts`) is **not** an HTTP route — it is either called directly (tests) or driven by an internal `setInterval` registered by `buildApp({ pollIntervalMs })`; it is the only thing that moves a task out of `待验收`. There is still no webhook route.
 
 ## HTTP (`@kaola/server`)
 
@@ -134,6 +134,24 @@ Then `createForgeAdapter(repo.forge, { baseUrl: repo.base_url }).validateToken({
 Profile path writes `events.type` `token 揭示` after decrypt (including 422 / 502): `details` `{ profile_id, forge, base_url, full_name, outcome }` with `outcome` `ok` | `token_check_failed` | `forge_unreachable`. `profile_id` is the integer profile PK. No token / ciphertext / `agent_key_id` in details. Inline path does not write this event.
 
 `201` the Task Brief (`status` `待认领`). No response contains a token.
+
+### `POST /api/v1/tasks/import`
+
+Session cookie. Same `active`+`full` gate as create (`403` `{ error: 'forbidden' }`). Unauthenticated: same oracle as `GET /api/v1/me`. Pre-publish draft in `registerTasks`: does **not** insert a `tasks` row and does **not** call `validateToken` (发布即校验 stays on `POST /api/v1/tasks`).
+
+Wire is snake_case. Required: non-empty `issue_url`; `repo.forge` `github` | `gitlab` | `gitea`; non-empty `repo.base_url`; request `credential` `{ profile_id }` XOR `{ token }` (same union as create). `repo.full_name` is optional. Generic parse failure → `400` `{ error: 'invalid_body' }` (no `message`).
+
+`repo.base_url` must parse as `http:` or `https:` with a non-empty hostname; else `400` `{ error: 'invalid_body', message: '仓库地址不是合法的 http 或 https 地址。' }` (before any forge fetch).
+
+Parses `issue_url` with package-level `parseIssueUrl(forge, issue_url)` **before** decrypt. Unparseable → `400` `{ error: 'invalid_body', message: '无法解析 Issue 地址。' }` (zero fetch; no `token 揭示`). If `repo.full_name` is present it must equal the parsed `full_name`; else `400` `{ error: 'invalid_body', message: 'Issue 地址与仓库不匹配。' }`.
+
+Profile path: load `credential_profiles` by id; missing → `400` `{ error: 'invalid_body', message: '所选凭证档案不存在。' }`. Bind `repo.forge` / `repo.base_url` / **parsed** `full_name` to the profile row with exact `===` **before** decrypt; mismatch → `400` `{ error: 'invalid_body', message: '所选凭证档案与仓库不匹配。' }` (no `token 揭示` event). Then `decryptToken`. Inline path: uses the request token as-is and does **not** encrypt (nothing is persisted). Missing or invalid `VAULT_MASTER_KEY` on the profile path → `500` `{ error: 'vault_unconfigured' }`.
+
+Then `createForgeAdapter(repo.forge, { baseUrl: repo.base_url }).importIssue({ token }, issue_url)`. Forge HTTP 404 or 410 → `404` `{ error: 'issue_not_found', message: '无法读取该 Issue。' }`. Forge HTTP 401 → `422` `{ error: 'token_check_failed', missing: ['读'], message: 'token 无效或无权读取该 Issue。' }`. Other non-OK forge status or a network throw → `502` `{ error: 'forge_unreachable', message: '无法连接 forge 导入 Issue。' }`.
+
+Profile path writes `events.type` `token 揭示` after decrypt (including 404 / 422 / 502): `details` `{ profile_id, forge, base_url, full_name, outcome }` with `outcome` `ok` | `issue_not_found` | `token_check_failed` | `forge_unreachable`. `profile_id` is the integer profile PK. No token / ciphertext / `agent_key_id` in details. Inline path does not write this event.
+
+`200` `{ title, description_md, source: { type: 'imported', issue_url }, repo: { forge, base_url, full_name } }` (`full_name` is the parsed/imported name; `forge`/`base_url` echo the request). Not a Task Brief. Nested objects must not contain keys `token` / `token_encrypted` / `inline_token_encrypted` / `access_token`. This `200` never contains a forge token.
 
 ### `PATCH /api/v1/tasks/:publicId`
 
@@ -268,6 +286,7 @@ No events HTTP. Rows written in source:
 - profile create/delete: `type` `变更`, `details` JSON `{ "action": "create" | "delete", "profile_id": <n> }`
 - `revealCredentialProfile`: `type` `token 揭示`, `details` JSON `{ "agent_key_id": <n>, "profile_id": <n> }`
 - POST `/api/v1/tasks` profile path (after decrypt, including 422 / 502): `type` `token 揭示`, `details` JSON `{ "profile_id": <n>, "forge": <forge>, "base_url": <string>, "full_name": <string>, "outcome": "ok" | "token_check_failed" | "forge_unreachable" }` (no token; no `agent_key_id`; inline path does not write this)
+- POST `/api/v1/tasks/import` profile path (after decrypt, including 404 / 422 / 502): `type` `token 揭示`, `details` JSON `{ "profile_id": <n>, "forge": <forge>, "base_url": <string>, "full_name": <string>, "outcome": "ok" | "issue_not_found" | "token_check_failed" | "forge_unreachable" }` (no token; no `agent_key_id`; inline path does not write this)
 - PATCH `/api/v1/tasks/:publicId` success: `type` `状态迁移`, `details` JSON `{ "task_id": <public_id>, "from": <status>, "to": <status> }`
 - POST `/api/v1/tasks/:publicId/claim` success: `type` `token 揭示`, `details` JSON `{ "task_id": <public_id>, "agent_key_id": <n>, "credential": "inline" | "profile", "profile_id"? }` (`profile_id` only when `credential === 'profile'`, integer profile PK; no plaintext, no ciphertext) then `type` `状态迁移`, `details` JSON `{ "task_id": <public_id>, "from": <status>, "to": <status> }` (claimer `actor_user_id`)
 - POST `/api/v1/tasks/:publicId/progress` success: `type` `心跳`, `details` JSON `{ "task_id": <public_id>, "note": <string> }` (`note` is `''` when omitted)
@@ -284,7 +303,7 @@ No events HTTP. Rows written in source:
 
 `insertAuditEvent(db, { type, actorUserId, details })` with `actorUserId: number | null` (expiry writes SQL NULL).
 
-`revealCredentialProfile(db, { profileId, actorUserId, agentKeyId })` decrypts the profile row and returns the plaintext string. Missing row throws `Error('credential profile not found')`. Writes a `token 揭示` event. Does not log the token. Not an HTTP handler. Forge token reveal channels: successful Bearer `POST /api/v1/tasks/:publicId/claim` `201` top-level `token` and MCP `claim_task` success `token`.
+`revealCredentialProfile(db, { profileId, actorUserId, agentKeyId })` decrypts the profile row and returns the plaintext string. Missing row throws `Error('credential profile not found')`. Writes a `token 揭示` event. Does not log the token. Not an HTTP handler. Forge token reveal channels: successful Bearer `POST /api/v1/tasks/:publicId/claim` `201` top-level `token` and MCP `claim_task` success `token`. `POST /api/v1/tasks/import` `200` never contains a forge token.
 
 ### Env (`registerAuth`)
 
@@ -298,7 +317,7 @@ Callback URIs: `${publicUrl}/login/{github|gitlab|gitea}/callback` (`publicUrl` 
 
 Read by `encryptToken` / `decryptToken` in `vault.ts` when encrypting or decrypting. Not required at `buildApp()` or `registerAuth` boot.
 
-Must match `/^[0-9a-fA-F]{64}$/` and decode to 32 bytes. Missing, empty, or invalid → `VaultUnconfiguredError` (`code` `vault_unconfigured`). Create-profile HTTP, `POST /api/v1/tasks`, `POST /api/v1/tasks/:publicId/claim`, and MCP `claim_task` (same `claimTask` decrypt) map that to `500` `{ error: 'vault_unconfigured' }` (MCP: `isError` + that body, HTTP 200). Not `SESSION_SECRET`.
+Must match `/^[0-9a-fA-F]{64}$/` and decode to 32 bytes. Missing, empty, or invalid → `VaultUnconfiguredError` (`code` `vault_unconfigured`). Create-profile HTTP, `POST /api/v1/tasks`, `POST /api/v1/tasks/import` (profile decrypt), `POST /api/v1/tasks/:publicId/claim`, and MCP `claim_task` (same `claimTask` decrypt) map that to `500` `{ error: 'vault_unconfigured' }` (MCP: `isError` + that body, HTTP 200). Not `SESSION_SECRET`.
 
 There is no `.env.example` in the repository.
 
@@ -310,14 +329,17 @@ Package export `"."` → `./src/index.ts`. No runtime HTTP dependency (global `f
 
 - `getForgeAdaptersHealth(): string` → `'kaola-forge-adapters-ready'`
 - `createForgeAdapter(kind, options?: { baseUrl?: string }): ForgeAdapter`
+- `parseIssueUrl(kind, issueUrl): { full_name: string } | undefined`
 
-`validateToken` is `ForgeAdapter.validateToken`, not a package-level export.
+Unknown `kind` to `createForgeAdapter` throws `Error('unknown forge kind: …')`.
+
+`validateToken` is `ForgeAdapter.validateToken`, not a package-level export. `importIssue` is `ForgeAdapter.importIssue`, not a package-level export. `parseIssueUrl(kind, issueUrl): { full_name: string } | undefined` **is** a package-level export (same Issue URL parsers as `importIssue`).
 
 Types: `ForgeKind` `'github' | 'gitlab' | 'gitea'`; `Credential` `{ token: string }`; `RepoRef` `{ full_name: string; base_url: string }`; `TokenCapability` `'读' | '推' | 'PR'`; `TokenCheck` `{ missing: TokenCapability[] }`; `CreateForgeAdapterOptions`; `ForgeAdapter`.
 
-Placeholders: `ImportedIssue`, `ForgeEvent`, `IssueRef` are `unknown`. `PrStatus` is `{ state: 'open' | 'merged' | 'closed' }` (no longer `unknown`, #11).
+`ImportedIssue` is `{ title: string; description_md: string; issue_url: string; repo: { full_name: string } }` (no longer `unknown`, #12). Placeholders: `ForgeEvent`, `IssueRef` are `unknown`. `PrStatus` is `{ state: 'open' | 'merged' | 'closed' }` (no longer `unknown`, #11).
 
-Implemented: `kind` + `validateToken` (GET-only) + `getPullRequest` (GET-only, #11). Other interface methods throw `Error('not implemented')`.
+Implemented: `kind` + `validateToken` (GET-only) + `getPullRequest` (GET-only, #11) + `importIssue` (GET-only, #12). `registerWebhook` / `parseWebhook` / `commentOnIssue` throw `Error('not implemented')`.
 
 API hosts: GitHub always `https://api.github.com` (ignores `baseUrl`). GitLab: strip trailing slashes then `/api/v4`. Gitea: `/api/v1`. GitLab/Gitea origin is `options?.baseUrl ?? repo.base_url`. GitLab repo path: `/projects/${encodeURIComponent(full_name)}`. GitHub/Gitea repo path: `/repos/${full_name}`. User path: `/user`.
 
@@ -339,7 +361,18 @@ State derivation from the response body: GitLab `state === 'merged'` → `merged
 
 A non-OK HTTP response rejects (after actually calling `fetch`). An unparseable `prUrl` rejects **without** calling `fetch`.
 
-Unknown `kind` throws `Error('unknown forge kind: …')`.
+### `importIssue(cred, issueUrl)`
+
+`Credential` here carries only a bare `issueUrl` string (no `RepoRef`). Host rule matches `getPullRequest` (reuses `prApiOrigin`): GitHub REST origin is always `https://api.github.com`; GitLab/Gitea REST origin is the adapter constructor `options.baseUrl` (trailing slashes stripped), **never** the host embedded in `issueUrl`. A trailing slash is stripped (`replace(/\/+$/u, '')`); query and hash are dropped by `URL.pathname`. Auth headers reuse `forgeGet` / `authHeaders`.
+
+Pathname after strip:
+
+- GitHub / Gitea: `/{owner}/{repo}/issues/{number}` → GitHub `GET https://api.github.com/repos/{owner}/{repo}/issues/{number}`; Gitea `GET {baseUrl}/api/v1/repos/{owner}/{repo}/issues/{number}`
+- GitLab canonical: `/{namespace}/-/issues/{iid}` tried **before** legacy `/{namespace}/issues/{iid}` → `GET {baseUrl}/api/v4/projects/{encodeURIComponent(namespace)}/issues/{iid}`
+
+`ImportedIssue` mapping: `title` ← JSON `title` (missing/non-string rejects after the one fetch); `description_md` ← GitLab JSON `description`, GitHub/Gitea JSON `body` (`null` / missing / non-string → `''`); `issue_url` ← the pasted web URL after trailing-slash strip (not API `html_url` / `web_url`); `repo.full_name` ← GitHub/Gitea `owner/repo`, GitLab full namespace.
+
+A non-OK HTTP response rejects after `fetch` with `importIssue: ${kind} responded ${status}`. An unparseable `issueUrl` (including `/pull/`, `/pulls/`, `/-/merge_requests/`, `/-/work_items/` pathnames) rejects **without** calling `fetch`.
 
 ## `@kaola/shared`
 
