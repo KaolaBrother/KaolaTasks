@@ -1,0 +1,843 @@
+1a6272c109c204f6c3d3c23eef6b39dde987c363 chore: archive issue-10 [sink]
+---
+$ node --experimental-strip-types --test packages/shared/src/index.test.ts packages/forge-adapters/src/index.test.ts packages/forge-adapters/src/validate-token.shared.test.ts packages/forge-adapters/src/get-pull-request.shared.test.ts apps/server/src/placeholder.test.ts apps/server/src/auth.test.ts apps/server/src/agent-keys.test.ts apps/server/src/vault.test.ts apps/server/src/tasks.test.ts apps/server/src/hosting.test.ts apps/server/src/claim.test.ts apps/server/src/mcp.test.ts apps/server/src/poller.test.ts && pnpm --filter @kaola/web test
+▶ unauthenticated session agent-key routes
+  ✔ JSON Accept is 401 unauthorized without WWW-Authenticate; browser-like requests redirect to /login (40.720666ms)
+✔ unauthenticated session agent-key routes (41.044792ms)
+▶ GET /api/v1/agent/whoami Bearer failures
+  ✔ missing, wrong, and non-Bearer credentials are 401 with WWW-Authenticate Bearer (5.578208ms)
+  ✔ a session cookie does not authorize whoami; GET /api/v1/me does not accept Bearer (9.295625ms)
+✔ GET /api/v1/agent/whoami Bearer failures (15.009917ms)
+▶ pending GitHub cannot generate Agent Keys
+  ✔ pending GitHub POST /api/v1/agent-keys returns 403 with the generate-gate message (6.323125ms)
+✔ pending GitHub cannot generate Agent Keys (6.427542ms)
+▶ approved GitHub claim_only self-service
+  ✔ approved GitHub claim_only can generate, list without plaintext, update last_used_at, and revoke immediately (7.929625ms)
+✔ approved GitHub claim_only self-service (7.996458ms)
+▶ GitLab and Gitea full+active self-service
+  ✔ GitLab full+active can generate keys without VAULT_MASTER_KEY; GET / stays 考拉任务服务占位 (5.175792ms)
+  ✔ Gitea full+active can generate, list, and use Bearer whoami (3.961792ms)
+✔ GitLab and Gitea full+active self-service (9.22175ms)
+▶ list and revoke are own keys only
+  ✔ a full member cannot list or revoke another user's key; missing and not-owned DELETE are 404 not_found (5.4545ms)
+✔ list and revoke are own keys only (5.522167ms)
+▶ agent_keys hashed storage
+  ✔ SQLite stores sha256 hex of plaintext utf8, never the token, unique key_hash; failed Bearer does not set last_used_at (10.270292ms)
+✔ agent_keys hashed storage (10.331917ms)
+▶ login start paths
+  ✔ GET /login is allowed without a session (38.430792ms)
+  ✔ GET /login/github redirects to GitHub authorize (5.304708ms)
+  ✔ GET /login/gitlab redirects to the configured GitLab authorize URL (4.257708ms)
+  ✔ GET /login/gitea redirects to the configured Gitea authorize URL (3.856084ms)
+✔ login start paths (52.288459ms)
+▶ unauthenticated GET /api/v1/me
+  ✔ browser-like GET /api/v1/me redirects to /login and does not return a user (3.414834ms)
+  ✔ JSON GET /api/v1/me without a session returns 401 and does not return a user (2.766833ms)
+✔ unauthenticated GET /api/v1/me (6.279875ms)
+▶ OAuth callback first login
+  ✔ GitHub first login persists 待批准 claim_only user and a usable session (15.62ms)
+  ✔ GitHub display_name falls back to login when name is null (4.954334ms)
+  ✔ GitLab first login persists active full user and a usable session (3.210458ms)
+  ✔ Gitea first login persists active full user and a usable session (2.968042ms)
+  ✔ Gitea display_name falls back to login when full_name is empty (3.563667ms)
+  ✔ second GitHub callback with the same remote_id reuses the same user id (3.186917ms)
+  ✔ the same remote_id on GitHub and GitLab is two users (2.6625ms)
+✔ OAuth callback first login (36.384417ms)
+▶ pending GitHub users and approve
+  ✔ pending GitHub user cannot POST /api/v1/users/:id/approve (2.974667ms)
+  ✔ an active full member can approve a GitHub user to active while leaving claim_only (2.933084ms)
+  ✔ approving does not reset on GitHub re-login, and claim_only still cannot approve others (4.565709ms)
+✔ pending GitHub users and approve (10.549583ms)
+▶ issue #9 lease-based claiming
+  ▶ authentication — Bearer only
+    ✔ unauthenticated claim, progress, and release are 401 unauthorized with WWW-Authenticate Bearer (47.889ms)
+    ✔ wrong and non-Bearer credentials are 401 with WWW-Authenticate Bearer (11.277375ms)
+    ✔ a session cookie without Bearer does not authorize claim, progress, or release (6.179459ms)
+    ✔ unknown publicId with a valid Bearer key is 404 not_found (7.112834ms)
+    ✔ numeric PK in the path with a valid Bearer key is 404 not_found (6.336042ms)
+  ✔ authentication — Bearer only (79.199667ms)
+  ▶ POST /api/v1/tasks/:publicId/claim — 201 envelope
+    ✔ claiming an inline task returns 201 with task, forge token, lease TTL, and clone guidance (6.068792ms)
+    ✔ claiming a profile task returns 201; credential stays { profile_id }; token is the profile forge plaintext (12.428ms)
+    ✔ session GET list and GET one after a successful claim still omit forge token and secret keys (6.021584ms)
+  ✔ POST /api/v1/tasks/:publicId/claim — 201 envelope (24.656375ms)
+  ▶ AuthZ
+    ✔ pending 待批准 seeded Agent Key is 403, does not reveal the forge token, and writes no token 揭示 (11.520958ms)
+    ✔ approved GitHub claim_only can claim (6.251125ms)
+    ✔ active full can claim (5.173459ms)
+  ✔ AuthZ (23.051875ms)
+  ▶ conflicts / illegal states
+    ✔ second claim while 进行中 is 409 conflict, no token, and no second reveal (13.555875ms)
+    ✔ claiming a 已取消 task is 409 illegal_transition (5.046792ms)
+    ✔ claiming a 待验收 task is 409 illegal_transition (8.782375ms)
+    ✔ progress and release by a non-holder are 403 forbidden (5.251291ms)
+    ✔ progress and release with no live lease are 409 conflict 任务未被认领 (3.6045ms)
+    ✔ progress and release after the holder released are 409 任务未被认领 (4.530417ms)
+  ✔ conflicts / illegal states (40.925083ms)
+  ▶ heartbeat
+    ✔ omitted note still renews expires_at from heartbeat time and writes 心跳 with note empty string (11.059625ms)
+    ✔ a progress note is persisted on the 心跳 event; empty note still renews (11.973375ms)
+  ✔ heartbeat (23.101417ms)
+  ▶ release
+    ✔ holder release returns 200 { task } 待认领, marks the lease released, and writes 状态迁移 without reason (13.950417ms)
+    ✔ release with reason stores reason on the 状态迁移 event (10.575542ms)
+  ✔ release (24.602833ms)
+  ▶ expiry
+    ✔ check-on-read: after TTL, session GET list and GET one show 待认领, lease expired, actor_user_id null, reveal rows unchanged (12.422125ms)
+    ✔ check-on-write: after TTL, progress sweeps then returns 409 任务未被认领 (11.288916ms)
+    ✔ after expiry a different Agent Key can claim again and writes a second token 揭示 (15.026416ms)
+  ✔ expiry (38.837125ms)
+  ▶ reveal audit
+    ✔ inline claim writes token 揭示 { task_id, agent_key_id, credential: inline } and 状态迁移 待认领→进行中 (9.512042ms)
+    ✔ profile claim writes token 揭示 with credential profile and integer profile_id; no plaintext or ciphertext (10.30425ms)
+  ✔ reveal audit (19.889375ms)
+  ▶ leases table
+    ✔ successful claim inserts one active lease keyed by tasks.id PK; at most one active row per task (10.932166ms)
+  ✔ leases table (10.982666ms)
+✔ issue #9 lease-based claiming (285.556542ms)
+▶ issue #17 single-port 31415 hosting
+  ✔ omitted hosting options keep GET / as 考拉任务服务占位 with text/plain; webDist serves index.html at / (61.979583ms)
+  ✔ webDist SPA-fallbacks unmatched GET, serves assets, and does not swallow /api or /login (7.703958ms)
+  ✔ when webDist and viteDevTarget are both set, webDist wins (4.814833ms)
+  ✔ index.ts PORT default is 31415 (source pin; does not import index.ts) (0.587541ms)
+  ✔ auth.ts PUBLIC_URL default is http://localhost:31415 (source pin) (0.216292ms)
+  ✔ vite.config.ts proxies /api and /login to http://127.0.0.1:31415 (0.147458ms)
+  ✔ docker-compose maps 31415:31415 and sets PORT 31415 (0.131542ms)
+  ✔ Dockerfile EXPOSE 31415, ENV PORT=31415, and image build includes web dist (0.16725ms)
+  ✔ root package.json has a non-empty dev script (0.126291ms)
+✔ issue #17 single-port 31415 hosting (76.405625ms)
+▶ issue #10 MCP server
+  ▶ authentication — Bearer only, HTTP 401 before JSON-RPC
+    ✔ unauthenticated POST /api/mcp (missing Authorization) is 401 unauthorized with WWW-Authenticate Bearer (34.167417ms)
+    ✔ Token scheme, Basic, and wrong Bearer on POST /api/mcp are 401 with WWW-Authenticate Bearer (10.381667ms)
+    ✔ a session cookie without Bearer does not authorize POST /api/mcp (11.4635ms)
+    ✔ authenticated tools/list includes the six tools and claim_task describes token hygiene (15.265709ms)
+  ✔ authentication — Bearer only, HTTP 401 before JSON-RPC (71.629167ms)
+  ▶ list_tasks / get_task_brief
+    ✔ list_tasks returns { tasks } briefs that parse and never contain forge secrets (13.947875ms)
+    ✔ list_tasks filters by exact status, tag membership of one tag, and exact repo.forge (19.403208ms)
+    ✔ list_tasks and get_task_brief apply sweepExpiredLeases so an expired 进行中 task shows as 待认领 (11.082792ms)
+    ✔ a pending 待批准 Agent Key may list_tasks (12.339209ms)
+    ✔ get_task_brief returns a top-level brief; missing and numeric ids are isError not_found (14.0215ms)
+  ✔ list_tasks / get_task_brief (71.01775ms)
+  ▶ claim_task
+    ✔ claim_task success envelope keys are exactly task, token, lease, clone with the REST clone pin (9.761209ms)
+    ✔ pending claim_task is isError matching REST 403, reveals no token, and writes no token 揭示 (9.677167ms)
+    ✔ second claim_task is conflict; list_tasks and get_task_brief still omit the forge token (17.060875ms)
+  ✔ claim_task (36.592542ms)
+  ▶ report_progress / release_task
+    ✔ report_progress wraps REST: optional note (omit → empty string), envelope { task, lease }, no token (15.177458ms)
+    ✔ release_task wraps REST: optional reason, envelope { task } 待认领, no token (17.570584ms)
+    ✔ non-holder report_progress and release_task are isError forbidden with no message (7.28075ms)
+    ✔ report_progress and release_task with no live lease are isError 任务未被认领 (6.824375ms)
+  ✔ report_progress / release_task (46.973542ms)
+  ▶ submit_pr
+    ✔ submit_pr success is { task, pr_url, summary } 待验收, persists submissions, clears the lease, writes 状态迁移 (13.386708ms)
+    ✔ submit_pr fails for non-holder, no lease, and not 进行中 (21.88675ms)
+  ✔ submit_pr (35.355667ms)
+✔ issue #10 MCP server (261.787333ms)
+✔ getPlaceholderBody returns the pinned non-empty placeholder HTTP body (0.297083ms)
+node:internal/modules/esm/resolve:275
+    throw new ERR_MODULE_NOT_FOUND(
+          ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/apps/server/src/poller.ts' imported from /Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/apps/server/src/poller.test.ts
+    at finalizeResolution (node:internal/modules/esm/resolve:275:11)
+    at moduleResolve (node:internal/modules/esm/resolve:865:10)
+    at defaultResolve (node:internal/modules/esm/resolve:991:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:719:20)
+    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:736:38)
+    at ModuleLoader.resolveSync (node:internal/modules/esm/loader:765:52)
+    at #resolve (node:internal/modules/esm/loader:701:17)
+    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:621:35)
+    at ModuleJob.syncLink (node:internal/modules/esm/module_job:160:33)
+    at ModuleJob.link (node:internal/modules/esm/module_job:245:17) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/apps/server/src/poller.ts'
+}
+
+Node.js v24.14.0
+✖ apps/server/src/poller.test.ts (227.157917ms)
+▶ issue #7 tasks HTTP surface
+  ▶ authentication and DESIGN §11 permissions
+    ✔ unauthenticated JSON GET/POST/PATCH return 401 unauthorized (37.392625ms)
+    ✔ browser-like GET /api/v1/tasks redirects to /login (5.294041ms)
+    ✔ 待批准 GitHub user may read the board (§11 查看任务板 ✓) but not post (18.668459ms)
+    ✔ approved GitHub claim_only user may read the board but not post or patch (14.677417ms)
+    ✔ only the 发布者 may cancel — another active full member gets 403 (6.534416ms)
+  ✔ authentication and DESIGN §11 permissions (83.016583ms)
+  ▶ POST /api/v1/tasks — 凭证档案下拉选择 path
+    ✔ profile path creates a 待认领 task whose credential is { profile_id } (6.286292ms)
+    ✔ profile_id is accepted as a number and as a numeric string (11.33525ms)
+    ✔ an unknown profile_id is refused with 400 invalid_body and a Chinese message (3.762125ms)
+  ✔ POST /api/v1/tasks — 凭证档案下拉选择 path (21.511958ms)
+  ▶ POST /api/v1/tasks — 单任务临时 token path
+    ✔ inline token path creates a 待认领 task whose credential is { inline: true } (4.743458ms)
+    ✔ inline token is stored as ciphertext and recoverable through the vault (7.998541ms)
+    ✔ both credential paths return 500 vault_unconfigured without VAULT_MASTER_KEY (4.17825ms)
+  ✔ POST /api/v1/tasks — 单任务临时 token path (17.015958ms)
+  ▶ 发布即校验 — DESIGN §5
+    ✔ a token missing 推 and PR is refused with 422 and names both capabilities (3.64125ms)
+    ✔ a token that can push but cannot open PRs is refused naming only PR (2.658042ms)
+    ✔ a 401 token is refused with the token-invalid message, not the 权限不足 one (2.825167ms)
+    ✔ a token with no access to the repo is refused with the token-invalid message (2.77625ms)
+    ✔ an unreachable forge is a DIFFERENT outcome: 502 with its own Chinese message (3.401083ms)
+    ✔ the profile path is validated too — an under-scoped profile token is refused (3.30825ms)
+  ✔ 发布即校验 — DESIGN §5 (18.756583ms)
+  ▶ 任务卡字段完整符合 §6 schema
+    ✔ a full request body round-trips every DESIGN §6 field (4.315833ms)
+    ✔ pr_convention is derived from the public id, per DESIGN §6 (3.161458ms)
+    ✔ a client-supplied pr_convention or id or status is ignored — the server owns them (3.478625ms)
+    ✔ an imported source round-trips issue_url; a native source carries only type (3.232583ms)
+    ✔ a minimal request body is completed with the documented defaults (2.405417ms)
+    ✔ created_at is ISO-8601 with offset and matches the stored unix seconds (6.355125ms)
+    ✔ POST with no title returns 400 invalid_body (2.359916ms)
+    ✔ POST with an empty title returns 400 invalid_body (2.129792ms)
+    ✔ POST with no repo returns 400 invalid_body (4.607625ms)
+    ✔ POST with an unknown forge returns 400 invalid_body (2.188416ms)
+    ✔ POST with no repo.full_name returns 400 invalid_body (2.303917ms)
+    ✔ POST with an unknown priority returns 400 invalid_body (2.084458ms)
+    ✔ POST with an unknown source type returns 400 invalid_body (1.86ms)
+    ✔ POST with an imported source without issue_url returns 400 invalid_body (1.732875ms)
+    ✔ POST with no credential returns 400 invalid_body (1.89075ms)
+    ✔ POST with an empty credential returns 400 invalid_body (2.48775ms)
+    ✔ POST with both credential forms at once returns 400 invalid_body (2.274459ms)
+    ✔ POST with a bare inline marker and no token returns 400 invalid_body (2.283667ms)
+    ✔ POST with an empty inline token returns 400 invalid_body (2.970834ms)
+  ✔ 任务卡字段完整符合 §6 schema (54.466125ms)
+  ▶ public_id — kt-YYYY-NNNN
+    ✔ public_id has the kt-YYYY-NNNN form and carries the current year (3.329417ms)
+    ✔ public ids are distinct and their sequence increases (3.891917ms)
+    ✔ public_id is UNIQUE in SQLite (7.849084ms)
+  ✔ public_id — kt-YYYY-NNNN (15.155583ms)
+  ▶ token secrecy — DESIGN §7
+    ✔ no create/list/get response carries the inline token in any field (3.724709ms)
+    ✔ no create/list/get response carries the profile token in any field (3.70075ms)
+  ✔ token secrecy — DESIGN §7 (7.485416ms)
+  ▶ GET /api/v1/tasks and GET /api/v1/tasks/:public_id
+    ✔ list returns every task under a tasks key, each a §6 brief (3.776583ms)
+    ✔ get by public_id returns exactly the brief that create returned (6.242625ms)
+    ✔ an unknown public_id returns 404 not_found (2.896417ms)
+    ✔ a numeric-looking id returns 404 not_found — tasks are addressed by public_id only (3.926666ms)
+  ✔ GET /api/v1/tasks and GET /api/v1/tasks/:public_id (16.932ms)
+  ▶ PATCH /api/v1/tasks/:public_id — 取消 / 重新开放
+    ✔ 待认领 → 已取消 by the poster returns the updated brief (3.587625ms)
+    ✔ 已退回 → 待认领 reopens the task (8.986209ms)
+    ✔ 已退回 → 已取消 by the poster (8.315667ms)
+    ✔ an illegal transition 待认领 → 已完成 returns 409 with a Chinese message (3.657791ms)
+    ✔ 待认领 → 进行中 is claim territory, not a poster edit: 409 illegal_transition (2.756375ms)
+    ✔ 已取消 is terminal — 已取消 → 待认领 returns 409 (3.084875ms)
+    ✔ an unknown status value returns 400 invalid_body (3.933917ms)
+    ✔ PATCH on an unknown public_id returns 404 not_found (2.7325ms)
+  ✔ PATCH /api/v1/tasks/:public_id — 取消 / 重新开放 (37.211875ms)
+  ▶ audit — 状态迁移 events (DESIGN §10)
+    ✔ cancelling writes one 状态迁移 event naming the task, from, to and actor (7.109042ms)
+    ✔ reopening writes a 状态迁移 event from 已退回 to 待认领 (6.718916ms)
+    ✔ a refused transition writes no 状态迁移 event (6.500292ms)
+  ✔ audit — 状态迁移 events (DESIGN §10) (20.409333ms)
+  ▶ tasks table invariants (DESIGN §10: credential_profile_id / inline_token_encrypted 二选一)
+    ✔ the profile path stores credential_profile_id and leaves inline_token_encrypted NULL (7.192583ms)
+    ✔ SQLite refuses a row with BOTH credential columns set (8.320333ms)
+    ✔ SQLite refuses a row with NEITHER credential column set (5.598417ms)
+  ✔ tasks table invariants (DESIGN §10: credential_profile_id / inline_token_encrypted 二选一) (21.182292ms)
+  ▶ POST /api/v1/tasks — security-review repair (profile binding / base_url / audit)
+    ▶ F1 — profile-to-repo binding (exact forge + base_url + full_name)
+      ✔ gitlab profile + gitea request is 400 before decrypt and never sends the plaintext token (7.009417ms)
+      ✔ matching forge and full_name with an attacker base_url is 400 before decrypt (6.966791ms)
+      ✔ matching forge and base_url with a different full_name is 400 before decrypt (6.438791ms)
+    ✔ F1 — profile-to-repo binding (exact forge + base_url + full_name) (20.484959ms)
+    ▶ F2 — repo.base_url must be http(s) with a non-empty host
+      ✔ POST with repo.base_url a file: URL returns 400 invalid_body before any forge fetch (2.507791ms)
+      ✔ POST with repo.base_url a javascript: URL returns 400 invalid_body before any forge fetch (2.499875ms)
+      ✔ POST with repo.base_url a missing scheme returns 400 invalid_body before any forge fetch (2.289125ms)
+      ✔ POST with repo.base_url an empty host returns 400 invalid_body before any forge fetch (2.153916ms)
+    ✔ F2 — repo.base_url must be http(s) with a non-empty host (9.527375ms)
+    ▶ F3 — decrypting a stored profile for 发布即校验 writes token 揭示
+      ✔ a matching profile 201 writes token 揭示 with pinned details; an inline token does not (7.890792ms)
+      ✔ a profile-path 422 still writes token 揭示 (plaintext already left the process) (6.119334ms)
+      ✔ a profile-path 502 still writes token 揭示 (plaintext already left the process) (5.775708ms)
+    ✔ F3 — decrypting a stored profile for 发布即校验 writes token 揭示 (19.867292ms)
+  ✔ POST /api/v1/tasks — security-review repair (profile binding / base_url / audit) (49.93125ms)
+✔ issue #7 tasks HTTP surface (363.42725ms)
+▶ issue #5 credential vault
+  ▶ placeholder pin
+    ✔ GET / still returns 考拉任务服务占位 (40.88625ms)
+  ✔ placeholder pin (41.214125ms)
+  ▶ unauthenticated credential-profile routes
+    ✔ JSON GET/POST/DELETE without a session return 401 unauthorized (12.374458ms)
+    ✔ browser-like GET /api/v1/credential-profiles redirects to /login (8.247875ms)
+  ✔ unauthenticated credential-profile routes (20.751584ms)
+  ▶ credential profile CRUD (session, active full)
+    ✔ GitLab POST returns 201 public fields and GET lists them without secrets (10.182125ms)
+    ✔ Gitea active full member can POST a credential profile (5.725291ms)
+    ✔ duplicate (forge, base_url, repo_full_name) returns 409 conflict (7.189541ms)
+    ✔ DELETE returns forge-revoke copy; missing id is 404 not_found (6.856208ms)
+    ✔ any active full member lists and deletes team-shared profiles (6.43175ms)
+  ✔ credential profile CRUD (session, active full) (36.665583ms)
+  ▶ permission gate (profiles are active+full only)
+    ✔ pending GitHub user gets 403 forbidden on POST/GET/DELETE (4.240959ms)
+    ✔ approved GitHub claim_only still gets 403 forbidden on POST/GET/DELETE (5.705417ms)
+  ✔ permission gate (profiles are active+full only) (10.018333ms)
+  ▶ SQLite: no plaintext token; 变更 events
+    ✔ token_encrypted TEXT omits plaintext and create writes 变更 (8.4535ms)
+    ✔ DELETE writes 变更 action delete (8.946666ms)
+  ✔ SQLite: no plaintext token; 变更 events (17.469625ms)
+  ▶ vault_unconfigured
+    ✔ HTTP POST without VAULT_MASTER_KEY returns 500 vault_unconfigured (3.335708ms)
+  ✔ vault_unconfigured (3.383458ms)
+  ▶ encryptToken / decryptToken (dynamic import ./vault.ts)
+    ✔ round-trips a one-off token string and ciphertext omits plaintext (0.304541ms)
+    ✔ encryptToken throws when VAULT_MASTER_KEY is missing (0.209792ms)
+  ✔ encryptToken / decryptToken (dynamic import ./vault.ts) (0.544792ms)
+  ▶ revealCredentialProfile (dynamic import ./vault.ts)
+    ✔ returns plaintext, writes token 揭示 audit, and throws after DELETE (10.449458ms)
+  ✔ revealCredentialProfile (dynamic import ./vault.ts) (10.500583ms)
+✔ issue #5 credential vault (140.828333ms)
+▶ getPullRequest shared spec
+  ▶ github
+    ✖ GETs the pull/merge-request endpoint with validateToken-style auth headers (1.210333ms)
+    ✖ merged → { state: "merged" } (0.142834ms)
+    ✖ closed and not merged → { state: "closed" } (0.09325ms)
+    ✖ open → { state: "open" } (0.076125ms)
+    ✖ trailing slash on the pasted URL is stripped before parsing (0.071833ms)
+    ✖ non-OK HTTP response rejects (after actually calling fetch, not merely throwing) (0.54225ms)
+    ✖ an unparseable prUrl rejects without calling fetch, while a valid URL from the same adapter succeeds (0.1395ms)
+  ✖ github (2.858959ms)
+  ▶ gitlab
+    ✖ GETs the pull/merge-request endpoint with validateToken-style auth headers (0.184958ms)
+    ✖ merged → { state: "merged" } (0.117167ms)
+    ✖ closed and not merged → { state: "closed" } (0.100541ms)
+    ✖ open → { state: "open" } (0.066375ms)
+    ✖ trailing slash on the pasted URL is stripped before parsing (0.044375ms)
+    ✖ non-OK HTTP response rejects (after actually calling fetch, not merely throwing) (0.141083ms)
+    ✖ an unparseable prUrl rejects without calling fetch, while a valid URL from the same adapter succeeds (0.06625ms)
+  ✖ gitlab (0.895167ms)
+  ▶ gitea
+    ✖ GETs the pull/merge-request endpoint with validateToken-style auth headers (0.098917ms)
+    ✖ merged → { state: "merged" } (0.0385ms)
+    ✖ closed and not merged → { state: "closed" } (0.035ms)
+    ✖ open → { state: "open" } (0.03125ms)
+    ✖ trailing slash on the pasted URL is stripped before parsing (0.031417ms)
+    ✖ non-OK HTTP response rejects (after actually calling fetch, not merely throwing) (0.077417ms)
+    ✖ an unparseable prUrl rejects without calling fetch, while a valid URL from the same adapter succeeds (0.037333ms)
+  ✖ gitea (0.416ms)
+  ✖ github: .diff and .patch suffixes on the pasted URL are stripped before parsing (0.067167ms)
+  ✖ github: always calls api.github.com regardless of a custom baseUrl option (0.047166ms)
+  ✖ gitlab: opened → open (verified 4-valued vendor enum mapped down to 3) (0.041792ms)
+  ✖ gitlab: locked (transient, en route to merged) → open, not merged and not closed (0.048167ms)
+  ✖ gitlab: a namespace path with subgroup slashes is encodeURIComponent-ed as a single :id segment (0.060542ms)
+  ✖ gitlab/gitea: the API origin comes from the constructor baseUrl option, not from the prUrl host (0.065625ms)
+✖ getPullRequest shared spec (4.869584ms)
+✔ getForgeAdaptersHealth returns the pinned non-empty forge-adapters package health string (0.34475ms)
+▶ validateToken shared spec
+  ▶ github
+    ✔ all ok: GET user + push-capable repo → missing [] (same-repo, no /forks) (12.418ms)
+    ✔ cannot read: repo/project GET 404 → missing includes 读 (0.3325ms)
+    ✔ dead token: user GET 401 → missing includes 读, 推, and PR (0.1315ms)
+    ✔ read but cannot push (Reporter / push:false / access_level 20) → missing 推, not 读 (0.377208ms)
+    ✔ cannot open PR/MR while readable → missing includes PR (0.854375ms)
+    ✔ custom baseUrl: GitLab/Gitea keep subpath; GitHub always api.github.com (0.26475ms)
+  ✔ github (14.788208ms)
+  ▶ gitlab
+    ✔ all ok: GET user + push-capable repo → missing [] (same-repo, no /forks) (1.413ms)
+    ✔ cannot read: repo/project GET 404 → missing includes 读 (0.256833ms)
+    ✔ dead token: user GET 401 → missing includes 读, 推, and PR (0.144417ms)
+    ✔ read but cannot push (Reporter / push:false / access_level 20) → missing 推, not 读 (0.2255ms)
+    ✔ cannot open PR/MR while readable → missing includes PR (0.157041ms)
+    ✔ custom baseUrl: GitLab/Gitea keep subpath; GitHub always api.github.com (0.131ms)
+  ✔ gitlab (2.495583ms)
+  ▶ gitea
+    ✔ all ok: GET user + push-capable repo → missing [] (same-repo, no /forks) (0.491917ms)
+    ✔ cannot read: repo/project GET 404 → missing includes 读 (0.141292ms)
+    ✔ dead token: user GET 401 → missing includes 读, 推, and PR (0.084791ms)
+    ✔ read but cannot push (Reporter / push:false / access_level 20) → missing 推, not 读 (0.156833ms)
+    ✔ cannot open PR/MR while readable → missing includes PR (0.232625ms)
+    ✔ custom baseUrl: GitLab/Gitea keep subpath; GitHub always api.github.com (0.223ms)
+  ✔ gitea (1.445334ms)
+  ✔ github classic PAT without repo scope cannot push or open PR (0.30275ms)
+✔ validateToken shared spec (19.324875ms)
+✔ getSharedHealth returns the pinned non-empty shared package health string (0.349167ms)
+▶ parseTaskBrief
+  ✔ parseTaskBrief accepts the DESIGN.md §6 Task Brief example including Chinese ellipsis description (1.841875ms)
+  ✔ parseTaskBrief accepts a valid brief whose source is native with no issue_url (0.341292ms)
+  ✔ parseTaskBrief accepts status 待认领 (0.105458ms)
+  ✔ parseTaskBrief accepts status 进行中 (0.066833ms)
+  ✔ parseTaskBrief accepts status 待验收 (0.064834ms)
+  ✔ parseTaskBrief accepts status 已完成 (0.058ms)
+  ✔ parseTaskBrief accepts status 已退回 (0.063125ms)
+  ✔ parseTaskBrief accepts status 已取消 (0.064958ms)
+  ✔ parseTaskBrief accepts repo.forge github (0.10725ms)
+  ✔ parseTaskBrief accepts repo.forge gitlab (0.232ms)
+  ✔ parseTaskBrief accepts repo.forge gitea (0.083542ms)
+  ✔ parseTaskBrief accepts priority P0 (0.0785ms)
+  ✔ parseTaskBrief accepts priority P1 (0.042917ms)
+  ✔ parseTaskBrief accepts priority P2 (0.040292ms)
+  ✔ parseTaskBrief accepts priority P3 (0.043792ms)
+  ✔ parseTaskBrief rejects a brief missing required field id (0.387708ms)
+  ✔ parseTaskBrief rejects a brief missing required field title (0.14325ms)
+  ✔ parseTaskBrief rejects a brief missing required field description_md (0.0965ms)
+  ✔ parseTaskBrief rejects a brief missing required field source (0.080917ms)
+  ✔ parseTaskBrief rejects a brief missing required field repo (0.0625ms)
+  ✔ parseTaskBrief rejects a brief missing required field acceptance_criteria (0.060375ms)
+  ✔ parseTaskBrief rejects a brief missing required field test_command (0.065041ms)
+  ✔ parseTaskBrief rejects a brief missing required field constraints (0.053375ms)
+  ✔ parseTaskBrief rejects a brief missing required field pr_convention (0.071292ms)
+  ✔ parseTaskBrief rejects a brief missing required field credential (0.134375ms)
+  ✔ parseTaskBrief rejects a brief missing required field priority (0.097ms)
+  ✔ parseTaskBrief rejects a brief missing required field tags (0.050959ms)
+  ✔ parseTaskBrief rejects a brief missing required field poster (0.051584ms)
+  ✔ parseTaskBrief rejects a brief missing required field status (0.050417ms)
+  ✔ parseTaskBrief rejects a brief missing required field created_at (0.041125ms)
+  ✔ parseTaskBrief rejects a brief missing repo.forge (0.080667ms)
+  ✔ parseTaskBrief rejects a brief missing repo.base_url (0.04725ms)
+  ✔ parseTaskBrief rejects a brief missing repo.full_name (0.047ms)
+  ✔ parseTaskBrief rejects a brief missing repo.base_branch (0.039625ms)
+  ✔ parseTaskBrief rejects a brief missing repo.suggested_dir (0.042458ms)
+  ✔ parseTaskBrief rejects a brief missing constraints.allowed_paths (0.047625ms)
+  ✔ parseTaskBrief rejects a brief missing constraints.forbidden_paths (0.040208ms)
+  ✔ parseTaskBrief rejects a brief missing pr_convention.branch_prefix (0.045875ms)
+  ✔ parseTaskBrief rejects a brief missing pr_convention.title_prefix (0.037959ms)
+  ✔ parseTaskBrief rejects status that is not one of the six Chinese labels (0.046958ms)
+  ✔ parseTaskBrief rejects repo.forge outside github | gitlab | gitea (0.043791ms)
+  ✔ parseTaskBrief rejects imported source without issue_url (0.047709ms)
+  ✔ parseTaskBrief rejects native source that includes issue_url (0.078708ms)
+  ✔ parseTaskBrief rejects priority outside P0|P1|P2|P3 (0.04375ms)
+  ✔ parseTaskBrief rejects a raw token field on the brief (0.056417ms)
+  ✔ parseTaskBrief rejects credential that has no profile_id (0.124ms)
+  ✔ parseTaskBrief rejects a raw token field inside credential (0.070083ms)
+  ✔ parseTaskBrief rejects credential that includes both profile_id and a raw token (0.050625ms)
+✔ parseTaskBrief (6.143417ms)
+▶ parseTaskBrief credential union
+  ✔ parseTaskBrief accepts credential { profile_id } — the shared credential profile form (0.121667ms)
+  ✔ parseTaskBrief accepts credential { inline: true } — the single-task temporary token form (0.037ms)
+  ✔ parseTaskBrief round-trips credential { inline: true } without adding or dropping keys (0.045958ms)
+  ✔ parseTaskBrief accepts the DESIGN.md §6 example when its credential row is the inline form (0.042292ms)
+  ✔ parseTaskBrief rejects credential { inline: false } — inline is a marker, only true is legal (0.065583ms)
+  ✔ parseTaskBrief rejects credential carrying both profile_id and inline (二选一, exactly one form) (1.518083ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type "yes" (0.182ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type "true" (0.085958ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type 1 (0.06125ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type 0 (0.051666ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type null (0.046125ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type [] (0.04275ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type {} (0.04275ms)
+  ✔ parseTaskBrief rejects credential {} — neither form is present (0.064083ms)
+  ✔ parseTaskBrief rejects a credential shape that is neither profile_id nor inline (0.059125ms)
+  ✔ parseTaskBrief rejects an unknown extra key alongside profile_id (0.076416ms)
+  ✔ parseTaskBrief rejects an unknown extra key alongside inline: true (0.074542ms)
+  ✔ parseTaskBrief rejects a raw token alongside inline: true (0.065458ms)
+  ✔ parseTaskBrief rejects a ciphertext-bearing credential even in the inline form (0.076166ms)
+  ✔ parseTaskBrief rejects profile_id that is not a string (0.0665ms)
+  ✔ parseTaskBrief rejects credential that is not an object: "cp-gitea-orders" (0.062333ms)
+  ✔ parseTaskBrief rejects credential that is not an object: 42 (0.058708ms)
+  ✔ parseTaskBrief rejects credential that is not an object: true (0.040542ms)
+  ✔ parseTaskBrief rejects credential that is not an object: null (0.038375ms)
+  ✔ parseTaskBrief rejects credential that is not an object: [] (0.040708ms)
+✔ parseTaskBrief credential union (3.268958ms)
+▶ transitionTaskStatus
+  ✔ transitionTaskStatus rejects 待认领 → 待认领 (0.166416ms)
+  ✔ transitionTaskStatus allows 待认领 → 进行中 (0.034792ms)
+  ✔ transitionTaskStatus rejects 待认领 → 待验收 (0.025709ms)
+  ✔ transitionTaskStatus rejects 待认领 → 已完成 (0.02325ms)
+  ✔ transitionTaskStatus rejects 待认领 → 已退回 (0.023083ms)
+  ✔ transitionTaskStatus allows 待认领 → 已取消 (0.034625ms)
+  ✔ transitionTaskStatus allows 进行中 → 待认领 (0.021375ms)
+  ✔ transitionTaskStatus rejects 进行中 → 进行中 (0.023541ms)
+  ✔ transitionTaskStatus allows 进行中 → 待验收 (0.029417ms)
+  ✔ transitionTaskStatus rejects 进行中 → 已完成 (0.023167ms)
+  ✔ transitionTaskStatus rejects 进行中 → 已退回 (0.021666ms)
+  ✔ transitionTaskStatus rejects 进行中 → 已取消 (0.025833ms)
+  ✔ transitionTaskStatus rejects 待验收 → 待认领 (0.030375ms)
+  ✔ transitionTaskStatus rejects 待验收 → 进行中 (0.024167ms)
+  ✔ transitionTaskStatus rejects 待验收 → 待验收 (0.0225ms)
+  ✔ transitionTaskStatus allows 待验收 → 已完成 (0.022125ms)
+  ✔ transitionTaskStatus allows 待验收 → 已退回 (0.024417ms)
+  ✔ transitionTaskStatus rejects 待验收 → 已取消 (0.024041ms)
+  ✔ transitionTaskStatus rejects 已完成 → 待认领 (0.024833ms)
+  ✔ transitionTaskStatus rejects 已完成 → 进行中 (0.026209ms)
+  ✔ transitionTaskStatus rejects 已完成 → 待验收 (0.035042ms)
+  ✔ transitionTaskStatus rejects 已完成 → 已完成 (0.024125ms)
+  ✔ transitionTaskStatus rejects 已完成 → 已退回 (0.025792ms)
+  ✔ transitionTaskStatus rejects 已完成 → 已取消 (0.027125ms)
+  ✔ transitionTaskStatus allows 已退回 → 待认领 (0.023709ms)
+  ✔ transitionTaskStatus rejects 已退回 → 进行中 (0.025042ms)
+  ✔ transitionTaskStatus rejects 已退回 → 待验收 (0.02525ms)
+  ✔ transitionTaskStatus rejects 已退回 → 已完成 (0.0285ms)
+  ✔ transitionTaskStatus rejects 已退回 → 已退回 (0.210833ms)
+  ✔ transitionTaskStatus allows 已退回 → 已取消 (0.078083ms)
+  ✔ transitionTaskStatus rejects 已取消 → 待认领 (0.052542ms)
+  ✔ transitionTaskStatus rejects 已取消 → 进行中 (0.026708ms)
+  ✔ transitionTaskStatus rejects 已取消 → 待验收 (0.023541ms)
+  ✔ transitionTaskStatus rejects 已取消 → 已完成 (0.02175ms)
+  ✔ transitionTaskStatus rejects 已取消 → 已退回 (0.02075ms)
+  ✔ transitionTaskStatus rejects 已取消 → 已取消 (0.01875ms)
+  ✔ transitionTaskStatus rejects an unknown from status (0.054916ms)
+  ✔ transitionTaskStatus rejects an unknown to status (0.033167ms)
+✔ transitionTaskStatus (1.68775ms)
+ℹ tests 325
+ℹ suites 64
+ℹ pass 297
+ℹ fail 28
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 798.417833
+
+✖ failing tests:
+
+test at apps/server/src/poller.test.ts:1:1
+✖ apps/server/src/poller.test.ts (227.157917ms)
+  'test failed'
+
+test at packages/forge-adapters/src/get-pull-request.shared.test.ts:174:7
+✖ GETs the pull/merge-request endpoint with validateToken-style auth headers (1.210333ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/get-pull-request.shared.test.ts:179:38)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.start (node:internal/test_runner/test:1015:17)
+      at node:internal/test_runner/test:1531:71
+      at node:internal/per_context/primordials:466:82
+      at new Promise (<anonymous>)
+      at new SafePromise (node:internal/per_context/primordials:435:3)
+      at node:internal/per_context/primordials:466:9
+
+test at packages/forge-adapters/src/get-pull-request.shared.test.ts:192:7
+✖ merged → { state: "merged" } (0.142834ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/get-pull-request.shared.test.ts:196:38)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Promise.all (index 0)
+
+test at packages/forge-adapters/src/get-pull-request.shared.test.ts:200:7
+✖ closed and not merged → { state: "closed" } (0.09325ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/get-pull-request.shared.test.ts:204:38)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/get-pull-request.shared.test.ts:208:7
+✖ open → { state: "open" } (0.076125ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/get-pull-request.shared.test.ts:212:38)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/get-pull-request.shared.test.ts:216:7
+✖ trailing slash on the pasted URL is stripped before parsing (0.071833ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/get-pull-request.shared.test.ts:221:38)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/get-pull-request.shared.test.ts:226:7
+✖ non-OK HTTP response rejects (after actually calling fetch, not merely throwing) (0.54225ms)
+  AssertionError [ERR_ASSERTION]: getPullRequest must actually call fetch and reject on the non-OK response, not reject for an unrelated reason
+  
+  0 !== 1
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/get-pull-request.shared.test.ts:233:16)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/get-pull-request.shared.test.ts:241:7
+✖ an unparseable prUrl rejects without calling fetch, while a valid URL from the same adapter succeeds (0.1395ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/get-pull-request.shared.test.ts:246:34)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/get-pull-request.shared.test.ts:174:7
+✖ GETs the pull/merge-request endpoint with validateToken-style auth headers (0.184958ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/get-pull-request.shared.test.ts:179:38)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.start (node:internal/test_runner/test:1015:17)
+      at node:internal/test_runner/test:1531:71
+      at node:internal/per_context/primordials:466:82
+      at new Promise (<anonymous>)
+      at new SafePromise (node:internal/per_context/primordials:435:3)
+      at node:internal/per_context/primordials:466:9
+
+test at packages/forge-adapters/src/get-pull-request.shared.test.ts:192:7
+✖ merged → { state: "merged" } (0.117167ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/get-pull-request.shared.test.ts:196:38)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/get-pull-request.shared.test.ts:200:7
+✖ closed and not merged → { state: "closed" } (0.100541ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/get-pull-request.shared.test.ts:204:38)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/get-pull-request.shared.test.ts:208:7
+✖ open → { state: "open" } (0.066375ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/get-pull-request.shared.test.ts:212:38)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/get-pull-request.shared.test.ts:216:7
+✖ trailing slash on the pasted URL is stripped before parsing (0.044375ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/get-pull-request.shared.test.ts:221:38)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/get-pull-request.shared.test.ts:226:7
+✖ non-OK HTTP response rejects (after actually calling fetch, not merely throwing) (0.141083ms)
+  AssertionError [ERR_ASSERTION]: getPullRequest must actually call fetch and reject on the non-OK response, not reject for an unrelated reason
+  
+  0 !== 1
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/get-pull-request.shared.test.ts:233:16)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/get-pull-request.shared.test.ts:241:7
+✖ an unparseable prUrl rejects without calling fetch, while a valid URL from the same adapter succeeds (0.06625ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/get-pull-request.shared.test.ts:246:34)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/get-pull-request.shared.test.ts:174:7
+✖ GETs the pull/merge-request endpoint with validateToken-style auth headers (0.098917ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/get-pull-request.shared.test.ts:179:38)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.start (node:internal/test_runner/test:1015:17)
+      at node:internal/test_runner/test:1531:71
+      at node:internal/per_context/primordials:466:82
+      at new Promise (<anonymous>)
+      at new SafePromise (node:internal/per_context/primordials:435:3)
+      at node:internal/per_context/primordials:466:9
+
+test at packages/forge-adapters/src/get-pull-request.shared.test.ts:192:7
+✖ merged → { state: "merged" } (0.0385ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/get-pull-request.shared.test.ts:196:38)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/get-pull-request.shared.test.ts:200:7
+✖ closed and not merged → { state: "closed" } (0.035ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/get-pull-request.shared.test.ts:204:38)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/get-pull-request.shared.test.ts:208:7
+✖ open → { state: "open" } (0.03125ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/get-pull-request.shared.test.ts:212:38)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/get-pull-request.shared.test.ts:216:7
+✖ trailing slash on the pasted URL is stripped before parsing (0.031417ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/get-pull-request.shared.test.ts:221:38)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/get-pull-request.shared.test.ts:226:7
+✖ non-OK HTTP response rejects (after actually calling fetch, not merely throwing) (0.077417ms)
+  AssertionError [ERR_ASSERTION]: getPullRequest must actually call fetch and reject on the non-OK response, not reject for an unrelated reason
+  
+  0 !== 1
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/get-pull-request.shared.test.ts:233:16)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/get-pull-request.shared.test.ts:241:7
+✖ an unparseable prUrl rejects without calling fetch, while a valid URL from the same adapter succeeds (0.037333ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/get-pull-request.shared.test.ts:246:34)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/get-pull-request.shared.test.ts:262:3
+✖ github: .diff and .patch suffixes on the pasted URL are stripped before parsing (0.067167ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/get-pull-request.shared.test.ts:266:38)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Suite.postRun (node:internal/test_runner/test:1247:19)
+      at Suite.run (node:internal/test_runner/test:1548:10)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/get-pull-request.shared.test.ts:283:3
+✖ github: always calls api.github.com regardless of a custom baseUrl option (0.047166ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/get-pull-request.shared.test.ts:287:34)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/get-pull-request.shared.test.ts:293:3
+✖ gitlab: opened → open (verified 4-valued vendor enum mapped down to 3) (0.041792ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/get-pull-request.shared.test.ts:297:34)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/get-pull-request.shared.test.ts:301:3
+✖ gitlab: locked (transient, en route to merged) → open, not merged and not closed (0.048167ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/get-pull-request.shared.test.ts:305:34)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/get-pull-request.shared.test.ts:309:3
+✖ gitlab: a namespace path with subgroup slashes is encodeURIComponent-ed as a single :id segment (0.060542ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/get-pull-request.shared.test.ts:314:34)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/get-pull-request.shared.test.ts:323:3
+✖ gitlab/gitea: the API origin comes from the constructor baseUrl option, not from the prUrl host (0.065625ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-11/packages/forge-adapters/src/get-pull-request.shared.test.ts:332:36)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+[ELIFECYCLE] Test failed. See above for more details.
+EXIT_CODE=1
