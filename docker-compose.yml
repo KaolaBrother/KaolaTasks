@@ -4,9 +4,9 @@ services:
       context: .
       dockerfile: apps/server/Dockerfile
     ports:
-      - "3000:3000"
+      - "31415:31415"
     environment:
-      PORT: "3000"
+      PORT: "31415"
       HOST: "0.0.0.0"
     volumes:
       - kaola-data:/data

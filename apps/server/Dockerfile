@@ -18,8 +18,11 @@ RUN pnpm install --frozen-lockfile
 
 COPY . .
 
-ENV PORT=3000
+RUN pnpm --filter @kaola/web build
+
+ENV PORT=31415
 ENV HOST=0.0.0.0
-EXPOSE 3000
+ENV WEB_DIST=/app/apps/web/dist
+EXPOSE 31415
 
 CMD ["pnpm", "--filter", "@kaola/server", "start"]

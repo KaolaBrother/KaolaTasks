@@ -10,11 +10,16 @@ MCP tools (`list_tasks`, `get_task_brief`, `claim_task`, `report_progress`, `sub
 
 Sources: `apps/server/src/app.ts`, `auth.ts`, `agent-keys.ts`, `credential-profiles.ts`, `vault.ts`, `tasks.ts`, `schema.ts`, `db.ts`, `placeholder.ts`, `index.ts`.
 
-`buildApp({ sqlitePath? })` creates its own SQLite via `createDb`. Process `index.ts` uses `SQLITE_PATH ?? ':memory:'`.
+`buildApp({ sqlitePath?, webDist?, viteDevTarget? })` creates its own SQLite via `createDb`. Process `index.ts` uses `SQLITE_PATH ?? ':memory:'`, and passes `WEB_DIST` / `VITE_DEV_TARGET` into `buildApp`. Empty string is treated as omitted.
 
 ### `GET /`
 
-`text/plain; charset=utf-8` body `考拉任务服务占位` (`getPlaceholderBody()`). Unauthenticated.
+Depends on hosting options (unauthenticated):
+
+- Omit or empty both `webDist` and `viteDevTarget`: `text/plain; charset=utf-8` body `考拉任务服务占位` (`getPlaceholderBody()`).
+- Non-empty `webDist`: `@fastify/static` from that directory; exact `GET /` `sendFile` `index.html`; other GET that are not `/api` or `/login*` fall back to `index.html`. `/api` and `/login*` are not swallowed by the SPA.
+- Both `webDist` and `viteDevTarget` set: `webDist` wins.
+- Only `viteDevTarget`: `@fastify/http-proxy` to that upstream (`GET`/`HEAD`, websocket).
 
 ### `GET /login`
 
@@ -183,9 +188,9 @@ No events HTTP. Rows written in source:
 
 Required (throw `missing required environment variable …` if empty): `SESSION_SECRET`, `OAUTH_GITHUB_CLIENT_ID`, `OAUTH_GITHUB_CLIENT_SECRET`, `OAUTH_GITLAB_CLIENT_ID`, `OAUTH_GITLAB_CLIENT_SECRET`, `OAUTH_GITLAB_BASE_URL`, `OAUTH_GITEA_CLIENT_ID`, `OAUTH_GITEA_CLIENT_SECRET`, `OAUTH_GITEA_BASE_URL`.
 
-Optional: `PUBLIC_URL` default `http://localhost:3000` (trailing slash stripped). Existing `PORT` / `HOST` / `SQLITE_PATH`.
+Optional: `PUBLIC_URL` default `http://localhost:31415` (trailing slash stripped). Process `index.ts`: `PORT` default `'31415'`, `HOST` default `'0.0.0.0'`, `SQLITE_PATH` default `':memory:'`. Optional `WEB_DIST` and `VITE_DEV_TARGET` (not required by `registerAuth`).
 
-Callback URIs: `${PUBLIC_URL}/login/{github|gitlab|gitea}/callback`.
+Callback URIs: `${publicUrl}/login/{github|gitlab|gitea}/callback` (`publicUrl` is the trimmed `PUBLIC_URL`). Post-login redirect is still `reply.redirect('/')` (relative).
 
 ### Env (`VAULT_MASTER_KEY`)
 
@@ -195,7 +200,7 @@ Must match `/^[0-9a-fA-F]{64}$/` and decode to 32 bytes. Missing, empty, or inva
 
 There is no `.env.example` in the repository.
 
-Server dependencies: `@fastify/oauth2@^8.3.0`, `@fastify/cookie@^11.1.2`, `@fastify/session@^11.1.2`, `"@kaola/shared": "workspace:*"`, `"@kaola/forge-adapters": "workspace:*"` (plus existing `fastify`, `drizzle-orm`, `better-sqlite3`). Vault and agent-key hashing use `node:crypto` (no extra npm package).
+Server dependencies: `@fastify/oauth2@^8.3.0`, `@fastify/cookie@^11.1.2`, `@fastify/session@^11.1.2`, `@fastify/static@^10.1.3`, `@fastify/http-proxy@^11.6.0`, `"@kaola/shared": "workspace:*"`, `"@kaola/forge-adapters": "workspace:*"` (plus existing `fastify`, `drizzle-orm`, `better-sqlite3`). Vault and agent-key hashing use `node:crypto` (no extra npm package).
 
 ## `@kaola/forge-adapters`
 

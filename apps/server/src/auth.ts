@@ -240,7 +240,7 @@ async function completeOAuthLogin(
 
 export function registerAuth(app: FastifyInstance, db: AppDb) {
   const sessionSecret = requireEnv('SESSION_SECRET')
-  const publicUrl = trimTrailingSlash(process.env.PUBLIC_URL ?? 'http://localhost:3000')
+  const publicUrl = trimTrailingSlash(process.env.PUBLIC_URL ?? 'http://localhost:31415')
   const githubClientId = requireEnv('OAUTH_GITHUB_CLIENT_ID')
   const githubClientSecret = requireEnv('OAUTH_GITHUB_CLIENT_SECRET')
   const gitlabClientId = requireEnv('OAUTH_GITLAB_CLIENT_ID')

@@ -7,9 +7,10 @@ Product architecture is in [DESIGN.md](DESIGN.md) §4 (架构), §10 (数据模�
 Tree: `apps/web`, `apps/server`, `packages/shared`, `packages/forge-adapters`.
 
 ```
-browser  →  @kaola/web (Vite; proxy /api and /login → 127.0.0.1:3000)
-         →  @kaola/server Fastify
-                GET /                            placeholder body
+browser  →  advertised origin localhost:31415 (@kaola/server Fastify)
+         →  Vite 127.0.0.1:5173 is loopback-only under root pnpm dev (not the advertised origin)
+                GET /                            placeholder when naked buildApp();
+                                                 SPA when webDist; Vite proxy when only viteDevTarget
                 /login*                          OAuth + HTML login
                 /api/v1/me                       session user
                 /api/v1/users/:id/approve
@@ -20,6 +21,7 @@ browser  →  @kaola/web (Vite; proxy /api and /login → 127.0.0.1:3000)
                 SQLite users, agent_keys, credential_profiles, tasks, events (createDb)
                 vault.ts encryptToken / decryptToken / revealCredentialProfile
                   (no HTTP that returns a forge token)
+@kaola/web              Vue 3 + Naive UI; vite.config proxy /api and /login → 127.0.0.1:31415
 @kaola/shared           Task Brief zod + transitionTaskStatus
 @kaola/forge-adapters   createForgeAdapter (validateToken is an adapter method)
                         imported by @kaola/server (workspace:*)
@@ -28,7 +30,9 @@ MCP / claim             not implemented
 
 ## Server
 
-`apps/server/src/index.ts` listens `HOST` default `0.0.0.0`, `PORT` default `3000`, `buildApp({ sqlitePath: process.env.SQLITE_PATH ?? ':memory:' })`.
+`apps/server/src/index.ts` listens `HOST` default `0.0.0.0`, `PORT` default `31415`, `buildApp({ sqlitePath: process.env.SQLITE_PATH ?? ':memory:', webDist: process.env.WEB_DIST, viteDevTarget: process.env.VITE_DEV_TARGET })`.
+
+`buildApp({ sqlitePath?, webDist?, viteDevTarget? })`: omit/empty both hosting options → `GET /` `text/plain; charset=utf-8` body `考拉任务服务占位` via `getPlaceholderBody()`. Non-empty `webDist` → `@fastify/static` `^10.1.3` + exact `GET /` `sendFile` `index.html` + SPA fallback for other GET except `/api` and `/login*`. Both set → `webDist` wins. Only `viteDevTarget` → `@fastify/http-proxy` `^11.6.0`.
 
 `createDb` runs `CREATE TABLE IF NOT EXISTS` for `users`, `agent_keys`, `credential_profiles`, `tasks`, and `events`, then drizzle with `{ schema: { users, agentKeys, credentialProfiles, tasks, events } }`. Default path `:memory:` unless `SQLITE_PATH`. `tasks` INTEGER PK `id` plus `public_id` TEXT NOT NULL UNIQUE (`kt-YYYY-NNNN`); CONSTRAINT `tasks_credential_xor` CHECK `((credential_profile_id IS NULL) != (inline_token_encrypted IS NULL))`.
 
@@ -36,13 +40,13 @@ Auth stack: `@fastify/cookie@^11.1.2`, `@fastify/session@^11.1.2`, `@fastify/oau
 
 `registerAuth` throws if required OAuth / session env vars are empty (names in [api.md](api.md)). `VAULT_MASTER_KEY` is not read at `buildApp()` / `registerAuth` boot; `encryptToken` / `decryptToken` read it when encrypting or decrypting.
 
-`buildApp` wires `registerTasks(app, db)` (`apps/server/src/tasks.ts`). POST 发布即校验 calls `createForgeAdapter(forge, { baseUrl }).validateToken`. No MCP SDK in `apps/server/package.json`. Server dependencies include `"@kaola/shared": "workspace:*"` and `"@kaola/forge-adapters": "workspace:*"`.
+`buildApp` wires `registerTasks(app, db)` (`apps/server/src/tasks.ts`). POST 发布即校验 calls `createForgeAdapter(forge, { baseUrl }).validateToken`. No MCP SDK in `apps/server/package.json`. Server dependencies include `"@kaola/shared": "workspace:*"`, `"@kaola/forge-adapters": "workspace:*"`, `@fastify/static@^10.1.3`, `@fastify/http-proxy@^11.6.0`.
 
 ## Web
 
-`apps/web/src/App.vue`: Naive UI, `zhCN` / `dateZhCN`. Views: login buttons, pending card (`status` `待批准`), member workbench with approve-by-id when `status` `active` and `permission_level` `full`. Agent Key widget when `status === 'active'`. Credential-profile widget and 发布任务 form when `status === 'active'` and `permission_level === 'full'` (`canApprove`). Form reuses loaded `profiles` for the credential dropdown; two request-side paths `{ profile_id }` XOR `{ token }`; create only (`POST /api/v1/tasks`) — no board/kanban/edit. Fetches `GET /api/v1/me` with `Accept: application/json` and `credentials: 'include'`. No vue-router (`apps/web/package.json` has `vue` `^3.5.0`, `naive-ui` `^2.45.0` only).
+`apps/web/src/App.vue`: Naive UI, `zhCN` / `dateZhCN`. Views: login buttons, pending card (`status` `待批准`, title 账号待批准 — no board), member workbench (`view === 'member'`) with 任务看板 (列表 / 看板; client-side filters 状态 / 标签 / Forge; detail + one synthetic 发布 from `created_at`+`poster`; `GET /api/v1/tasks` exactly, no query; no events HTTP). `claim_only` sees the board, not the posting form. Approve-by-id, credential-profile widget, and 发布任务 form when `status === 'active'` and `permission_level === 'full'` (`canApprove`). Agent Key widget when `status === 'active'`. Form reuses loaded `profiles` for the credential dropdown; two request-side paths `{ profile_id }` XOR `{ token }`; create only (`POST /api/v1/tasks`). Fetches `GET /api/v1/me` with `Accept: application/json` and `credentials: 'include'`. No vue-router (`apps/web/package.json` has `vue` `^3.5.0`, `naive-ui` `^2.45.0` only).
 
-`apps/web/package.json` `"test": "vitest run"`; devDeps `@vue/test-utils` `^2.4.11`, `happy-dom` `^20.11.6`, `vitest` `^4.1.11`. `vite.config.ts` proxy: `/api` and `/login` → `http://127.0.0.1:3000`. Vitest: `environment` `happy-dom`, `include` `src/**/*.test.ts`.
+`apps/web/package.json` `"test": "vitest run"`; devDeps `@vue/test-utils` `^2.4.11`, `happy-dom` `^20.11.6`, `vitest` `^4.1.11`. Tests: `apps/web/src/App.board.test.ts` and `App.form.test.ts`. `vite.config.ts` proxy: `/api` and `/login` → `http://127.0.0.1:31415`. Vitest: `environment` `happy-dom`, `include` `src/**/*.test.ts`. Root `pnpm dev` is `node scripts/dev.mjs`.
 
 ## Packages
 
@@ -52,4 +56,4 @@ Auth stack: `@fastify/cookie@^11.1.2`, `@fastify/session@^11.1.2`, `@fastify/oau
 
 ## Deployment
 
-`docker-compose.yml`: service `server`, `3000:3000`, `PORT=3000`, `HOST=0.0.0.0`, volume `kaola-data:/data`. Does not set `SQLITE_PATH`, OAuth env, or `VAULT_MASTER_KEY`. Dockerfile `node:22-bookworm-slim`, `CMD pnpm --filter @kaola/server start`.
+`docker-compose.yml`: service `server`, `"31415:31415"`, `PORT: "31415"`, `HOST: 0.0.0.0`, volume `kaola-data:/data`. Does not set `SQLITE_PATH`, OAuth env, `VAULT_MASTER_KEY`, or `WEB_DIST` (image `ENV WEB_DIST=/app/apps/web/dist`). Dockerfile `node:22-bookworm-slim`, `RUN pnpm --filter @kaola/web build`, `ENV PORT=31415`, `ENV HOST=0.0.0.0`, `ENV WEB_DIST=/app/apps/web/dist`, `EXPOSE 31415`, `CMD pnpm --filter @kaola/server start`.

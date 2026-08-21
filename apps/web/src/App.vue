@@ -27,6 +27,93 @@
         <n-card title="工作台" v-else-if="view === 'member'">
           <n-space vertical>
             <n-text>{{ me?.display_name }}，已登录（{{ me?.provider }} / {{ permissionLabel }}）</n-text>
+
+            <div data-testid="board">
+              <n-space vertical>
+                <n-text strong>任务看板</n-text>
+                <n-space>
+                  <n-button data-testid="board-view-list" @click="boardLayout = 'list'">列表</n-button>
+                  <n-button data-testid="board-view-kanban" @click="boardLayout = 'kanban'">看板</n-button>
+                </n-space>
+                <n-space align="center">
+                  <n-text>状态</n-text>
+                  <n-select
+                    data-testid="board-filter-status"
+                    v-model:value="boardFilterStatus"
+                    :options="boardStatusFilterOptions"
+                    style="width: 140px"
+                  />
+                  <n-text>标签</n-text>
+                  <n-select
+                    data-testid="board-filter-tag"
+                    v-model:value="boardFilterTag"
+                    :options="boardTagFilterOptions"
+                    style="width: 140px"
+                  />
+                  <n-text>Forge</n-text>
+                  <n-select
+                    data-testid="board-filter-forge"
+                    v-model:value="boardFilterForge"
+                    :options="boardForgeFilterOptions"
+                    style="width: 140px"
+                  />
+                </n-space>
+                <n-text v-if="filteredBoardTasks.length === 0">暂无任务。</n-text>
+                <div v-if="boardLayout === 'kanban'" data-testid="board-kanban" style="display: flex; gap: 8px">
+                  <div
+                    v-for="status in BOARD_STATUSES"
+                    :key="status"
+                    :data-testid="'board-column-' + status"
+                    style="flex: 1; min-width: 120px"
+                  >
+                    <n-text strong>{{ status }}</n-text>
+                    <div
+                      v-for="task in tasksForColumn(status)"
+                      :key="task.id"
+                      :data-testid="'board-card-' + task.id"
+                      @click="openBoardDetail(task.id)"
+                    >
+                      {{ task.title }}
+                    </div>
+                  </div>
+                </div>
+                <div v-else data-testid="board-list">
+                  <div
+                    v-for="task in filteredBoardTasks"
+                    :key="task.id"
+                    :data-testid="'board-card-' + task.id"
+                    @click="openBoardDetail(task.id)"
+                  >
+                    {{ task.title }}
+                  </div>
+                </div>
+                <div v-if="selectedTask" data-testid="board-detail">
+                  <n-space vertical>
+                    <n-text data-testid="board-detail-title">{{ selectedTask.title }}</n-text>
+                    <n-text data-testid="board-detail-description">{{ selectedTask.description_md }}</n-text>
+                    <n-text data-testid="board-detail-status">{{ selectedTask.status }}</n-text>
+                    <n-text data-testid="board-detail-poster">{{ selectedTask.poster }}</n-text>
+                    <n-text data-testid="board-detail-tags">{{ selectedTask.tags.join(' ') }}</n-text>
+                    <n-text data-testid="board-detail-forge">{{ selectedTask.repo.forge }}</n-text>
+                    <n-text data-testid="board-detail-credential">{{ credentialChrome(selectedTask.credential) }}</n-text>
+                    <div v-if="boardIssueUrl(selectedTask) != null" data-testid="board-detail-issue-url">
+                      <a
+                        v-if="boardIssueUrlIsHttp(selectedTask)"
+                        :href="boardIssueUrl(selectedTask) ?? undefined"
+                      >{{ boardIssueUrl(selectedTask) }}</a>
+                      <template v-else>{{ boardIssueUrl(selectedTask) }}</template>
+                    </div>
+                    <n-button data-testid="board-detail-close" @click="closeBoardDetail">关闭</n-button>
+                    <div data-testid="board-timeline">
+                      <div data-testid="board-timeline-item">
+                        发布 {{ selectedTask.poster }} {{ selectedTask.created_at }}
+                      </div>
+                    </div>
+                  </n-space>
+                </div>
+              </n-space>
+            </div>
+
             <n-divider v-if="canApprove">批准 GitHub 用户</n-divider>
             <n-space v-if="canApprove" align="center">
               <n-input v-model:value="approveId" placeholder="待批准用户 ID" />
@@ -238,6 +325,19 @@ type ProfileRow = {
   created_by: number
 }
 
+type BoardTask = {
+  id: string
+  title: string
+  description_md: string
+  source: { type: 'native' } | { type: 'imported'; issue_url: string }
+  repo: { forge: string }
+  tags: string[]
+  poster: string
+  status: string
+  created_at: string
+  credential: { profile_id: string } | { inline: true }
+}
+
 const FORGE_REVOKE_MESSAGE = '请同时到 forge 侧撤销该 token。'
 
 const me = ref<Me | null>(null)
@@ -286,6 +386,14 @@ const taskMessage = ref('')
 const taskOk = ref(false)
 const taskCredentialFeedback = ref('')
 
+const BOARD_STATUSES = ['待认领', '进行中', '待验收', '已完成', '已退回', '已取消'] as const
+const boardTasks = ref<BoardTask[]>([])
+const boardLayout = ref<'kanban' | 'list'>('kanban')
+const boardFilterStatus = ref('')
+const boardFilterTag = ref('')
+const boardFilterForge = ref('')
+const selectedTaskId = ref<string | null>(null)
+
 const forgeOptions = [
   { label: 'GitHub', value: 'github' },
   { label: 'GitLab', value: 'gitlab' },
@@ -308,6 +416,13 @@ const credentialModeOptions = [
   { label: '共享档案', value: 'profile' },
   { label: '单任务临时 token', value: 'inline' },
 ]
+
+const boardStatusFilterOptions = [
+  { label: '全部', value: '' },
+  ...BOARD_STATUSES.map((status) => ({ label: status, value: status })),
+]
+
+const boardForgeFilterOptions = [{ label: '全部', value: '' }, ...forgeOptions]
 
 const view = computed(() => {
   if (!loaded.value || me.value == null) return 'login'
@@ -332,9 +447,65 @@ const taskProfileOptions = computed(() =>
   })),
 )
 
+const boardTagFilterOptions = computed(() => {
+  const seen = new Set<string>()
+  const fromList: { label: string; value: string }[] = []
+  for (const task of boardTasks.value) {
+    for (const tag of task.tags) {
+      if (!seen.has(tag)) {
+        seen.add(tag)
+        fromList.push({ label: tag, value: tag })
+      }
+    }
+  }
+  return [{ label: '全部', value: '' }, ...fromList]
+})
+
+const filteredBoardTasks = computed(() =>
+  boardTasks.value.filter((task) => {
+    if (boardFilterStatus.value !== '' && task.status !== boardFilterStatus.value) return false
+    if (boardFilterTag.value !== '' && !task.tags.includes(boardFilterTag.value)) return false
+    if (boardFilterForge.value !== '' && task.repo.forge !== boardFilterForge.value) return false
+    return true
+  }),
+)
+
+const selectedTask = computed(() => {
+  if (selectedTaskId.value == null) return null
+  return boardTasks.value.find((task) => task.id === selectedTaskId.value) ?? null
+})
+
 function formatLastUsed(value: number | null): string {
   if (value == null) return '从未使用'
   return `最近使用 ${new Date(value * 1000).toLocaleString('zh-CN')}`
+}
+
+function tasksForColumn(status: string): BoardTask[] {
+  return filteredBoardTasks.value.filter((task) => task.status === status)
+}
+
+function openBoardDetail(id: string) {
+  selectedTaskId.value = id
+}
+
+function closeBoardDetail() {
+  selectedTaskId.value = null
+}
+
+function credentialChrome(credential: BoardTask['credential']): string {
+  if ('inline' in credential && credential.inline === true) return '单任务临时 token'
+  return '共享档案'
+}
+
+function boardIssueUrl(task: BoardTask): string | null {
+  return task.source.type === 'imported' ? task.source.issue_url : null
+}
+
+function boardIssueUrlIsHttp(task: BoardTask): boolean {
+  const url = boardIssueUrl(task)
+  if (url == null) return false
+  const lower = url.trim().toLowerCase()
+  return lower.startsWith('https:') || lower.startsWith('http:')
 }
 
 function splitLines(text: string): string[] {
@@ -367,6 +538,9 @@ onMounted(async () => {
     me.value = null
   } finally {
     loaded.value = true
+  }
+  if (view.value === 'member') {
+    await loadTasks()
   }
   if (canManageKeys.value) {
     await loadAgentKeys()
@@ -474,6 +648,20 @@ async function revokeAgentKey(id: number) {
   } catch {
     keyOk.value = false
     keyMessage.value = '吊销请求失败'
+  }
+}
+
+async function loadTasks() {
+  try {
+    const res = await fetch('/api/v1/tasks', {
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+    })
+    if (!res.ok) return
+    const body = await readJson(res)
+    boardTasks.value = Array.isArray(body?.tasks) ? (body.tasks as BoardTask[]) : []
+  } catch {
+    boardTasks.value = []
   }
 }
 
