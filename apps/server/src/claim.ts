@@ -16,6 +16,7 @@ import {
 import { type AgentKey, type User, credentialProfiles, submissions, tasks } from './schema.ts'
 import { selectTask, taskBrief } from './tasks.ts'
 import { decryptToken, insertAuditEvent, isVaultUnconfiguredError } from './vault.ts'
+import { attemptWriteback } from './writeback.ts'
 
 const PENDING_CLAIM_MESSAGE = '你的账号待正式成员批准后方可认领任务。'
 const TASK_ALREADY_CLAIMED_MESSAGE = '任务已被认领。'
@@ -64,16 +65,16 @@ function sendAgentResult<T>(reply: FastifyReply, result: AgentServiceResult<T>) 
   return reply.code(result.httpStatus).send(result.body)
 }
 
-export function claimTask(
+export async function claimTask(
   db: AppDb,
   auth: AgentPrincipal,
   publicId: string,
-): AgentServiceResult<{
+): Promise<AgentServiceResult<{
   task: ReturnType<typeof taskBrief>
   token: string
   lease: ReturnType<typeof leaseEnvelope>
   clone: { suggested_dir: string; token_usage: string }
-}> {
+}>> {
   if (auth.user.status === '待批准') {
     return { ok: false, httpStatus: 403, body: { error: 'forbidden', message: PENDING_CLAIM_MESSAGE } }
   }
@@ -168,6 +169,8 @@ export function claimTask(
     actorUserId: auth.user.id,
     details: { task_id: publicId, from, to },
   })
+
+  await attemptWriteback(db, updated, '认领', auth.user.id)
 
   const brief = taskBrief({ task: updated, posterUsername: row.posterUsername })
   return {
@@ -284,17 +287,17 @@ export function releaseTask(
   }
 }
 
-export function submitPr(
+export async function submitPr(
   db: AppDb,
   auth: AgentPrincipal,
   publicId: string,
   prUrl: string,
   summary: string,
-): AgentServiceResult<{
+): Promise<AgentServiceResult<{
   task: ReturnType<typeof taskBrief>
   pr_url: string
   summary: string
-}> {
+}>> {
   sweepExpiredLeases(db)
 
   const row = selectTask(db, publicId)
@@ -347,6 +350,8 @@ export function submitPr(
     details: { task_id: publicId, from, to, pr_url: prUrl, summary },
   })
 
+  await attemptWriteback(db, updated, '提交PR', auth.user.id, prUrl)
+
   return {
     ok: true,
     httpStatus: 200,
@@ -367,7 +372,7 @@ export function registerClaim(app: FastifyInstance, db: AppDb) {
       if (auth == null) return
 
       const publicId = (request.params as { publicId: string }).publicId
-      return sendAgentResult(reply, claimTask(db, auth, publicId))
+      return sendAgentResult(reply, await claimTask(db, auth, publicId))
     })
 
     child.post('/api/v1/tasks/:publicId/progress', async (request, reply) => {

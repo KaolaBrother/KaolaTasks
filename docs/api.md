@@ -4,11 +4,11 @@ Document public APIs, endpoints, schemas, events, and integration contracts.
 
 Product contracts that are not yet in source remain in [DESIGN.md](DESIGN.md) §6 (任务卡 Schema), §8 (ForgeAdapter), §9 (MCP 工具面 / REST). This file records what is implemented.
 
-MCP tools (`list_tasks`, `get_task_brief`, `claim_task`, `report_progress`, `submit_pr`, `release_task`) are implemented (`registerMcp` in `apps/server/src/mcp.ts`): Bearer `POST /api/mcp` Streamable HTTP. Claim HTTP is also implemented (`registerClaim` in `apps/server/src/claim.ts`): Bearer `POST /api/v1/tasks/:publicId/claim`, `…/progress`, `…/release` (no REST `submit_pr`). Forge token reveal channels: successful `POST …/claim` `201` top-level `token` **and** MCP `claim_task` success `token`. Session `GET /api/v1/tasks` and `GET /api/v1/tasks/:publicId` never contain it. `POST /api/v1/tasks/import` `200` never contains a forge token. Task CRUD HTTP is implemented (`registerTasks` in `apps/server/src/tasks.ts`), including the pre-publish draft `POST /api/v1/tasks/import`. `revealCredentialProfile` is a module export from `apps/server/src/vault.ts` (not itself HTTP). Two mechanisms now drive `待验收` → `已完成`/`已退回` (#13): PR polling (`pollPendingReviews` in `apps/server/src/poller.ts`, still **not** an HTTP route — either called directly (tests) or driven by an internal `setInterval` registered by `buildApp({ pollIntervalMs })`) and the webhook receiver (`registerWebhooks` in `apps/server/src/webhook.ts`, `POST /api/v1/webhooks/:publicId`, no session, no Bearer — the forge signature is the sole auth). Both share the same terminal-transition write path (`applyPrTerminalTransition`, extracted in `poller.ts`). `buildApp({ forgeInstances? })` lets a `syncMode: 'webhook'` instance opt its repo out of polling (`pollPendingReviews` skips it); a poll-mode or unlisted instance is unaffected. `commentOnIssue` / status write-back to the source Issue is still not implemented (#14).
+MCP tools (`list_tasks`, `get_task_brief`, `claim_task`, `report_progress`, `submit_pr`, `release_task`) are implemented (`registerMcp` in `apps/server/src/mcp.ts`): Bearer `POST /api/mcp` Streamable HTTP. Claim HTTP is also implemented (`registerClaim` in `apps/server/src/claim.ts`): Bearer `POST /api/v1/tasks/:publicId/claim`, `…/progress`, `…/release` (no REST `submit_pr`). Forge token reveal channels: successful `POST …/claim` `201` top-level `token` **and** MCP `claim_task` success `token`. Session `GET /api/v1/tasks` and `GET /api/v1/tasks/:publicId` never contain it. `POST /api/v1/tasks/import` `200` never contains a forge token. Task CRUD HTTP is implemented (`registerTasks` in `apps/server/src/tasks.ts`), including the pre-publish draft `POST /api/v1/tasks/import`. `revealCredentialProfile` is a module export from `apps/server/src/vault.ts` (not itself HTTP). Two mechanisms drive `待验收` → `已完成`/`已退回` (#13): PR polling (`pollPendingReviews` in `apps/server/src/poller.ts`, still **not** an HTTP route — either called directly (tests) or driven by an internal `setInterval` registered by `buildApp({ pollIntervalMs })`) and the webhook receiver (`registerWebhooks` in `apps/server/src/webhook.ts`, `POST /api/v1/webhooks/:publicId`, no session, no Bearer — the forge signature is the sole auth). Both share the same terminal-transition write path (`applyPrTerminalTransition`, extracted in `poller.ts`). `buildApp({ forgeInstances? })` lets a `syncMode: 'webhook'` instance opt its repo out of polling (`pollPendingReviews` skips it); a poll-mode or unlisted instance is unaffected. `commentOnIssue` / status write-back to the source Issue is implemented (#14): `attemptWriteback` (`apps/server/src/writeback.ts`, not itself HTTP) posts a status comment for **imported** tasks on 认领 (inside `claimTask`), 提交PR (inside `submitPr`), and 完成 (inside `applyPrTerminalTransition`, only on a `merged` terminal) — see the "Status write-back" section below. It never changes any response shape and never introduces a third token-reveal channel.
 
 ## HTTP (`@kaola/server`)
 
-Sources: `apps/server/src/app.ts`, `auth.ts`, `agent-keys.ts`, `agent-bearer.ts`, `credential-profiles.ts`, `vault.ts`, `tasks.ts`, `claim.ts`, `leases.ts`, `mcp.ts`, `poller.ts`, `webhook.ts`, `schema.ts`, `db.ts`, `placeholder.ts`, `index.ts`.
+Sources: `apps/server/src/app.ts`, `auth.ts`, `agent-keys.ts`, `agent-bearer.ts`, `credential-profiles.ts`, `vault.ts`, `tasks.ts`, `claim.ts`, `leases.ts`, `mcp.ts`, `poller.ts`, `webhook.ts`, `writeback.ts`, `schema.ts`, `db.ts`, `placeholder.ts`, `index.ts`.
 
 `buildApp({ sqlitePath?, webDist?, viteDevTarget?, pollIntervalMs?, forgeInstances? })` creates its own SQLite via `createDb`. Process `index.ts` uses `SQLITE_PATH ?? ':memory:'`, and passes `WEB_DIST` / `VITE_DEV_TARGET` / `pollIntervalMs` / `forgeInstances` into `buildApp`. Empty string is treated as omitted for `webDist`/`viteDevTarget`. `forgeInstances` (from `FORGE_INSTANCES`, a JSON array; unset/`''` → `[]`; invalid JSON throws, failing boot) has no dedicated table — it is process config, threaded into both the poller (§ PR polling below) and the webhook receiver (§ webhook below).
 
@@ -176,7 +176,7 @@ Pending `users.status === '待批准'` → `403` `{ error: 'forbidden', message:
 
 Holder identity for later progress/release is `leases.claimer_user_id` compared to the Agent user id (`claim.ts`).
 
-Writes (successful claim): `events.type` `token 揭示` then `状态迁移`. See Events below. Inserts one `leases` row `state` `'active'` keyed by integer `tasks.id`. Calls `sweepExpiredLeases` first (check-on-write). Does not call `validateToken`.
+Writes (successful claim): `events.type` `token 揭示` then `状态迁移`. See Events below. Inserts one `leases` row `state` `'active'` keyed by integer `tasks.id`. Calls `sweepExpiredLeases` first (check-on-write). Does not call `validateToken`. `claimTask` (`apps/server/src/claim.ts`) is `async`, and after the `状态迁移` write it `await`s `attemptWriteback(db, updated, '认领', auth.user.id)` (#14, no-op for a native task; see "Status write-back" below) — the `201` response shape and its `token` are unaffected by that call's outcome.
 
 `registerClaim(app, db)` is wired in `app.ts` after `registerTasks`.
 
@@ -215,7 +215,7 @@ Six `registerTool` names:
 | `claim_task` | `task_id` | same envelope as REST claim `201`: keys `clone`, `lease`, `task`, `token`. Tool description includes `CLONE_TOKEN_USAGE` (`token 请通过环境变量或 git -c http.extraHeader 按次传递，不要写入 remote URL（会落盘到 .git/config）。`). |
 | `report_progress` | `task_id`, `note?` | `{ task, lease }` (no `token`). Omit `note` → event `note` `''`. |
 | `release_task` | `task_id`, `reason?` | `{ task }` with `status` `待认领` (no `token`, no `lease`). Omit `reason` → event details have no `reason` key. |
-| `submit_pr` | `task_id`, `pr_url`, `summary` | `{ task, pr_url, summary }` with `task.status` `待验收` (no `token`). Inserts `submissions` (`pr_state` `'open'`), marks the live lease `'released'`. |
+| `submit_pr` | `task_id`, `pr_url`, `summary` | `{ task, pr_url, summary }` with `task.status` `待验收` (no `token`). Inserts `submissions` (`pr_state` `'open'`), marks the live lease `'released'`. `submitPr` (`claim.ts`) is `async` and, after its `状态迁移` write, `await`s `attemptWriteback(db, updated, '提交PR', auth.user.id, prUrl)` (#14; no-op for a native task) before returning — the response shape is unaffected. |
 
 `list_tasks` / `get_task_brief` / mutating tools call `sweepExpiredLeases` first. Claim/progress/release/submit wrap `claimTask` / `reportProgress` / `releaseTask` / `submitPr` (same REST error bodies: pending claim `forbidden` + `你的账号待正式成员批准后方可认领任务。`; second claim `conflict` + `任务已被认领。`; non-holder `forbidden` without `message`; no live lease `conflict` + `任务未被认领。`; `submit_pr` when status is not `进行中` → `illegal_transition` to `待验收`).
 
@@ -231,7 +231,7 @@ Each call: selects `tasks` where `status === '待验收'`; skips any task whose 
 - `state: 'merged'` — `transitionTaskStatus('待验收', '已完成')`; `submissions.pr_state` set to `'merged'`.
 - `state: 'closed'` (closed without merging) — transitions to `已退回`; `pr_state` set to `'closed'`.
 
-A successful transition calls `applyPrTerminalTransition(db, task, submissionId, terminal, prUrl)` (exported from `poller.ts`, also reused by the webhook receiver), which in one `db.transaction` writes the two updates above plus `events.type` `状态迁移`, `actor_user_id` `null` (system-driven, same shape as lease-expiry events), `details` `{ task_id, from: '待验收', to, pr_url }` (`task_id` is the `public_id` string; there is no `summary` key here, unlike MCP `submit_pr`'s own `状态迁移` event).
+A successful transition calls `applyPrTerminalTransition(db, task, submissionId, terminal, prUrl)` (exported from `poller.ts`, also reused by the webhook receiver), which in one `db.transaction` writes the two updates above plus `events.type` `状态迁移`, `actor_user_id` `null` (system-driven, same shape as lease-expiry events), `details` `{ task_id, from: '待验收', to, pr_url }` (`task_id` is the `public_id` string; there is no `summary` key here, unlike MCP `submit_pr`'s own `状态迁移` event). After that transaction commits, `applyPrTerminalTransition` `await`s `attemptWriteback(db, task, '完成', null, prUrl)` **only when `terminal === 'merged'`** (#14; never on `closed`/已退回; see "Status write-back" below) — never inside the transaction, so no SQLite write lock is held across the outbound HTTP call.
 
 Never throws: a missing/undecryptable credential, an unreachable forge, a non-OK forge response, or a DB fault while writing one task's row is caught and only that task is skipped — the remaining `待验收` tasks are still polled in the same call, and `pollPendingReviews` itself always resolves. Tasks in any other status are never selected and never fetched as a PR. The pre-existing poster `PATCH /api/v1/tasks/:publicId` `已退回` → `待认领` edge is unaffected by, and works after, a poller-driven `已退回`; prior `状态迁移` events and the `submissions` row survive that reopen unmodified.
 
@@ -251,9 +251,35 @@ The route is registered inside its own child plugin with a dedicated `addContent
 - On a concrete `ForgeEvent`: `findPendingReviewMatch(db, instance, event.pr_url)` first restricts candidate tasks to `待验收` rows whose `(repoForge, repoBaseUrl)` match the **signature-verified** instance (`taskMatchesForgeInstance`), then matches the latest `submissions.prUrl` (`latestSubmission`) against `event.pr_url`. No match (wrong instance, no `pr_url` match, or the task is no longer `待验收`) → `204`, no writes — a valid forge delivery is never 404'd.
 - On match: `applyPrTerminalTransition(db, task, submissionId, event.state, event.pr_url)` (the same helper the poller uses) writes `tasks.status` → `已完成`/`已退回`, `submissions.pr_state` → `merged`/`closed`, and one `状态迁移` event (`actor_user_id: null`, `details: { task_id, from, to, pr_url }`) in one transaction, then `204`.
 
-This route never decrypts a forge token and never calls `adapter.getPullRequest` — the signed payload itself is the source of truth for merge/close, so no forge round-trip is needed. It is not a third token-reveal channel: nothing in a `404`/`401`/`204` response contains a token, the `webhookSecret`, or ciphertext.
+This route itself never calls `adapter.getPullRequest` — the signed payload alone is the source of truth for merge/close, so no forge round-trip is needed to *decide* the transition. It is not a third token-reveal channel: nothing in a `404`/`401`/`204` response contains a token, the `webhookSecret`, or ciphertext. That said, on a `merged` delivery `applyPrTerminalTransition` does now (#14) `await attemptWriteback(db, task, '完成', null, event.pr_url)` once its transaction has committed, which **does** decrypt the task's forge credential in order to post the 完成 comment via `commentOnIssue` — the same decrypt-to-call-the-forge pattern the poller already used for `getPullRequest`, just newly reached from this route. The token from that decrypt still never appears in this route's `204` response, in a log, or in `events.details` (only `{ task_id, transition, ok: true, issue_url }`). A `closed` (已退回) delivery still never writes back and still never decrypts anything.
 
 A `syncMode: 'poll'` instance's webhook deliveries are still accepted and can still complete a task (harmless and idempotent) — `syncMode` only gates whether `pollPendingReviews` also polls that instance, not whether this route accepts its deliveries.
+
+### Status write-back (`attemptWriteback` / `retryPendingWritebacks`, #14, not an HTTP route)
+
+`apps/server/src/writeback.ts` exports `attemptWriteback(db: AppDb, task: Task, transition: '认领' | '提交PR' | '完成', actorUserId: number | null, prUrl?: string): Promise<void>`. It is a no-op for a native task (`task.sourceType !== 'imported'` or empty `task.sourceIssueUrl`) — zero forge calls, zero `events` rows. For an imported task it builds a Chinese status comment (always contains `task.publicId` and `PUBLIC_URL`, trailing slash trimmed, default `http://localhost:31415`; the 提交PR and 完成 bodies also contain the given `prUrl`) and calls `createForgeAdapter(task.repoForge, { baseUrl: task.repoBaseUrl }).commentOnIssue({ token }, { issue_url: task.sourceIssueUrl }, body)`, where `token` comes from `decryptTaskToken(db, task)` (moved here from `poller.ts`; the poller still imports it for its own `getPullRequest` call) — the task's own profile/inline credential, never the caller's Agent API key.
+
+Every failure — `decryptTaskToken` returning `undefined`, a thrown `commentOnIssue` (non-OK response or unparseable `issue_url`) — is caught inside `attemptWriteback` and swallowed; nothing propagates to the caller. On success it writes `events.type` `回写`, `details` **exactly** `{ task_id, transition, ok: true, issue_url }` (`task_id` is the `public_id` string; `issue_url` is `task.sourceIssueUrl`; no token, no ciphertext).
+
+Three call sites, each after its own status transition is already committed (never inside a `db.transaction`, never holding a SQLite write lock across the outbound HTTP call):
+
+| Call site | Transition | `actorUserId` |
+|---|---|---|
+| `claimTask` (`claim.ts`, both REST claim and MCP `claim_task` share this function) | `'认领'` | the claiming user |
+| `submitPr` (`claim.ts`, MCP `submit_pr` only — no REST route) | `'提交PR'` | the claiming user |
+| `applyPrTerminalTransition` (`poller.ts`, shared by `pollPendingReviews` and the webhook receiver) — only when `terminal === 'merged'` | `'完成'` | `null` |
+
+`已退回` (`terminal === 'closed'`) and `releaseTask` never call `attemptWriteback`. `claimTask` and `submitPr` are `async` as of #14; `registerClaim` and the MCP `claim_task`/`submit_pr` tool handlers `await` them, but their response shapes (`201` claim envelope; `{ task, pr_url, summary }`) are unchanged.
+
+`retryPendingWritebacks(db: AppDb): Promise<void>` (exported from `writeback.ts`, re-exported from `poller.ts`; never rejects — a DB fault or one task's fault only skips that task) scans every `imported` task and, for each transition that has already occurred but has no successful `回写` event yet, calls `attemptWriteback` again with a `null` actor:
+
+- 认领 occurred: a `状态迁移` event with `details.to === '进行中'` exists for that task.
+- 提交PR occurred: a `submissions` row exists for that task.
+- 完成 occurred: `task.status === '已完成'` (uses the latest `submissions.prUrl`).
+
+A transition with an existing successful `回写` (`details.ok === true` for that `task_id` + `transition`) is never retried again. `apps/server/src/app.ts`'s existing poller `setInterval` calls `retryPendingWritebacks(db)` every tick, sequentially right after `pollPendingReviews`, under the same in-flight guard (`.then(() => retryPendingWritebacks(db).catch(() => {}))`).
+
+Web has no vue-router and no `/tasks/:id` route, so the comment body never contains a task deep link — only `PUBLIC_URL` plus the `publicId` text.
 
 ### `users` table
 
@@ -310,6 +336,7 @@ No events HTTP. Rows written in source:
 - MCP `submit_pr` success (`submitPr` in `claim.ts`): `type` `状态迁移`, `details` JSON `{ "task_id": <public_id>, "from": "进行中", "to": "待验收", "pr_url": <string>, "summary": <string> }` (claimer `actor_user_id`)
 - lease expiry in `sweepExpiredLeases`: `type` `状态迁移`, `details` JSON `{ "task_id": <public_id>, "from": "进行中", "to": "待认领" }`, `actor_user_id` null
 - `applyPrTerminalTransition` merged/closed transition (`poller.ts`, shared by `pollPendingReviews` and `registerWebhooks`'s `POST /api/v1/webhooks/:publicId`, #13): `type` `状态迁移`, `details` JSON `{ "task_id": <public_id>, "from": "待验收", "to": "已完成" | "已退回", "pr_url": <string> }` (no `summary` key), `actor_user_id` null
+- `attemptWriteback` success (`writeback.ts`, #14; imported tasks only, on 认领 / 提交PR / 完成-when-merged): `type` `回写`, `details` JSON `{ "task_id": <public_id>, "transition": "认领" | "提交PR" | "完成", "ok": true, "issue_url": <string> }` (no token; `actor_user_id` is the acting user for 认领/提交PR, `null` for 完成 and for any `retryPendingWritebacks`-driven write-back). A failed attempt writes no event at all (retried later, not marked `ok: false`).
 
 `created_at` is unix seconds.
 
@@ -319,7 +346,7 @@ No events HTTP. Rows written in source:
 
 `insertAuditEvent(db, { type, actorUserId, details })` with `actorUserId: number | null` (expiry writes SQL NULL).
 
-`revealCredentialProfile(db, { profileId, actorUserId, agentKeyId })` decrypts the profile row and returns the plaintext string. Missing row throws `Error('credential profile not found')`. Writes a `token 揭示` event. Does not log the token. Not an HTTP handler. Forge token reveal channels: successful Bearer `POST /api/v1/tasks/:publicId/claim` `201` top-level `token` and MCP `claim_task` success `token`. `POST /api/v1/tasks/import` `200` never contains a forge token.
+`revealCredentialProfile(db, { profileId, actorUserId, agentKeyId })` decrypts the profile row and returns the plaintext string. Missing row throws `Error('credential profile not found')`. Writes a `token 揭示` event. Does not log the token. Not an HTTP handler. Forge token reveal channels: successful Bearer `POST /api/v1/tasks/:publicId/claim` `201` top-level `token` and MCP `claim_task` success `token`. `POST /api/v1/tasks/import` `200` never contains a forge token. `apps/server/src/writeback.ts`'s `decryptTaskToken(db, task)` (used by `attemptWriteback`, #14) decrypts the task's own credential the same way `claimTask` does, but resolves to `undefined` on any failure instead of throwing, and does not write a `token 揭示` event (that event denotes a reveal to a principal; write-back's decrypt, like the poller's, never returns the plaintext anywhere).
 
 ### Env (`registerAuth`)
 
@@ -350,13 +377,13 @@ Package export `"."` → `./src/index.ts`. No runtime HTTP dependency (global `f
 
 Unknown `kind` to `createForgeAdapter` throws `Error('unknown forge kind: …')`.
 
-`validateToken`, `importIssue`, `registerWebhook`, `parseWebhook` are `ForgeAdapter` methods, not package-level exports. `parseIssueUrl(kind, issueUrl): { full_name: string } | undefined` **is** a package-level export (same Issue URL parsers as `importIssue`).
+`validateToken`, `importIssue`, `registerWebhook`, `parseWebhook`, `commentOnIssue` are `ForgeAdapter` methods, not package-level exports. `parseIssueUrl(kind, issueUrl): { full_name: string } | undefined` **is** a package-level export (same Issue URL parsers as `importIssue`).
 
 Types: `ForgeKind` `'github' | 'gitlab' | 'gitea'`; `Credential` `{ token: string }`; `RepoRef` `{ full_name: string; base_url: string }`; `TokenCapability` `'读' | '推' | 'PR'`; `TokenCheck` `{ missing: TokenCapability[] }`; `CreateForgeAdapterOptions` (`{ baseUrl?: string; webhookSecret?: string }`); `ForgeAdapter`.
 
-`ImportedIssue` is `{ title: string; description_md: string; issue_url: string; repo: { full_name: string } }` (no longer `unknown`, #12). `PrStatus` is `{ state: 'open' | 'merged' | 'closed' }` (no longer `unknown`, #11). `ForgeEvent` is `{ type: 'pull_request'; state: 'merged' | 'closed'; pr_url: string; repo: { full_name: string } }` (no longer `unknown`, #13) — `parseWebhook` returns this or `null`; `IssueRef` remains `unknown`.
+`ImportedIssue` is `{ title: string; description_md: string; issue_url: string; repo: { full_name: string } }` (no longer `unknown`, #12). `PrStatus` is `{ state: 'open' | 'merged' | 'closed' }` (no longer `unknown`, #11). `ForgeEvent` is `{ type: 'pull_request'; state: 'merged' | 'closed'; pr_url: string; repo: { full_name: string } }` (no longer `unknown`, #13) — `parseWebhook` returns this or `null`. `IssueRef` is `{ issue_url: string }` (no longer `unknown`, #14).
 
-Implemented: `kind` + `validateToken` (GET-only) + `getPullRequest` (GET-only, #11) + `importIssue` (GET-only, #12) + `registerWebhook` (POST, #13) + `parseWebhook` (no fetch, #13). `commentOnIssue` still throws `Error('not implemented')` (#14, out of scope).
+Implemented: `kind` + `validateToken` (GET-only) + `getPullRequest` (GET-only, #11) + `importIssue` (GET-only, #12) + `registerWebhook` (POST, #13) + `parseWebhook` (no fetch, #13) + `commentOnIssue` (POST, #14).
 
 API hosts: GitHub always `https://api.github.com` (ignores `baseUrl`). GitLab: strip trailing slashes then `/api/v4`. Gitea: `/api/v1`. GitLab/Gitea origin is `options?.baseUrl ?? repo.base_url`. GitLab repo path: `/projects/${encodeURIComponent(full_name)}`. GitHub/Gitea repo path: `/repos/${full_name}`. User path: `/user`. `registerWebhook`'s host rule is the same: GitHub always `https://api.github.com`, GitLab/Gitea use constructor `options.baseUrl`. `parseWebhook` never fetches.
 
@@ -413,6 +440,17 @@ Pathname after strip:
 `ImportedIssue` mapping: `title` ← JSON `title` (missing/non-string rejects after the one fetch); `description_md` ← GitLab JSON `description`, GitHub/Gitea JSON `body` (`null` / missing / non-string → `''`); `issue_url` ← the pasted web URL after trailing-slash strip (not API `html_url` / `web_url`); `repo.full_name` ← GitHub/Gitea `owner/repo`, GitLab full namespace.
 
 A non-OK HTTP response rejects after `fetch` with `importIssue: ${kind} responded ${status}`. An unparseable `issueUrl` (including `/pull/`, `/pulls/`, `/-/merge_requests/`, `/-/work_items/` pathnames) rejects **without** calling `fetch`.
+
+### `commentOnIssue(cred, issueRef, body)` (#14)
+
+`IssueRef` is `{ issue_url: string }`. Reuses `resolveImportedIssue` (the same URL-parsing + host/SSRF function `importIssue` uses — GitHub always `https://api.github.com`, GitLab/Gitea use the constructor `baseUrl`, never the pasted `issue_url` host) to get the issue's REST endpoint, then reuses `forgePost` to send `{ body }` as JSON:
+
+- GitHub / Gitea: `POST {issueApiUrl}/comments`
+- GitLab: `POST {issueApiUrl}/notes`
+
+Success is any `res.ok` (2xx) response, not a hard-coded status code (GitHub/Gitea document `201`; GitLab's create-note page does not table a status, so production only asserts `res.ok`). A non-OK response rejects after the one `fetch` with `commentOnIssue: ${kind} responded ${status}`. An unparseable `issue_url` (including a pasted PR/MR web path) rejects **without** calling `fetch`. Auth headers reuse the existing `authHeaders()` (same per-kind scheme as every other method: GitHub `Authorization: Bearer`, GitLab `PRIVATE-TOKEN`, Gitea `Authorization: token`).
+
+New shared spec `packages/forge-adapters/src/comment-on-issue.shared.test.ts`, parameterized over github/gitlab/gitea, copied/trimmed fetch-stub helpers (not imported from `import-issue.shared.test.ts`).
 
 ## `@kaola/shared`
 

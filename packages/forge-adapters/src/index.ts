@@ -37,7 +37,9 @@ export type ForgeEvent = {
   pr_url: string
   repo: { full_name: string }
 }
-export type IssueRef = unknown
+export type IssueRef = {
+  issue_url: string
+}
 
 // Distinct `name` so callers (the Fastify receiver) can tell "reject the HTTP request" (bad or
 // missing signature/secret) apart from `parseWebhook`'s `null` return ("ignore, still 204").
@@ -82,12 +84,8 @@ export function createForgeAdapter(
     getPullRequest: (cred, prUrl) => getPullRequest(kind, options, cred, prUrl),
     registerWebhook: (cred, repo, callback) => registerWebhook(kind, options, cred, repo, callback),
     parseWebhook: (headers, body) => parseWebhook(kind, options, headers, body),
-    commentOnIssue: notImplemented,
+    commentOnIssue: (cred, issueRef, body) => commentOnIssue(kind, options, cred, issueRef, body),
   }
-}
-
-function notImplemented(): never {
-  throw new Error('not implemented')
 }
 
 async function validateToken(
@@ -491,6 +489,24 @@ async function importIssue(
     description_md: readIssueDescription(kind, obj),
     issue_url: issueUrl.replace(/\/+$/u, ''),
     repo: { full_name: resolved.fullName },
+  }
+}
+
+// Issue #14: post a status-update comment (GitHub/Gitea) or note (GitLab) on the imported Issue.
+// Reuses `resolveImportedIssue` for URL parsing + host/SSRF rule, and `forgePost` for the actual
+// request — no second fetch wrapper.
+async function commentOnIssue(
+  kind: ForgeKind,
+  options: CreateForgeAdapterOptions | undefined,
+  cred: Credential,
+  issueRef: IssueRef,
+  body: string,
+): Promise<void> {
+  const resolved = resolveImportedIssue(kind, options, issueRef.issue_url)
+  const url = kind === 'gitlab' ? `${resolved.apiUrl}/notes` : `${resolved.apiUrl}/comments`
+  const res = await forgePost(kind, url, cred.token, { body })
+  if (!res.ok) {
+    throw new Error(`commentOnIssue: ${kind} responded ${res.status}`)
   }
 }
 

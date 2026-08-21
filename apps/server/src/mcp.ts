@@ -117,7 +117,7 @@ function createKaolaMcpServer(db: AppDb, authHolder: AuthHolder): McpServer {
       description: `Claim a task and receive a one-shot forge token. ${CLONE_TOKEN_USAGE}`,
       inputSchema: { task_id: z.string() },
     },
-    async (args) => toToolResult(claimTask(db, authHolder.auth, args.task_id)),
+    async (args) => toToolResult(await claimTask(db, authHolder.auth, args.task_id)),
   )
 
   server.registerTool(
@@ -155,7 +155,7 @@ function createKaolaMcpServer(db: AppDb, authHolder: AuthHolder): McpServer {
       },
     },
     async (args) =>
-      toToolResult(submitPr(db, authHolder.auth, args.task_id, args.pr_url, args.summary)),
+      toToolResult(await submitPr(db, authHolder.auth, args.task_id, args.pr_url, args.summary)),
   )
 
   return server

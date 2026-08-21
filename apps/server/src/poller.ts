@@ -4,8 +4,15 @@ import { transitionTaskStatus } from '@kaola/shared'
 import type { TaskStatus } from '@kaola/shared'
 import { desc, eq } from 'drizzle-orm'
 import type { AppDb } from './db.ts'
-import { type Task, credentialProfiles, submissions, tasks } from './schema.ts'
-import { decryptToken, insertAuditEvent } from './vault.ts'
+import { type Task, submissions, tasks } from './schema.ts'
+import { insertAuditEvent } from './vault.ts'
+import { attemptWriteback, decryptTaskToken } from './writeback.ts'
+
+// Issue #14: `retryPendingWritebacks` lives in writeback.ts (which this module already depends
+// on for `decryptTaskToken`/`attemptWriteback`) and is re-exported here so callers/tests can
+// import it alongside `pollPendingReviews` from a single module, per this file's existing role
+// as the poller's public surface.
+export { retryPendingWritebacks } from './writeback.ts'
 
 // Issue #11: the only driver of 待验收→已完成/已退回. Runs on-demand (tests call it directly) or on
 // a `buildApp({ pollIntervalMs })` timer (see app.ts). Mirrors `sweepExpiredLeases`'s pattern for
@@ -57,13 +64,17 @@ export function latestSubmission(db: AppDb, taskId: number) {
 // terminal 已完成/已退回 through the exact same write shape, so the transition itself — not just
 // its trigger — stays in one place. The webhook path never decrypts a token or calls
 // `getPullRequest`; it calls this directly off the payload's own merged/closed verdict.
-export function applyPrTerminalTransition(
+//
+// Issue #14: once the transaction is committed, a `merged` terminal additionally attempts a 完成
+// write-back comment on the source Issue (imported tasks only) — never on `closed` (已退回), and
+// never inside the transaction above (no SQLite write lock held across the outbound HTTP call).
+export async function applyPrTerminalTransition(
   db: AppDb,
   task: Task,
   submissionId: number,
   terminal: 'merged' | 'closed',
   prUrl: string,
-): void {
+): Promise<void> {
   const from = task.status as TaskStatus
   const toChinese = terminal === 'merged' ? '已完成' : '已退回'
   const to = transitionTaskStatus(from, toChinese) as TaskStatus
@@ -80,26 +91,9 @@ export function applyPrTerminalTransition(
       details: { task_id: task.publicId, from, to, pr_url: prUrl },
     })
   })
-}
 
-// Same branch as `claimTask`'s credential resolution, except any failure here (vault
-// unconfigured, missing profile, corrupt ciphertext) skips this row rather than throwing out of
-// the poll loop — there is no HTTP request to fail on the poller's behalf.
-function decryptTaskToken(db: AppDb, task: Task): string | undefined {
-  try {
-    if (task.credentialProfileId != null) {
-      const profile = db
-        .select()
-        .from(credentialProfiles)
-        .where(eq(credentialProfiles.id, task.credentialProfileId))
-        .get()
-      if (profile == null) return undefined
-      return decryptToken(profile.tokenEncrypted)
-    }
-    if (task.inlineTokenEncrypted == null) return undefined
-    return decryptToken(task.inlineTokenEncrypted)
-  } catch {
-    return undefined
+  if (terminal === 'merged') {
+    await attemptWriteback(db, task, '完成', null, prUrl)
   }
 }
 
@@ -121,7 +115,7 @@ async function pollOneTask(db: AppDb, task: Task): Promise<void> {
   const status = await fetchPrStatus(db, task, submission.prUrl)
   if (status == null || status.state === 'open') return
 
-  applyPrTerminalTransition(db, task, submission.id, status.state, submission.prUrl)
+  await applyPrTerminalTransition(db, task, submission.id, status.state, submission.prUrl)
 }
 
 // Must never reject: this drives a `setInterval` (see app.ts), and an unhandled rejection there

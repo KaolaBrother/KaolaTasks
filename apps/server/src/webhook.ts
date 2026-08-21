@@ -100,7 +100,7 @@ export function registerWebhooks(
         return reply.code(204).send()
       }
 
-      applyPrTerminalTransition(db, match.task, match.submissionId, event.state, event.pr_url)
+      await applyPrTerminalTransition(db, match.task, match.submissionId, event.state, event.pr_url)
       return reply.code(204).send()
     })
   })

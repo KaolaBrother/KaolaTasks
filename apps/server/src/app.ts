@@ -9,7 +9,7 @@ import { registerCredentialProfiles } from './credential-profiles.ts'
 import { createDb } from './db.ts'
 import { registerMcp } from './mcp.ts'
 import { getPlaceholderBody } from './placeholder.ts'
-import { pollPendingReviews } from './poller.ts'
+import { pollPendingReviews, retryPendingWritebacks } from './poller.ts'
 import type { ForgeInstanceConfig } from './poller.ts'
 import { registerTasks } from './tasks.ts'
 import { registerWebhooks } from './webhook.ts'
@@ -52,12 +52,17 @@ export function buildApp(options?: {
       // In-flight guard: a pass that outlives `pollIntervalMs` (a slow/hanging forge) must not
       // let the next tick re-poll the same rows and duplicate 状态迁移 events. `.catch()` is
       // belt-and-suspenders — `pollPendingReviews` itself is written to never reject.
+      //
+      // Issue #14: `retryPendingWritebacks` runs the same tick, sequentially after
+      // `pollPendingReviews`, under the same in-flight guard — avoids overlapping SQLite writes
+      // and, like `pollPendingReviews`, must never reject.
       let polling = false
       const timer = setInterval(() => {
         if (polling) return
         polling = true
         pollPendingReviews(db, forgeInstances)
           .catch(() => {})
+          .then(() => retryPendingWritebacks(db).catch(() => {}))
           .finally(() => {
             polling = false
           })
