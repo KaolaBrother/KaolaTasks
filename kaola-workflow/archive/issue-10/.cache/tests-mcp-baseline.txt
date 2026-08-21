@@ -1,0 +1,414 @@
+=== git rev-parse HEAD ===
+64b123e5ac2fe77aa176bd5deea055be7d77f758
+
+=== node --experimental-strip-types --test apps/server/src/mcp.test.ts ===
+▶ issue #10 MCP server
+  ▶ authentication — Bearer only, HTTP 401 before JSON-RPC
+    ✖ unauthenticated POST /api/mcp (missing Authorization) is 401 unauthorized with WWW-Authenticate Bearer (781.545583ms)
+    ✖ Token scheme, Basic, and wrong Bearer on POST /api/mcp are 401 with WWW-Authenticate Bearer (7.937375ms)
+    ✖ a session cookie without Bearer does not authorize POST /api/mcp (3.975ms)
+    ✖ authenticated tools/list includes the six tools and claim_task describes token hygiene (3.555333ms)
+  ✖ authentication — Bearer only, HTTP 401 before JSON-RPC (797.356833ms)
+  ▶ list_tasks / get_task_brief
+    ✖ list_tasks returns { tasks } briefs that parse and never contain forge secrets (7.217208ms)
+    ✖ list_tasks filters by exact status, tag membership of one tag, and exact repo.forge (6.149792ms)
+    ✖ list_tasks and get_task_brief apply sweepExpiredLeases so an expired 进行中 task shows as 待认领 (6.059209ms)
+    ✖ a pending 待批准 Agent Key may list_tasks (8.955042ms)
+    ✖ get_task_brief returns a top-level brief; missing and numeric ids are isError not_found (7.0705ms)
+  ✖ list_tasks / get_task_brief (35.658041ms)
+  ▶ claim_task
+    ✖ claim_task success envelope keys are exactly task, token, lease, clone with the REST clone pin (3.507625ms)
+    ✖ pending claim_task is isError matching REST 403, reveals no token, and writes no token 揭示 (7.113917ms)
+    ✖ second claim_task is conflict; list_tasks and get_task_brief still omit the forge token (8.401917ms)
+  ✖ claim_task (19.137459ms)
+  ▶ report_progress / release_task
+    ✖ report_progress wraps REST: optional note (omit → empty string), envelope { task, lease }, no token (9.951375ms)
+    ✖ release_task wraps REST: optional reason, envelope { task } 待认领, no token (11.983958ms)
+    ✖ non-holder report_progress and release_task are isError forbidden with no message (4.141042ms)
+    ✖ report_progress and release_task with no live lease are isError 任务未被认领 (2.841875ms)
+  ✖ report_progress / release_task (29.056417ms)
+  ▶ submit_pr
+    ✖ submit_pr success is { task, pr_url, summary } 待验收, persists submissions, clears the lease, writes 状态迁移 (8.868459ms)
+    ✖ submit_pr fails for non-holder, no lease, and not 进行中 (12.375541ms)
+  ✖ submit_pr (21.347ms)
+✖ issue #10 MCP server (902.795458ms)
+ℹ tests 18
+ℹ suites 6
+ℹ pass 0
+ℹ fail 18
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1415.826334
+
+✖ failing tests:
+
+test at apps/server/src/mcp.test.ts:797:5
+✖ unauthenticated POST /api/mcp (missing Authorization) is 401 unauthorized with WWW-Authenticate Bearer (781.545583ms)
+  AssertionError [ERR_ASSERTION]: expected 401, got 404: {"message":"Route POST:/api/mcp not found","error":"Not Found","statusCode":404}
+  
+  404 !== 401
+  
+      at assertBearerUnauthorized (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:516:10)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:802:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 401,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/mcp.test.ts:805:5
+✖ Token scheme, Basic, and wrong Bearer on POST /api/mcp are 401 with WWW-Authenticate Bearer (7.937375ms)
+  AssertionError [ERR_ASSERTION]: expected 401, got 404: {"message":"Route POST:/api/mcp not found","error":"Not Found","statusCode":404}
+  
+  404 !== 401
+  
+      at assertBearerUnauthorized (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:516:10)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:815:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 401,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/mcp.test.ts:830:5
+✖ a session cookie without Bearer does not authorize POST /api/mcp (3.975ms)
+  AssertionError [ERR_ASSERTION]: expected 401, got 404: {"message":"Route POST:/api/mcp not found","error":"Not Found","statusCode":404}
+  
+  404 !== 401
+  
+      at assertBearerUnauthorized (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:516:10)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:839:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 401,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/mcp.test.ts:842:5
+✖ authenticated tools/list includes the six tools and claim_task describes token hygiene (3.555333ms)
+  AssertionError [ERR_ASSERTION]: MCP initialize HTTP: 404 {"message":"Route POST:/api/mcp not found","error":"Not Found","statusCode":404}
+  
+  404 !== 200
+  
+      at Object.initialize (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:718:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async readyMcp (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:774:3)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:846:22)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/mcp.test.ts:869:5
+✖ list_tasks returns { tasks } briefs that parse and never contain forge secrets (7.217208ms)
+  AssertionError [ERR_ASSERTION]: MCP initialize HTTP: 404 {"message":"Route POST:/api/mcp not found","error":"Not Found","statusCode":404}
+  
+  404 !== 200
+  
+      at Object.initialize (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:718:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async readyMcp (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:774:3)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:875:22)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/mcp.test.ts:891:5
+✖ list_tasks filters by exact status, tag membership of one tag, and exact repo.forge (6.149792ms)
+  AssertionError [ERR_ASSERTION]: MCP initialize HTTP: 404 {"message":"Route POST:/api/mcp not found","error":"Not Found","statusCode":404}
+  
+  404 !== 200
+  
+      at Object.initialize (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:718:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async readyMcp (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:774:3)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:920:22)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/mcp.test.ts:973:5
+✖ list_tasks and get_task_brief apply sweepExpiredLeases so an expired 进行中 task shows as 待认领 (6.059209ms)
+  AssertionError [ERR_ASSERTION]: MCP initialize HTTP: 404 {"message":"Route POST:/api/mcp not found","error":"Not Found","statusCode":404}
+  
+  404 !== 200
+  
+      at Object.initialize (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:718:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async readyMcp (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:774:3)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:982:22)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/mcp.test.ts:999:5
+✖ a pending 待批准 Agent Key may list_tasks (8.955042ms)
+  AssertionError [ERR_ASSERTION]: MCP initialize HTTP: 404 {"message":"Route POST:/api/mcp not found","error":"Not Found","statusCode":404}
+  
+  404 !== 200
+  
+      at Object.initialize (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:718:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async readyMcp (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:774:3)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:1009:22)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/mcp.test.ts:1018:5
+✖ get_task_brief returns a top-level brief; missing and numeric ids are isError not_found (7.0705ms)
+  AssertionError [ERR_ASSERTION]: MCP initialize HTTP: 404 {"message":"Route POST:/api/mcp not found","error":"Not Found","statusCode":404}
+  
+  404 !== 200
+  
+      at Object.initialize (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:718:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async readyMcp (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:774:3)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:1023:22)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/mcp.test.ts:1042:5
+✖ claim_task success envelope keys are exactly task, token, lease, clone with the REST clone pin (3.507625ms)
+  AssertionError [ERR_ASSERTION]: MCP initialize HTTP: 404 {"message":"Route POST:/api/mcp not found","error":"Not Found","statusCode":404}
+  
+  404 !== 200
+  
+      at Object.initialize (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:718:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async readyMcp (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:774:3)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:1048:22)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/mcp.test.ts:1059:5
+✖ pending claim_task is isError matching REST 403, reveals no token, and writes no token 揭示 (7.113917ms)
+  AssertionError [ERR_ASSERTION]: MCP initialize HTTP: 404 {"message":"Route POST:/api/mcp not found","error":"Not Found","statusCode":404}
+  
+  404 !== 200
+  
+      at Object.initialize (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:718:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async readyMcp (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:774:3)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:1070:22)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/mcp.test.ts:1083:5
+✖ second claim_task is conflict; list_tasks and get_task_brief still omit the forge token (8.401917ms)
+  AssertionError [ERR_ASSERTION]: MCP initialize HTTP: 404 {"message":"Route POST:/api/mcp not found","error":"Not Found","statusCode":404}
+  
+  404 !== 200
+  
+      at Object.initialize (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:718:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async readyMcp (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:774:3)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:1091:22)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/mcp.test.ts:1130:5
+✖ report_progress wraps REST: optional note (omit → empty string), envelope { task, lease }, no token (9.951375ms)
+  AssertionError [ERR_ASSERTION]: MCP initialize HTTP: 404 {"message":"Route POST:/api/mcp not found","error":"Not Found","statusCode":404}
+  
+  404 !== 200
+  
+      at Object.initialize (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:718:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async readyMcp (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:774:3)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:1139:22)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/mcp.test.ts:1169:5
+✖ release_task wraps REST: optional reason, envelope { task } 待认领, no token (11.983958ms)
+  AssertionError [ERR_ASSERTION]: MCP initialize HTTP: 404 {"message":"Route POST:/api/mcp not found","error":"Not Found","statusCode":404}
+  
+  404 !== 200
+  
+      at Object.initialize (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:718:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async readyMcp (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:774:3)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:1184:22)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/mcp.test.ts:1226:5
+✖ non-holder report_progress and release_task are isError forbidden with no message (4.141042ms)
+  AssertionError [ERR_ASSERTION]: MCP initialize HTTP: 404 {"message":"Route POST:/api/mcp not found","error":"Not Found","statusCode":404}
+  
+  404 !== 200
+  
+      at Object.initialize (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:718:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async readyMcp (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:774:3)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:1237:25)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/mcp.test.ts:1254:5
+✖ report_progress and release_task with no live lease are isError 任务未被认领 (2.841875ms)
+  AssertionError [ERR_ASSERTION]: MCP initialize HTTP: 404 {"message":"Route POST:/api/mcp not found","error":"Not Found","statusCode":404}
+  
+  404 !== 200
+  
+      at Object.initialize (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:718:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async readyMcp (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:774:3)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:1259:22)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/mcp.test.ts:1272:5
+✖ submit_pr success is { task, pr_url, summary } 待验收, persists submissions, clears the lease, writes 状态迁移 (8.868459ms)
+  AssertionError [ERR_ASSERTION]: MCP initialize HTTP: 404 {"message":"Route POST:/api/mcp not found","error":"Not Found","statusCode":404}
+  
+  404 !== 200
+  
+      at Object.initialize (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:718:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async readyMcp (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:774:3)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:1282:22)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/mcp.test.ts:1333:5
+✖ submit_pr fails for non-holder, no lease, and not 进行中 (12.375541ms)
+  AssertionError [ERR_ASSERTION]: MCP initialize HTTP: 404 {"message":"Route POST:/api/mcp not found","error":"Not Found","statusCode":404}
+  
+  404 !== 200
+  
+      at Object.initialize (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:718:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async readyMcp (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:774:3)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-10/apps/server/src/mcp.test.ts:1354:22)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+EXIT:1
