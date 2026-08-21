@@ -64,8 +64,14 @@ export function decryptToken(encoded: string | Buffer): string {
   return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8')
 }
 
+// Structural subset of `AppDb` so callers running inside a `db.transaction(...)` can pass the
+// transaction handle (`BetterSQLiteTransaction`) — it shares `insert`'s type with `AppDb` (both
+// extend the same drizzle `BaseSQLiteDatabase`) but lacks `$client`, so it isn't assignable to
+// the full `AppDb` type.
+type AuditEventWriter = { insert: AppDb['insert'] }
+
 export function insertAuditEvent(
-  db: AppDb,
+  db: AuditEventWriter,
   input: { type: string; actorUserId: number | null; details: unknown },
 ): void {
   db.insert(events)

@@ -9,6 +9,7 @@ import { registerCredentialProfiles } from './credential-profiles.ts'
 import { createDb } from './db.ts'
 import { registerMcp } from './mcp.ts'
 import { getPlaceholderBody } from './placeholder.ts'
+import { pollPendingReviews } from './poller.ts'
 import { registerTasks } from './tasks.ts'
 
 function nonemptyOption(value: string | undefined): string | undefined {
@@ -29,12 +30,39 @@ export function buildApp(options?: {
   sqlitePath?: string
   webDist?: string
   viteDevTarget?: string
+  pollIntervalMs?: number
 }) {
   const db = createDb(options?.sqlitePath ?? ':memory:')
   const app = Fastify()
   app.addHook('onClose', () => {
     db.$client.close()
   })
+
+  const pollIntervalMs = options?.pollIntervalMs
+  if (pollIntervalMs != null && pollIntervalMs > 0) {
+    // Registered inside a child plugin context (mirrors mcp.ts's `mcpBearerContext`): Fastify
+    // runs child-plugin `onClose` hooks before parent/root-level ones, so `clearInterval` here is
+    // guaranteed to fire before the root db-close hook above, regardless of source order.
+    app.register(async function pollerContext(child) {
+      // In-flight guard: a pass that outlives `pollIntervalMs` (a slow/hanging forge) must not
+      // let the next tick re-poll the same rows and duplicate 状态迁移 events. `.catch()` is
+      // belt-and-suspenders — `pollPendingReviews` itself is written to never reject.
+      let polling = false
+      const timer = setInterval(() => {
+        if (polling) return
+        polling = true
+        pollPendingReviews(db)
+          .catch(() => {})
+          .finally(() => {
+            polling = false
+          })
+      }, pollIntervalMs)
+      child.addHook('onClose', () => {
+        clearInterval(timer)
+        polling = false
+      })
+    })
+  }
 
   const webDist = nonemptyOption(options?.webDist)
   const viteDevTarget = nonemptyOption(options?.viteDevTarget)

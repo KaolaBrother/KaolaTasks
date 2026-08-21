@@ -19,7 +19,7 @@ export type TokenCheck = {
 
 /** Placeholder until later issues define DESIGN §8 payloads. */
 export type ImportedIssue = unknown
-export type PrStatus = unknown
+export type PrStatus = { state: 'open' | 'merged' | 'closed' }
 export type ForgeEvent = unknown
 export type IssueRef = unknown
 
@@ -53,7 +53,7 @@ export function createForgeAdapter(
     kind,
     validateToken: (cred, repo) => validateToken(kind, options, cred, repo),
     importIssue: notImplemented,
-    getPullRequest: notImplemented,
+    getPullRequest: (cred, prUrl) => getPullRequest(kind, options, cred, prUrl),
     registerWebhook: notImplemented,
     parseWebhook: notImplemented,
     commentOnIssue: notImplemented,
@@ -91,6 +91,109 @@ async function validateToken(
     return gitlabCapabilities(repoBody)
   }
   return giteaCapabilities(repoBody)
+}
+
+// Issue #11: PR/MR status lookup used by the server poller. `Credential` carries only a bare
+// `prUrl` string (no RepoRef), so owner/repo/number (or namespace/iid) are parsed out of the URL
+// itself. GitHub's API origin is always api.github.com; GitLab/Gitea use the constructor
+// `options.baseUrl`, never the prUrl's own host.
+type ParsedGithubPr = { owner: string; repo: string; number: string }
+type ParsedGiteaPr = { owner: string; repo: string; number: string }
+type ParsedGitlabMr = { namespace: string; iid: string }
+
+function stripPrUrlSuffix(url: string): string {
+  return url.replace(/\/+$/u, '').replace(/\.(?:diff|patch)$/u, '')
+}
+
+function parsedUrl(url: string): URL | undefined {
+  try {
+    return new URL(stripPrUrlSuffix(url))
+  } catch {
+    return undefined
+  }
+}
+
+function parseGithubPrUrl(prUrl: string): ParsedGithubPr | undefined {
+  const url = parsedUrl(prUrl)
+  if (url == null) return undefined
+  const match = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)$/u.exec(url.pathname)
+  if (match == null) return undefined
+  return { owner: match[1] as string, repo: match[2] as string, number: match[3] as string }
+}
+
+function parseGiteaPrUrl(prUrl: string): ParsedGiteaPr | undefined {
+  const url = parsedUrl(prUrl)
+  if (url == null) return undefined
+  const match = /^\/([^/]+)\/([^/]+)\/pulls\/(\d+)$/u.exec(url.pathname)
+  if (match == null) return undefined
+  return { owner: match[1] as string, repo: match[2] as string, number: match[3] as string }
+}
+
+function parseGitlabMrUrl(prUrl: string): ParsedGitlabMr | undefined {
+  const url = parsedUrl(prUrl)
+  if (url == null) return undefined
+  const match = /^\/(.+)\/-\/merge_requests\/(\d+)$/u.exec(url.pathname)
+  if (match == null) return undefined
+  return { namespace: match[1] as string, iid: match[2] as string }
+}
+
+function prApiOrigin(kind: ForgeKind, options: CreateForgeAdapterOptions | undefined): string {
+  if (kind === 'github') return GITHUB_API_ORIGIN
+  return (options?.baseUrl ?? '').replace(/\/+$/u, '')
+}
+
+function prApiUrl(
+  kind: ForgeKind,
+  options: CreateForgeAdapterOptions | undefined,
+  prUrl: string,
+): string {
+  if (kind === 'github') {
+    const parsed = parseGithubPrUrl(prUrl)
+    if (parsed == null) {
+      throw new Error(`unparseable GitHub pull request URL: ${prUrl}`)
+    }
+    return `${prApiOrigin(kind, options)}/repos/${encodeURIComponent(parsed.owner)}/${encodeURIComponent(parsed.repo)}/pulls/${parsed.number}`
+  }
+  if (kind === 'gitlab') {
+    const parsed = parseGitlabMrUrl(prUrl)
+    if (parsed == null) {
+      throw new Error(`unparseable GitLab merge request URL: ${prUrl}`)
+    }
+    return `${prApiOrigin(kind, options)}/api/v4/projects/${encodeURIComponent(parsed.namespace)}/merge_requests/${parsed.iid}`
+  }
+  const parsed = parseGiteaPrUrl(prUrl)
+  if (parsed == null) {
+    throw new Error(`unparseable Gitea pull request URL: ${prUrl}`)
+  }
+  return `${prApiOrigin(kind, options)}/api/v1/repos/${encodeURIComponent(parsed.owner)}/${encodeURIComponent(parsed.repo)}/pulls/${parsed.number}`
+}
+
+function derivePrState(kind: ForgeKind, body: unknown): PrStatus['state'] {
+  const obj = asObject(body)
+  if (kind === 'gitlab') {
+    if (obj?.state === 'merged') return 'merged'
+    if (obj?.state === 'closed') return 'closed'
+    // 'opened' and the transient 'locked' (en route to merged) both read as open.
+    return 'open'
+  }
+  if (obj?.merged === true) return 'merged'
+  if (obj?.state === 'closed') return 'closed'
+  return 'open'
+}
+
+async function getPullRequest(
+  kind: ForgeKind,
+  options: CreateForgeAdapterOptions | undefined,
+  cred: Credential,
+  prUrl: string,
+): Promise<PrStatus> {
+  const url = prApiUrl(kind, options, prUrl)
+  const res = await forgeGet(kind, url, cred.token)
+  if (!res.ok) {
+    throw new Error(`getPullRequest: ${kind} responded ${res.status}`)
+  }
+  const body: unknown = await res.json()
+  return { state: derivePrState(kind, body) }
 }
 
 function userPath(): string {

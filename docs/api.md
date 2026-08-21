@@ -4,13 +4,13 @@ Document public APIs, endpoints, schemas, events, and integration contracts.
 
 Product contracts that are not yet in source remain in [DESIGN.md](DESIGN.md) §6 (任务卡 Schema), §8 (ForgeAdapter), §9 (MCP 工具面 / REST). This file records what is implemented.
 
-MCP tools (`list_tasks`, `get_task_brief`, `claim_task`, `report_progress`, `submit_pr`, `release_task`) are implemented (`registerMcp` in `apps/server/src/mcp.ts`): Bearer `POST /api/mcp` Streamable HTTP. Claim HTTP is also implemented (`registerClaim` in `apps/server/src/claim.ts`): Bearer `POST /api/v1/tasks/:publicId/claim`, `…/progress`, `…/release` (no REST `submit_pr`). Forge token reveal channels: successful `POST …/claim` `201` top-level `token` **and** MCP `claim_task` success `token`. Session `GET /api/v1/tasks` and `GET /api/v1/tasks/:publicId` never contain it. Task CRUD HTTP is implemented (`registerTasks` in `apps/server/src/tasks.ts`). `revealCredentialProfile` is a module export from `apps/server/src/vault.ts` (not itself HTTP).
+MCP tools (`list_tasks`, `get_task_brief`, `claim_task`, `report_progress`, `submit_pr`, `release_task`) are implemented (`registerMcp` in `apps/server/src/mcp.ts`): Bearer `POST /api/mcp` Streamable HTTP. Claim HTTP is also implemented (`registerClaim` in `apps/server/src/claim.ts`): Bearer `POST /api/v1/tasks/:publicId/claim`, `…/progress`, `…/release` (no REST `submit_pr`). Forge token reveal channels: successful `POST …/claim` `201` top-level `token` **and** MCP `claim_task` success `token`. Session `GET /api/v1/tasks` and `GET /api/v1/tasks/:publicId` never contain it. Task CRUD HTTP is implemented (`registerTasks` in `apps/server/src/tasks.ts`). `revealCredentialProfile` is a module export from `apps/server/src/vault.ts` (not itself HTTP). PR polling (`pollPendingReviews` in `apps/server/src/poller.ts`) is **not** an HTTP route — it is either called directly (tests) or driven by an internal `setInterval` registered by `buildApp({ pollIntervalMs })`; it is the only thing that moves a task out of `待验收`. There is still no webhook route.
 
 ## HTTP (`@kaola/server`)
 
-Sources: `apps/server/src/app.ts`, `auth.ts`, `agent-keys.ts`, `agent-bearer.ts`, `credential-profiles.ts`, `vault.ts`, `tasks.ts`, `claim.ts`, `leases.ts`, `mcp.ts`, `schema.ts`, `db.ts`, `placeholder.ts`, `index.ts`.
+Sources: `apps/server/src/app.ts`, `auth.ts`, `agent-keys.ts`, `agent-bearer.ts`, `credential-profiles.ts`, `vault.ts`, `tasks.ts`, `claim.ts`, `leases.ts`, `mcp.ts`, `poller.ts`, `schema.ts`, `db.ts`, `placeholder.ts`, `index.ts`.
 
-`buildApp({ sqlitePath?, webDist?, viteDevTarget? })` creates its own SQLite via `createDb`. Process `index.ts` uses `SQLITE_PATH ?? ':memory:'`, and passes `WEB_DIST` / `VITE_DEV_TARGET` into `buildApp`. Empty string is treated as omitted.
+`buildApp({ sqlitePath?, webDist?, viteDevTarget?, pollIntervalMs? })` creates its own SQLite via `createDb`. Process `index.ts` uses `SQLITE_PATH ?? ':memory:'`, and passes `WEB_DIST` / `VITE_DEV_TARGET` / `pollIntervalMs` into `buildApp`. Empty string is treated as omitted for `webDist`/`viteDevTarget`.
 
 ### `GET /`
 
@@ -201,7 +201,25 @@ Six `registerTool` names:
 
 `list_tasks` / `get_task_brief` / mutating tools call `sweepExpiredLeases` first. Claim/progress/release/submit wrap `claimTask` / `reportProgress` / `releaseTask` / `submitPr` (same REST error bodies: pending claim `forbidden` + `你的账号待正式成员批准后方可认领任务。`; second claim `conflict` + `任务已被认领。`; non-holder `forbidden` without `message`; no live lease `conflict` + `任务未被认领。`; `submit_pr` when status is not `进行中` → `illegal_transition` to `待验收`).
 
-`registerMcp(app, db)` is wired in `app.ts` after `registerClaim`. No PR polling.
+`registerMcp(app, db)` is wired in `app.ts` after `registerClaim`.
+
+### PR polling (`pollPendingReviews`, not an HTTP route)
+
+`pollPendingReviews(db: AppDb): Promise<void>` (`apps/server/src/poller.ts`) is the only driver of `待验收` → `已完成`/`已退回`. It is never itself exposed over HTTP; it runs either on direct call (tests) or on an interval registered by `buildApp({ pollIntervalMs })` (see below).
+
+Each call: selects `tasks` where `status === '待验收'`; for each row, reads the latest `submissions` row for that task (`orderBy(desc(submissions.id)).limit(1)`); decrypts the task's credential (profile or inline — same branch as `claimTask`'s resolution); calls `createForgeAdapter(task.repoForge, { baseUrl: task.repoBaseUrl }).getPullRequest({ token }, submission.prUrl)`.
+
+- `state: 'open'` — task and `submissions.pr_state` are left unchanged.
+- `state: 'merged'` — `transitionTaskStatus('待验收', '已完成')`; `submissions.pr_state` set to `'merged'`.
+- `state: 'closed'` (closed without merging) — transitions to `已退回`; `pr_state` set to `'closed'`.
+
+A successful transition writes, in one `db.transaction` together with the two updates above, `events.type` `状态迁移`, `actor_user_id` `null` (system-driven, same shape as lease-expiry events), `details` `{ task_id, from: '待验收', to, pr_url }` (`task_id` is the `public_id` string; there is no `summary` key here, unlike MCP `submit_pr`'s own `状态迁移` event).
+
+Never throws: a missing/undecryptable credential, an unreachable forge, a non-OK forge response, or a DB fault while writing one task's row is caught and only that task is skipped — the remaining `待验收` tasks are still polled in the same call, and `pollPendingReviews` itself always resolves. Tasks in any other status are never selected and never fetched as a PR. The pre-existing poster `PATCH /api/v1/tasks/:publicId` `已退回` → `待认领` edge is unaffected by, and works after, a poller-driven `已退回`; prior `状态迁移` events and the `submissions` row survive that reopen unmodified.
+
+`buildApp({ pollIntervalMs? })`: omitted or `<= 0` registers no timer. A positive number registers exactly one `setInterval(fn, pollIntervalMs)` inside its own child plugin context (so its `onClose` hook — which `clearInterval`s — runs before the root db-close hook regardless of registration order); an in-flight guard skips a tick if the previous pass has not finished, so an overrunning poll is never re-entered. `app.close()` clears the timer. Process `index.ts` reads `POLL_INTERVAL_MS` (unset or `''` → `60000`; otherwise `Number.parseInt(value, 10)`) and passes it as `pollIntervalMs`.
+
+There is no REST `POST /api/v1/tasks/:publicId/submit_pr` (unchanged) and no webhook route. `pollPendingReviews` — on-demand or on the `pollIntervalMs` timer — is the only thing that ever moves a task out of `待验收`.
 
 ### `users` table
 
@@ -239,7 +257,7 @@ Unique index `leases_one_active_per_task` on `leases(task_id) WHERE state = 'act
 
 SQL from `createDb` (`CREATE TABLE IF NOT EXISTS submissions`): `id INTEGER PRIMARY KEY AUTOINCREMENT`, `task_id INTEGER NOT NULL`, `lease_id INTEGER NOT NULL`, `pr_url TEXT NOT NULL`, `summary TEXT NOT NULL`, `pr_state TEXT NOT NULL`.
 
-`task_id` is the integer `tasks.id` PK, not `public_id`. Drizzle in `schema.ts` maps `taskId`/`leaseId`/`prUrl`/`summary`/`prState` with no enum on `pr_state`. MCP `submit_pr` success inserts `pr_state` `'open'`.
+`task_id` is the integer `tasks.id` PK, not `public_id`. Drizzle in `schema.ts` maps `taskId`/`leaseId`/`prUrl`/`summary`/`prState` with no enum on `pr_state`. MCP `submit_pr` success inserts `pr_state` `'open'`. `pollPendingReviews` later updates that same row's `pr_state` to `'merged'` or `'closed'` (never back to `'open'`) once the PR leaves the open state.
 
 ### `events` table
 
@@ -256,6 +274,7 @@ No events HTTP. Rows written in source:
 - POST `/api/v1/tasks/:publicId/release` success: `type` `状态迁移`, `details` JSON `{ "task_id": <public_id>, "from": <status>, "to": <status>, "reason"? }` (`reason` only when body had string `reason`)
 - MCP `submit_pr` success (`submitPr` in `claim.ts`): `type` `状态迁移`, `details` JSON `{ "task_id": <public_id>, "from": "进行中", "to": "待验收", "pr_url": <string>, "summary": <string> }` (claimer `actor_user_id`)
 - lease expiry in `sweepExpiredLeases`: `type` `状态迁移`, `details` JSON `{ "task_id": <public_id>, "from": "进行中", "to": "待认领" }`, `actor_user_id` null
+- `pollPendingReviews` merged/closed transition (`poller.ts`): `type` `状态迁移`, `details` JSON `{ "task_id": <public_id>, "from": "待验收", "to": "已完成" | "已退回", "pr_url": <string> }` (no `summary` key), `actor_user_id` null
 
 `created_at` is unix seconds.
 
@@ -296,15 +315,29 @@ Package export `"."` → `./src/index.ts`. No runtime HTTP dependency (global `f
 
 Types: `ForgeKind` `'github' | 'gitlab' | 'gitea'`; `Credential` `{ token: string }`; `RepoRef` `{ full_name: string; base_url: string }`; `TokenCapability` `'读' | '推' | 'PR'`; `TokenCheck` `{ missing: TokenCapability[] }`; `CreateForgeAdapterOptions`; `ForgeAdapter`.
 
-Placeholders: `ImportedIssue`, `PrStatus`, `ForgeEvent`, `IssueRef` are `unknown`.
+Placeholders: `ImportedIssue`, `ForgeEvent`, `IssueRef` are `unknown`. `PrStatus` is `{ state: 'open' | 'merged' | 'closed' }` (no longer `unknown`, #11).
 
-Implemented: `kind` + `validateToken` (GET-only). Other interface methods throw `Error('not implemented')`.
+Implemented: `kind` + `validateToken` (GET-only) + `getPullRequest` (GET-only, #11). Other interface methods throw `Error('not implemented')`.
 
 API hosts: GitHub always `https://api.github.com` (ignores `baseUrl`). GitLab: strip trailing slashes then `/api/v4`. Gitea: `/api/v1`. GitLab/Gitea origin is `options?.baseUrl ?? repo.base_url`. GitLab repo path: `/projects/${encodeURIComponent(full_name)}`. GitHub/Gitea repo path: `/repos/${full_name}`. User path: `/user`.
 
 Auth headers: GitHub `Authorization: Bearer`, `User-Agent: KaolaTasks`, `Accept: application/vnd.github+json`; GitLab `PRIVATE-TOKEN`; Gitea `Authorization: token`.
 
 Push/PR checks are REST permission proxies, not mutating git push / POST PR.
+
+### `getPullRequest(cred, prUrl)`
+
+`Credential` here carries only a bare `prUrl` string (no `RepoRef`), so owner/repo/number (or namespace/iid) are parsed out of the pasted PR/MR web URL itself, after stripping a trailing slash and (GitHub only) a trailing `.diff`/`.patch` suffix:
+
+- GitHub: `.../{owner}/{repo}/pull/{number}` → `GET https://api.github.com/repos/{owner}/{repo}/pulls/{number}` (host is always `api.github.com`, ignoring `baseUrl`, same as `validateToken`)
+- Gitea: `{baseUrl}/{owner}/{repo}/pulls/{number}` → `GET {baseUrl}/api/v1/repos/{owner}/{repo}/pulls/{number}`
+- GitLab: `{baseUrl}/{namespace}/-/merge_requests/{iid}` → `GET {baseUrl}/api/v4/projects/{encodeURIComponent(namespace)}/merge_requests/{iid}` (a multi-segment namespace, e.g. `group/subgroup/app`, is encoded as one `:id` path segment)
+
+GitLab/Gitea always use the adapter's constructor `baseUrl` option as the API origin, never the host embedded in `prUrl`. Auth headers reuse the same per-kind scheme as `validateToken`.
+
+State derivation from the response body: GitLab `state === 'merged'` → `merged`; `state === 'closed'` → `closed`; anything else (including the vendor's `'opened'` and the transient `'locked'`) → `open`. GitHub/Gitea: `merged === true` → `merged`; else `state === 'closed'` → `closed`; else `open`.
+
+A non-OK HTTP response rejects (after actually calling `fetch`). An unparseable `prUrl` rejects **without** calling `fetch`.
 
 Unknown `kind` throws `Error('unknown forge kind: …')`.
 
