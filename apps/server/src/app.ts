@@ -4,6 +4,7 @@ import httpProxy from '@fastify/http-proxy'
 import Fastify from 'fastify'
 import { registerAgentKeys } from './agent-keys.ts'
 import { registerAuth } from './auth.ts'
+import { registerClaim } from './claim.ts'
 import { registerCredentialProfiles } from './credential-profiles.ts'
 import { createDb } from './db.ts'
 import { getPlaceholderBody } from './placeholder.ts'
@@ -47,6 +48,7 @@ export function buildApp(options?: {
   registerAgentKeys(app, db)
   registerCredentialProfiles(app, db)
   registerTasks(app, db)
+  registerClaim(app, db)
 
   if (webDist != null) {
     const root = resolve(webDist)

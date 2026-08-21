@@ -1,17 +1,12 @@
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { and, eq } from 'drizzle-orm'
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
+import type { FastifyInstance } from 'fastify'
+import { addAgentBearerHook, sendBearerUnauthorized } from './agent-bearer.ts'
 import { getSessionUser, sendUnauthorized } from './auth.ts'
 import type { AppDb } from './db.ts'
-import { type AgentKey, type User, agentKeys, users } from './schema.ts'
+import { type AgentKey, agentKeys } from './schema.ts'
 
 const PENDING_GENERATE_MESSAGE = '你的账号待正式成员批准后方可生成 Agent Key。'
-
-declare module 'fastify' {
-  interface FastifyRequest {
-    agentAuth?: { user: User; key: AgentKey }
-  }
-}
 
 function hashAgentKey(plaintext: string): string {
   return createHash('sha256').update(plaintext, 'utf8').digest('hex')
@@ -19,27 +14,6 @@ function hashAgentKey(plaintext: string): string {
 
 function generatePlaintextKey(): string {
   return `ktk_${randomBytes(32).toString('hex')}`
-}
-
-function digestEqual(hexA: string, hexB: string): boolean {
-  try {
-    const a = Buffer.from(hexA, 'hex')
-    const b = Buffer.from(hexB, 'hex')
-    if (a.length === 0 || a.length !== b.length) return false
-    return timingSafeEqual(a, b)
-  } catch {
-    return false
-  }
-}
-
-function parseBearerToken(header: string | string[] | undefined): string | undefined {
-  if (typeof header !== 'string') return undefined
-  const match = /^Bearer\s+(\S+)/i.exec(header)
-  return match?.[1]
-}
-
-function sendBearerUnauthorized(reply: FastifyReply) {
-  return reply.header('WWW-Authenticate', 'Bearer').code(401).send({ error: 'unauthorized' })
 }
 
 function publicKey(row: AgentKey) {
@@ -130,27 +104,7 @@ export function registerAgentKeys(app: FastifyInstance, db: AppDb) {
   })
 
   app.register(async function agentBearerContext(child) {
-    child.addHook('onRequest', async (request: FastifyRequest, reply: FastifyReply) => {
-      const token = parseBearerToken(request.headers.authorization)
-      if (token == null) {
-        return sendBearerUnauthorized(reply)
-      }
-
-      const presentedHash = hashAgentKey(token)
-      const key = db.select().from(agentKeys).where(eq(agentKeys.keyHash, presentedHash)).get()
-      if (key == null || !digestEqual(key.keyHash, presentedHash)) {
-        return sendBearerUnauthorized(reply)
-      }
-
-      const user = db.select().from(users).where(eq(users.id, key.userId)).get()
-      if (user == null) {
-        return sendBearerUnauthorized(reply)
-      }
-
-      const now = Math.floor(Date.now() / 1000)
-      db.update(agentKeys).set({ lastUsedAt: now }).where(eq(agentKeys.id, key.id)).run()
-      request.agentAuth = { user, key }
-    })
+    addAgentBearerHook(child, db)
 
     child.get('/api/v1/agent/whoami', async (request, reply) => {
       const auth = request.agentAuth

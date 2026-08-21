@@ -66,7 +66,7 @@ export function decryptToken(encoded: string | Buffer): string {
 
 export function insertAuditEvent(
   db: AppDb,
-  input: { type: string; actorUserId: number; details: unknown },
+  input: { type: string; actorUserId: number | null; details: unknown },
 ): void {
   db.insert(events)
     .values({

@@ -6,6 +6,7 @@ import { desc, eq, like, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { getSessionUser, sendUnauthorized } from './auth.ts'
 import type { AppDb } from './db.ts'
+import { sweepExpiredLeases } from './leases.ts'
 import { type NewTask, type Task, credentialProfiles, tasks, users } from './schema.ts'
 import {
   decryptToken,
@@ -64,7 +65,7 @@ type CreateTaskInput = {
   credential: CredentialInput
 }
 
-type TaskWithPoster = { task: Task; posterUsername: string | null }
+export type TaskWithPoster = { task: Task; posterUsername: string | null }
 
 function tokenCheckMessage(missing: TokenCapability[]): string {
   // Losing 读 means the token cannot see the repo at all — a different diagnosis from a token
@@ -294,7 +295,7 @@ function nextPosterStatus(from: string, to: TaskStatus): TaskStatus | undefined 
 
 // DESIGN.md §6 — the brief is the whole contract, and the only credential it ever names is a
 // reference.
-function taskBrief({ task, posterUsername }: TaskWithPoster) {
+export function taskBrief({ task, posterUsername }: TaskWithPoster) {
   return {
     id: task.publicId,
     title: task.title,
@@ -342,7 +343,7 @@ function selectTasks(db: AppDb): TaskWithPoster[] {
     .all()
 }
 
-function selectTask(db: AppDb, publicId: string): TaskWithPoster | undefined {
+export function selectTask(db: AppDb, publicId: string): TaskWithPoster | undefined {
   return db
     .select({ task: tasks, posterUsername: users.username })
     .from(tasks)
@@ -399,6 +400,7 @@ export function registerTasks(app: FastifyInstance, db: AppDb) {
     const user = getSessionUser(db, request)
     if (user == null) return sendUnauthorized(request, reply)
 
+    sweepExpiredLeases(db)
     return reply.send({ tasks: selectTasks(db).map(taskBrief) })
   })
 
@@ -406,6 +408,7 @@ export function registerTasks(app: FastifyInstance, db: AppDb) {
     const user = getSessionUser(db, request)
     if (user == null) return sendUnauthorized(request, reply)
 
+    sweepExpiredLeases(db)
     const row = selectTask(db, (request.params as { publicId: string }).publicId)
     if (row == null) {
       return reply.code(404).send({ error: 'not_found' })

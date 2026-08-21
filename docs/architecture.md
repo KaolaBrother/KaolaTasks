@@ -15,17 +15,23 @@ browser  →  advertised origin localhost:31415 (@kaola/server Fastify)
                 /api/v1/me                       session user
                 /api/v1/users/:id/approve
                 /api/v1/agent-keys               session generate/list/revoke
-                /api/v1/agent/whoami             Bearer
+                /api/v1/agent/whoami             Bearer (`addAgentBearerHook` in agent-bearer.ts)
                 /api/v1/credential-profiles      session (active+full)
                 /api/v1/tasks                    session list/create; :publicId get/patch
-                SQLite users, agent_keys, credential_profiles, tasks, events (createDb)
-                vault.ts encryptToken / decryptToken / revealCredentialProfile
-                  (no HTTP that returns a forge token)
+                                                 GET list/one call sweepExpiredLeases then re-read
+                /api/v1/tasks/:publicId/claim    Bearer POST (201 clone, lease, task, token)
+                /api/v1/tasks/:publicId/progress Bearer POST (200 task, lease; no token)
+                /api/v1/tasks/:publicId/release  Bearer POST (200 task; no token)
+                SQLite users, agent_keys, credential_profiles, tasks, events, leases (createDb)
+                unique index leases_one_active_per_task on leases(task_id) WHERE state = 'active'
+                vault.ts encryptToken / decryptToken / revealCredentialProfile / insertAuditEvent
+                  (only successful POST …/claim 201 top-level token returns a forge token)
 @kaola/web              Vue 3 + Naive UI; vite.config proxy /api and /login → 127.0.0.1:31415
+                        任务看板; one synthetic 发布; no claim UI; no events HTTP
 @kaola/shared           Task Brief zod + transitionTaskStatus
 @kaola/forge-adapters   createForgeAdapter (validateToken is an adapter method)
                         imported by @kaola/server (workspace:*)
-MCP / claim             not implemented
+MCP                     not implemented
 ```
 
 ## Server
@@ -34,17 +40,17 @@ MCP / claim             not implemented
 
 `buildApp({ sqlitePath?, webDist?, viteDevTarget? })`: omit/empty both hosting options → `GET /` `text/plain; charset=utf-8` body `考拉任务服务占位` via `getPlaceholderBody()`. Non-empty `webDist` → `@fastify/static` `^10.1.3` + exact `GET /` `sendFile` `index.html` + SPA fallback for other GET except `/api` and `/login*`. Both set → `webDist` wins. Only `viteDevTarget` → `@fastify/http-proxy` `^11.6.0`.
 
-`createDb` runs `CREATE TABLE IF NOT EXISTS` for `users`, `agent_keys`, `credential_profiles`, `tasks`, and `events`, then drizzle with `{ schema: { users, agentKeys, credentialProfiles, tasks, events } }`. Default path `:memory:` unless `SQLITE_PATH`. `tasks` INTEGER PK `id` plus `public_id` TEXT NOT NULL UNIQUE (`kt-YYYY-NNNN`); CONSTRAINT `tasks_credential_xor` CHECK `((credential_profile_id IS NULL) != (inline_token_encrypted IS NULL))`.
+`createDb` runs `CREATE TABLE IF NOT EXISTS` for `users`, `agent_keys`, `credential_profiles`, `tasks`, `events`, and `leases`, then `CREATE UNIQUE INDEX IF NOT EXISTS leases_one_active_per_task ON leases(task_id) WHERE state = 'active'`, then drizzle with `{ schema: { users, agentKeys, credentialProfiles, tasks, events, leases } }`. Default path `:memory:` unless `SQLITE_PATH`. `tasks` INTEGER PK `id` plus `public_id` TEXT NOT NULL UNIQUE (`kt-YYYY-NNNN`); CONSTRAINT `tasks_credential_xor` CHECK `((credential_profile_id IS NULL) != (inline_token_encrypted IS NULL))`. `leases` columns: `id`, `task_id` (integer `tasks.id`), `claimer_user_id`, `agent_key_id`, `claimed_at`, `expires_at`, `last_heartbeat`, `state`. TTL `86400` in `leases.ts` (`LEASE_TTL_SECONDS`); no per-task TTL column.
 
-Auth stack: `@fastify/cookie@^11.1.2`, `@fastify/session@^11.1.2`, `@fastify/oauth2@^8.3.0`. Session field: `userId?: number`. Cookie flags in source: `path: '/'`, `secure: false`, `httpOnly: true`, `sameSite: 'lax'`; `saveUninitialized: false`. Agent Bearer uses a child Fastify `onRequest` hook (`apps/server/src/agent-keys.ts`), not `@fastify/bearer-auth`. Vault uses `node:crypto` `createCipheriv` / `createDecipheriv` (`aes-256-gcm`); no new npm dependency on `@kaola/server`.
+Auth stack: `@fastify/cookie@^11.1.2`, `@fastify/session@^11.1.2`, `@fastify/oauth2@^8.3.0`. Session field: `userId?: number`. Cookie flags in source: `path: '/'`, `secure: false`, `httpOnly: true`, `sameSite: 'lax'`; `saveUninitialized: false`. Agent Bearer uses `addAgentBearerHook` in `apps/server/src/agent-bearer.ts` (child Fastify `onRequest`; used by whoami and claim plugins), not `@fastify/bearer-auth`. Vault uses `node:crypto` `createCipheriv` / `createDecipheriv` (`aes-256-gcm`); no new npm dependency on `@kaola/server`. `insertAuditEvent` accepts `actorUserId: number | null`.
 
 `registerAuth` throws if required OAuth / session env vars are empty (names in [api.md](api.md)). `VAULT_MASTER_KEY` is not read at `buildApp()` / `registerAuth` boot; `encryptToken` / `decryptToken` read it when encrypting or decrypting.
 
-`buildApp` wires `registerTasks(app, db)` (`apps/server/src/tasks.ts`). POST 发布即校验 calls `createForgeAdapter(forge, { baseUrl }).validateToken`. No MCP SDK in `apps/server/package.json`. Server dependencies include `"@kaola/shared": "workspace:*"`, `"@kaola/forge-adapters": "workspace:*"`, `@fastify/static@^10.1.3`, `@fastify/http-proxy@^11.6.0`.
+`buildApp` wires `registerTasks(app, db)` (`apps/server/src/tasks.ts`) then `registerClaim(app, db)` (`apps/server/src/claim.ts`). Session GET list/one call `sweepExpiredLeases` then re-read (check-on-read). Claim/progress/release also call `sweepExpiredLeases` (check-on-write). No cron. POST 发布即校验 calls `createForgeAdapter(forge, { baseUrl }).validateToken`. No MCP SDK in `apps/server/package.json`. Server dependencies include `"@kaola/shared": "workspace:*"`, `"@kaola/forge-adapters": "workspace:*"`, `@fastify/static@^10.1.3`, `@fastify/http-proxy@^11.6.0`.
 
 ## Web
 
-`apps/web/src/App.vue`: Naive UI, `zhCN` / `dateZhCN`. Views: login buttons, pending card (`status` `待批准`, title 账号待批准 — no board), member workbench (`view === 'member'`) with 任务看板 (列表 / 看板; client-side filters 状态 / 标签 / Forge; detail + one synthetic 发布 from `created_at`+`poster`; `GET /api/v1/tasks` exactly, no query; no events HTTP). `claim_only` sees the board, not the posting form. Approve-by-id, credential-profile widget, and 发布任务 form when `status === 'active'` and `permission_level === 'full'` (`canApprove`). Agent Key widget when `status === 'active'`. Form reuses loaded `profiles` for the credential dropdown; two request-side paths `{ profile_id }` XOR `{ token }`; create only (`POST /api/v1/tasks`). Fetches `GET /api/v1/me` with `Accept: application/json` and `credentials: 'include'`. No vue-router (`apps/web/package.json` has `vue` `^3.5.0`, `naive-ui` `^2.45.0` only).
+`apps/web/src/App.vue`: Naive UI, `zhCN` / `dateZhCN`. Views: login buttons, pending card (`status` `待批准`, title 账号待批准 — no board), member workbench (`view === 'member'`) with 任务看板 (列表 / 看板; client-side filters 状态 / 标签 / Forge; detail + one synthetic 发布 from `created_at`+`poster`; `GET /api/v1/tasks` exactly, no query; no events HTTP; no claim UI). `claim_only` sees the board, not the posting form. Approve-by-id, credential-profile widget, and 发布任务 form when `status === 'active'` and `permission_level === 'full'` (`canApprove`). Agent Key widget when `status === 'active'`. Form reuses loaded `profiles` for the credential dropdown; two request-side paths `{ profile_id }` XOR `{ token }`; create only (`POST /api/v1/tasks`). Fetches `GET /api/v1/me` with `Accept: application/json` and `credentials: 'include'`. No vue-router (`apps/web/package.json` has `vue` `^3.5.0`, `naive-ui` `^2.45.0` only).
 
 `apps/web/package.json` `"test": "vitest run"`; devDeps `@vue/test-utils` `^2.4.11`, `happy-dom` `^20.11.6`, `vitest` `^4.1.11`. Tests: `apps/web/src/App.board.test.ts` and `App.form.test.ts`. `vite.config.ts` proxy: `/api` and `/login` → `http://127.0.0.1:31415`. Vitest: `environment` `happy-dom`, `include` `src/**/*.test.ts`. Root `pnpm dev` is `node scripts/dev.mjs`.
 

@@ -89,6 +89,17 @@ export const events = sqliteTable('events', {
   details: text('details').notNull(),
 })
 
+export const leases = sqliteTable('leases', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  taskId: integer('task_id').notNull(),
+  claimerUserId: integer('claimer_user_id').notNull(),
+  agentKeyId: integer('agent_key_id').notNull(),
+  claimedAt: integer('claimed_at').notNull(),
+  expiresAt: integer('expires_at').notNull(),
+  lastHeartbeat: integer('last_heartbeat').notNull(),
+  state: text('state', { enum: ['active', 'released', 'expired'] }).notNull(),
+})
+
 export type User = typeof users.$inferSelect
 export type UserProvider = User['provider']
 export type AgentKey = typeof agentKeys.$inferSelect
@@ -96,3 +107,4 @@ export type CredentialProfile = typeof credentialProfiles.$inferSelect
 export type Task = typeof tasks.$inferSelect
 export type NewTask = typeof tasks.$inferInsert
 export type AuditEvent = typeof events.$inferSelect
+export type Lease = typeof leases.$inferSelect
