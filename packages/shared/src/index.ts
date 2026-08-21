@@ -45,9 +45,12 @@ export const taskBriefSchema = z.strictObject({
     branch_prefix: z.string(),
     title_prefix: z.string(),
   }),
-  credential: z.strictObject({
-    profile_id: z.string(),
-  }),
+  // DESIGN.md §6: a reference, never the token itself — exactly one of two forms. The inline
+  // marker only declares that a single-task token exists; its ciphertext lives on the task row.
+  credential: z.union([
+    z.strictObject({ profile_id: z.string() }),
+    z.strictObject({ inline: z.literal(true) }),
+  ]),
   priority: z.enum(['P0', 'P1', 'P2', 'P3']),
   tags: z.array(z.string()),
   poster: z.string(),

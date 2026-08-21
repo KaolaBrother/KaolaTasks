@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3'
 import { drizzle } from 'drizzle-orm/better-sqlite3'
-import { agentKeys, credentialProfiles, events, users } from './schema.ts'
+import { agentKeys, credentialProfiles, events, tasks, users } from './schema.ts'
 
 const USERS_DDL = `
 CREATE TABLE IF NOT EXISTS users (
@@ -38,6 +38,35 @@ CREATE TABLE IF NOT EXISTS credential_profiles (
 )
 `
 
+const TASKS_DDL = `
+CREATE TABLE IF NOT EXISTS tasks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  public_id TEXT NOT NULL UNIQUE,
+  title TEXT NOT NULL,
+  description_md TEXT NOT NULL DEFAULT '',
+  source_type TEXT NOT NULL,
+  source_issue_url TEXT,
+  repo_forge TEXT NOT NULL,
+  repo_base_url TEXT NOT NULL,
+  repo_full_name TEXT NOT NULL,
+  repo_base_branch TEXT NOT NULL,
+  repo_suggested_dir TEXT NOT NULL,
+  acceptance_criteria TEXT NOT NULL DEFAULT '[]',
+  test_command TEXT NOT NULL DEFAULT '',
+  allowed_paths TEXT NOT NULL DEFAULT '[]',
+  forbidden_paths TEXT NOT NULL DEFAULT '[]',
+  priority TEXT NOT NULL,
+  tags TEXT NOT NULL DEFAULT '[]',
+  credential_profile_id INTEGER,
+  inline_token_encrypted TEXT,
+  poster_user_id INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  CONSTRAINT tasks_credential_xor
+    CHECK ((credential_profile_id IS NULL) != (inline_token_encrypted IS NULL))
+)
+`
+
 const EVENTS_DDL = `
 CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -53,8 +82,9 @@ export function createDb(path = ':memory:') {
   sqlite.exec(USERS_DDL)
   sqlite.exec(AGENT_KEYS_DDL)
   sqlite.exec(CREDENTIAL_PROFILES_DDL)
+  sqlite.exec(TASKS_DDL)
   sqlite.exec(EVENTS_DDL)
-  return drizzle(sqlite, { schema: { users, agentKeys, credentialProfiles, events } })
+  return drizzle(sqlite, { schema: { users, agentKeys, credentialProfiles, tasks, events } })
 }
 
 export type AppDb = ReturnType<typeof createDb>

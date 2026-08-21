@@ -131,7 +131,7 @@ stateDiagram-v2
     "branch_prefix": "kaola/kt-2026-0142-",
     "title_prefix": "[kt-2026-0142] "
   },
-  "credential": { "profile_id": "cp-gitea-orders" },  // 或单任务临时 token 的引用
+  "credential": { "profile_id": "cp-gitea-orders" },  // 二选一，见下方说明
   "priority": "P1",
   "tags": ["backend", "api"],
   "poster": "zhang.wei",
@@ -139,6 +139,17 @@ stateDiagram-v2
   "created_at": "2026-08-20T12:00:00+08:00"
 }
 ```
+
+**`id` 形式**：`kt-<年份>-<四位序号>`（如 `kt-2026-0142`），全局唯一且可读；`pr_convention` 的分支前缀与标题前缀由它派生。平台内部另有自增主键，不对外暴露。
+
+**`credential` 是引用，不是 token 本身**，两种形态二选一：
+
+| 形态 | 含义 |
+|------|------|
+| `{ "profile_id": "cp-gitea-orders" }` | 引用团队共享的凭证档案（§7） |
+| `{ "inline": true }` | 该任务附带单任务临时 token，密文随任务存储 |
+
+两种形态下任务卡都**不含 token 明文**——`inline` 只声明"有一份专属凭证在等着"，不携带任何凭证内容；两者都只在 `claim_task` 成功时经揭示通道下发。
 
 ## 7. 凭证与安全模型
 

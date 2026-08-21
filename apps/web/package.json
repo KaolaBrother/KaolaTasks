@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "test": "vitest run",
     "typecheck": "vue-tsc --noEmit -p tsconfig.json",
     "preview": "vite preview"
   },
@@ -15,7 +16,10 @@
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.0",
+    "@vue/test-utils": "^2.4.11",
+    "happy-dom": "^20.11.6",
     "vite": "^7.0.0",
+    "vitest": "^4.1.11",
     "vue-tsc": "^3.0.0"
   }
 }

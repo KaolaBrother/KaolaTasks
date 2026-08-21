@@ -4,11 +4,11 @@ Document public APIs, endpoints, schemas, events, and integration contracts.
 
 Product contracts that are not yet in source remain in [DESIGN.md](DESIGN.md) §6 (任务卡 Schema), §8 (ForgeAdapter), §9 (MCP 工具面 / REST). This file records what is implemented.
 
-MCP tools (`list_tasks`, `get_task_brief`, `claim_task`, `report_progress`, `submit_pr`, `release_task`) are not implemented. Task CRUD and claim HTTP are not implemented. There is no HTTP that returns a forge token. `revealCredentialProfile` is a module export from `apps/server/src/vault.ts`.
+MCP tools (`list_tasks`, `get_task_brief`, `claim_task`, `report_progress`, `submit_pr`, `release_task`) are not implemented. Claim HTTP is not implemented. Task CRUD HTTP is implemented (`registerTasks` in `apps/server/src/tasks.ts`). There is no HTTP that returns a forge token. `revealCredentialProfile` is a module export from `apps/server/src/vault.ts`.
 
 ## HTTP (`@kaola/server`)
 
-Sources: `apps/server/src/app.ts`, `auth.ts`, `agent-keys.ts`, `credential-profiles.ts`, `vault.ts`, `schema.ts`, `db.ts`, `placeholder.ts`, `index.ts`.
+Sources: `apps/server/src/app.ts`, `auth.ts`, `agent-keys.ts`, `credential-profiles.ts`, `vault.ts`, `tasks.ts`, `schema.ts`, `db.ts`, `placeholder.ts`, `index.ts`.
 
 `buildApp({ sqlitePath? })` creates its own SQLite via `createDb`. Process `index.ts` uses `SQLITE_PATH ?? ':memory:'`.
 
@@ -100,6 +100,42 @@ Session cookie. Same `active`+`full` gate. Deletes the row (any `full` member ma
 
 `200` `{ ok: true, message: '请同时到 forge 侧撤销该 token。' }`. Writes `events` row `type` `变更`, `details` `{"action":"delete","profile_id":<n>}`. Non-integer / `<= 0` id or missing row → `404` `{ error: 'not_found' }`.
 
+### `GET /api/v1/tasks`
+
+Session cookie. Any logged-in user (including `status` `待批准`) may list. Unauthenticated: same oracle as `GET /api/v1/me` (`401` `{ error: 'unauthorized' }` or `302` `/login`).
+
+`200` `{ tasks: [<brief>, ...] }` ordered by integer PK `id`. Each item is a Task Brief (snake_case; keys in `@kaola/shared` `taskBriefSchema`). `id` is `public_id` (`kt-YYYY-NNNN`), not the integer PK. `credential` is `{ profile_id: "<id>" }` or `{ inline: true }` — never a token. `pr_convention` is derived: `branch_prefix` `kaola/${public_id}-`, `title_prefix` `[${public_id}] `. `created_at` is ISO-8601 from stored unix seconds. `poster` is the poster's `username`.
+
+### `GET /api/v1/tasks/:publicId`
+
+Session cookie. Same auth as list. Addressed by `public_id` string (numeric-looking ids such as `1` are `404`).
+
+`200` the same brief shape as create. Missing row → `404` `{ error: 'not_found' }`.
+
+### `POST /api/v1/tasks`
+
+Session cookie. Gate: `status === 'active'` AND `permission_level === 'full'` (same population as credential profiles). Otherwise `403` `{ error: 'forbidden' }`. 发布即校验: a failing check is never persisted.
+
+Wire is snake_case. Request `credential` is `{ profile_id }` XOR `{ token }` (`profile_id` integer or numeric string). That is not the brief-side union (`{ profile_id: string }` | `{ inline: true }`); a request of `{ inline: true }` with no token is `400` `{ error: 'invalid_body' }`. Sending both `profile_id` and `token` is `400`. Client-supplied `id` / `pr_convention` / `poster` / `status` / `created_at` are ignored (server-owned).
+
+Required: non-empty `title`; `repo.forge` `github` | `gitlab` | `gitea`; non-empty `repo.base_url` and `repo.full_name`; `credential`. Defaults when omitted: `description_md` `''`; `source` `{ type: 'native' }`; `repo.base_branch` `'main'`; `repo.suggested_dir` last path segment of `full_name`; `acceptance_criteria` `[]`; `test_command` `''`; `constraints` `{ allowed_paths: [], forbidden_paths: [] }`; `priority` `'P2'`; `tags` `[]`. `source.type` `imported` requires non-empty `issue_url`. Generic parse failure → `400` `{ error: 'invalid_body' }` (no `message`).
+
+`repo.base_url` must parse as `http:` or `https:` with a non-empty hostname; else `400` `{ error: 'invalid_body', message: '仓库地址不是合法的 http 或 https 地址。' }` (before any forge fetch).
+
+Profile path: load `credential_profiles` by id; missing → `400` `{ error: 'invalid_body', message: '所选凭证档案不存在。' }`. Bind `repo.forge` / `repo.base_url` / `repo.full_name` to the profile row with exact `===` **before** decrypt; mismatch → `400` `{ error: 'invalid_body', message: '所选凭证档案与仓库不匹配。' }` (no `token 揭示` event). Then `decryptToken`. Inline path: `encryptToken` of the request token into `inline_token_encrypted`. Missing or invalid `VAULT_MASTER_KEY` on either path → `500` `{ error: 'vault_unconfigured' }`.
+
+Then `createForgeAdapter(repo.forge, { baseUrl: repo.base_url }).validateToken({ token }, { full_name, base_url })`. Unreachable forge → `502` `{ error: 'forge_unreachable', message: '无法连接 forge 校验 token，任务未发布。' }`. `missing.length > 0` → `422` `{ error: 'token_check_failed', missing, message }` where `missing` is `TokenCapability[]` (`读` | `推` | `PR`); if `missing` includes `读`, `message` is `token 无效或无权访问该仓库，任务未发布。`; otherwise `token 权限不足：缺少 ${missing.join('、')} 权限，任务未发布。`.
+
+Profile path writes `events.type` `token 揭示` after decrypt (including 422 / 502): `details` `{ profile_id, forge, base_url, full_name, outcome }` with `outcome` `ok` | `token_check_failed` | `forge_unreachable`. `profile_id` is the integer profile PK. No token / ciphertext / `agent_key_id` in details. Inline path does not write this event.
+
+`201` the Task Brief (`status` `待认领`). No response contains a token.
+
+### `PATCH /api/v1/tasks/:publicId`
+
+Session cookie. Same `active`+`full` gate (`403` `{ error: 'forbidden' }`). Body `{ status }`; `status` must be a `taskStatusSchema` value else `400` `{ error: 'invalid_body' }`. Missing `public_id` → `404` `{ error: 'not_found' }`. Non-poster → `403` `{ error: 'forbidden' }`.
+
+Poster-only edges in source: `待认领` → `已取消`; `已退回` → `已取消` | `待认领`. Other requested statuses (including `待认领` → `进行中`) → `409` `{ error: 'illegal_transition', message: '任务状态不允许从「${from}」变更为「${to}」。' }`. Success writes `events.type` `状态迁移`, `details` `{ task_id, from, to }` (`task_id` is the `public_id` string) and returns `200` the updated brief.
+
 ### `users` table
 
 SQL from `createDb` (`CREATE TABLE IF NOT EXISTS users`): `id`, `provider`, `remote_id`, `username`, `display_name`, `status`, `permission_level`; UNIQUE `(provider, remote_id)`.
@@ -118,6 +154,12 @@ SQL from `createDb` (`CREATE TABLE IF NOT EXISTS credential_profiles`): `id INTE
 
 Drizzle enum in `schema.ts`: `forge` `github` | `gitlab` | `gitea`.
 
+### `tasks` table
+
+SQL from `createDb` (`CREATE TABLE IF NOT EXISTS tasks`): `id INTEGER PRIMARY KEY AUTOINCREMENT`, `public_id TEXT NOT NULL UNIQUE`, `title TEXT NOT NULL`, `description_md TEXT NOT NULL DEFAULT ''`, `source_type TEXT NOT NULL`, `source_issue_url TEXT`, `repo_forge TEXT NOT NULL`, `repo_base_url TEXT NOT NULL`, `repo_full_name TEXT NOT NULL`, `repo_base_branch TEXT NOT NULL`, `repo_suggested_dir TEXT NOT NULL`, `acceptance_criteria TEXT NOT NULL DEFAULT '[]'`, `test_command TEXT NOT NULL DEFAULT ''`, `allowed_paths TEXT NOT NULL DEFAULT '[]'`, `forbidden_paths TEXT NOT NULL DEFAULT '[]'`, `priority TEXT NOT NULL`, `tags TEXT NOT NULL DEFAULT '[]'`, `credential_profile_id INTEGER`, `inline_token_encrypted TEXT`, `poster_user_id INTEGER NOT NULL`, `status TEXT NOT NULL`, `created_at INTEGER NOT NULL`; CONSTRAINT `tasks_credential_xor` CHECK `((credential_profile_id IS NULL) != (inline_token_encrypted IS NULL))`.
+
+Drizzle enums in `schema.ts`: `source_type` `native` | `imported`; `repo_forge` `github` | `gitlab` | `gitea`; `priority` `P0` | `P1` | `P2` | `P3`; `status` `待认领` | `进行中` | `待验收` | `已完成` | `已退回` | `已取消`.
+
 ### `events` table
 
 SQL from `createDb` (`CREATE TABLE IF NOT EXISTS events`): `id INTEGER PRIMARY KEY AUTOINCREMENT`, `type TEXT NOT NULL`, `actor_user_id INTEGER`, `created_at INTEGER NOT NULL`, `details TEXT NOT NULL`.
@@ -126,8 +168,10 @@ No events HTTP. Rows written in source:
 
 - profile create/delete: `type` `变更`, `details` JSON `{ "action": "create" | "delete", "profile_id": <n> }`
 - `revealCredentialProfile`: `type` `token 揭示`, `details` JSON `{ "agent_key_id": <n>, "profile_id": <n> }`
+- POST `/api/v1/tasks` profile path (after decrypt, including 422 / 502): `type` `token 揭示`, `details` JSON `{ "profile_id": <n>, "forge": <forge>, "base_url": <string>, "full_name": <string>, "outcome": "ok" | "token_check_failed" | "forge_unreachable" }` (no token; no `agent_key_id`; inline path does not write this)
+- PATCH `/api/v1/tasks/:publicId` success: `type` `状态迁移`, `details` JSON `{ "task_id": <public_id>, "from": <status>, "to": <status> }`
 
-`created_at` is unix seconds. There is no `tasks` table.
+`created_at` is unix seconds.
 
 ### Vault (`apps/server/src/vault.ts`)
 
@@ -147,11 +191,11 @@ Callback URIs: `${PUBLIC_URL}/login/{github|gitlab|gitea}/callback`.
 
 Read by `encryptToken` / `decryptToken` in `vault.ts` when encrypting or decrypting. Not required at `buildApp()` or `registerAuth` boot.
 
-Must match `/^[0-9a-fA-F]{64}$/` and decode to 32 bytes. Missing, empty, or invalid → `VaultUnconfiguredError` (`code` `vault_unconfigured`). Create-profile HTTP maps that to `500` `{ error: 'vault_unconfigured' }`. Not `SESSION_SECRET`.
+Must match `/^[0-9a-fA-F]{64}$/` and decode to 32 bytes. Missing, empty, or invalid → `VaultUnconfiguredError` (`code` `vault_unconfigured`). Create-profile HTTP and `POST /api/v1/tasks` map that to `500` `{ error: 'vault_unconfigured' }`. Not `SESSION_SECRET`.
 
 There is no `.env.example` in the repository.
 
-Server dependencies: `@fastify/oauth2@^8.3.0`, `@fastify/cookie@^11.1.2`, `@fastify/session@^11.1.2` (plus existing `fastify`, `drizzle-orm`, `better-sqlite3`). Vault and agent-key hashing use `node:crypto` (no extra npm package).
+Server dependencies: `@fastify/oauth2@^8.3.0`, `@fastify/cookie@^11.1.2`, `@fastify/session@^11.1.2`, `"@kaola/shared": "workspace:*"`, `"@kaola/forge-adapters": "workspace:*"` (plus existing `fastify`, `drizzle-orm`, `better-sqlite3`). Vault and agent-key hashing use `node:crypto` (no extra npm package).
 
 ## `@kaola/forge-adapters`
 
@@ -159,6 +203,8 @@ Package export `"."` → `./src/index.ts`. No runtime HTTP dependency (global `f
 
 - `getForgeAdaptersHealth(): string` → `'kaola-forge-adapters-ready'`
 - `createForgeAdapter(kind, options?: { baseUrl?: string }): ForgeAdapter`
+
+`validateToken` is `ForgeAdapter.validateToken`, not a package-level export.
 
 Types: `ForgeKind` `'github' | 'gitlab' | 'gitea'`; `Credential` `{ token: string }`; `RepoRef` `{ full_name: string; base_url: string }`; `TokenCapability` `'读' | '推' | 'PR'`; `TokenCheck` `{ missing: TokenCapability[] }`; `CreateForgeAdapterOptions`; `ForgeAdapter`.
 
@@ -186,7 +232,7 @@ Unknown `kind` throws `Error('unknown forge kind: …')`.
 - `parseTaskBrief(input: unknown): TaskBrief` — `taskBriefSchema.parse(input)` (throws on invalid)
 - `transitionTaskStatus(from: string, to: string): string` — legal edges return `to`; others throw
 
-`taskBriefSchema` keys in source: `id`, `title`, `description_md`, `source`, `repo`, `acceptance_criteria`, `test_command`, `constraints`, `pr_convention`, `credential`, `priority`, `tags`, `poster`, `status`, `created_at`. `source` is a discriminated union on `type`: `native` (type only) | `imported` (type + `issue_url` string). `repo`: `forge` enum `github` | `gitlab` | `gitea`; `base_url`, `full_name`, `base_branch`, `suggested_dir` strings. `acceptance_criteria`: `string[]`. `test_command`: string. `constraints`: `allowed_paths`, `forbidden_paths` `string[]`. `pr_convention`: `branch_prefix`, `title_prefix`. `credential`: `{ profile_id: string }` only (strict). `priority`: `P0` | `P1` | `P2` | `P3`. `tags`: `string[]`. `poster`, `title`, `description_md`, `id`: string. `status`: `taskStatusSchema`. `created_at`: `z.iso.datetime({ offset: true })`.
+`taskBriefSchema` keys in source: `id`, `title`, `description_md`, `source`, `repo`, `acceptance_criteria`, `test_command`, `constraints`, `pr_convention`, `credential`, `priority`, `tags`, `poster`, `status`, `created_at`. `source` is a discriminated union on `type`: `native` (type only) | `imported` (type + `issue_url` string). `repo`: `forge` enum `github` | `gitlab` | `gitea`; `base_url`, `full_name`, `base_branch`, `suggested_dir` strings. `acceptance_criteria`: `string[]`. `test_command`: string. `constraints`: `allowed_paths`, `forbidden_paths` `string[]`. `pr_convention`: `branch_prefix`, `title_prefix`. `credential`: `z.union` of `z.strictObject({ profile_id: z.string() })` and `z.strictObject({ inline: z.literal(true) })` (token keys rejected). `priority`: `P0` | `P1` | `P2` | `P3`. `tags`: `string[]`. `poster`, `title`, `description_md`, `id`: string. `status`: `taskStatusSchema`. `created_at`: `z.iso.datetime({ offset: true })`.
 
 Legal `transitionTaskStatus` edges in source: 待认领 → 进行中, 已取消; 进行中 → 待认领, 待验收; 待验收 → 已完成, 已退回; 已退回 → 待认领, 已取消.
 

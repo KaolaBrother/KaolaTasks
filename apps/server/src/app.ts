@@ -4,6 +4,7 @@ import { registerAuth } from './auth.ts'
 import { registerCredentialProfiles } from './credential-profiles.ts'
 import { createDb } from './db.ts'
 import { getPlaceholderBody } from './placeholder.ts'
+import { registerTasks } from './tasks.ts'
 
 export function buildApp(options?: { sqlitePath?: string }) {
   const db = createDb(options?.sqlitePath ?? ':memory:')
@@ -17,5 +18,6 @@ export function buildApp(options?: { sqlitePath?: string }) {
   registerAuth(app, db)
   registerAgentKeys(app, db)
   registerCredentialProfiles(app, db)
+  registerTasks(app, db)
   return app
 }

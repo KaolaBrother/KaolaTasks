@@ -1,4 +1,5 @@
-import { integer, sqliteTable, text, unique } from 'drizzle-orm/sqlite-core'
+import { sql } from 'drizzle-orm'
+import { check, integer, sqliteTable, text, unique } from 'drizzle-orm/sqlite-core'
 
 export const users = sqliteTable(
   'users',
@@ -40,6 +41,46 @@ export const credentialProfiles = sqliteTable(
   (t) => [unique('credential_profiles_forge_base_url_repo').on(t.forge, t.baseUrl, t.repoFullName)],
 )
 
+// DESIGN.md §6 is the wire contract; the columns below are its storage form. Scalars that the
+// brief nests (source, repo, constraints) are flattened, and its string arrays are JSON text.
+export const tasks = sqliteTable(
+  'tasks',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    publicId: text('public_id').notNull(),
+    title: text('title').notNull(),
+    descriptionMd: text('description_md').notNull().default(''),
+    sourceType: text('source_type', { enum: ['native', 'imported'] }).notNull(),
+    sourceIssueUrl: text('source_issue_url'),
+    repoForge: text('repo_forge', { enum: ['github', 'gitlab', 'gitea'] }).notNull(),
+    repoBaseUrl: text('repo_base_url').notNull(),
+    repoFullName: text('repo_full_name').notNull(),
+    repoBaseBranch: text('repo_base_branch').notNull(),
+    repoSuggestedDir: text('repo_suggested_dir').notNull(),
+    acceptanceCriteria: text('acceptance_criteria').notNull().default('[]'),
+    testCommand: text('test_command').notNull().default(''),
+    allowedPaths: text('allowed_paths').notNull().default('[]'),
+    forbiddenPaths: text('forbidden_paths').notNull().default('[]'),
+    priority: text('priority', { enum: ['P0', 'P1', 'P2', 'P3'] }).notNull(),
+    tags: text('tags').notNull().default('[]'),
+    credentialProfileId: integer('credential_profile_id'),
+    inlineTokenEncrypted: text('inline_token_encrypted'),
+    posterUserId: integer('poster_user_id').notNull(),
+    status: text('status', {
+      enum: ['待认领', '进行中', '待验收', '已完成', '已退回', '已取消'],
+    }).notNull(),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => [
+    unique('tasks_public_id').on(t.publicId),
+    // DESIGN.md §10: credential_profile_id / inline_token_encrypted 二选一.
+    check(
+      'tasks_credential_xor',
+      sql`(${t.credentialProfileId} IS NULL) != (${t.inlineTokenEncrypted} IS NULL)`,
+    ),
+  ],
+)
+
 export const events = sqliteTable('events', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   type: text('type').notNull(),
@@ -52,4 +93,6 @@ export type User = typeof users.$inferSelect
 export type UserProvider = User['provider']
 export type AgentKey = typeof agentKeys.$inferSelect
 export type CredentialProfile = typeof credentialProfiles.$inferSelect
+export type Task = typeof tasks.$inferSelect
+export type NewTask = typeof tasks.$inferInsert
 export type AuditEvent = typeof events.$inferSelect
