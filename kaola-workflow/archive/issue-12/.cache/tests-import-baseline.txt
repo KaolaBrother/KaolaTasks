@@ -1,0 +1,1603 @@
+0e8bc4ac980d71a874ce7de38297a5de37bd768a
+Scope: all 5 workspace projects
+✓ Lockfile passes supply-chain policies (verified 2h ago)
+Lockfile is up to date, resolution step is skipped
+Already up to date
+
+Done in 324ms using pnpm v11.19.0
+$ node --experimental-strip-types --test packages/shared/src/index.test.ts packages/forge-adapters/src/index.test.ts packages/forge-adapters/src/validate-token.shared.test.ts packages/forge-adapters/src/get-pull-request.shared.test.ts packages/forge-adapters/src/import-issue.shared.test.ts apps/server/src/import.test.ts apps/server/src/placeholder.test.ts apps/server/src/auth.test.ts apps/server/src/agent-keys.test.ts apps/server/src/vault.test.ts apps/server/src/tasks.test.ts apps/server/src/hosting.test.ts apps/server/src/claim.test.ts apps/server/src/mcp.test.ts apps/server/src/poller.test.ts && pnpm --filter @kaola/web test
+▶ unauthenticated session agent-key routes
+  ✔ JSON Accept is 401 unauthorized without WWW-Authenticate; browser-like requests redirect to /login (39.857625ms)
+✔ unauthenticated session agent-key routes (40.237166ms)
+▶ GET /api/v1/agent/whoami Bearer failures
+  ✔ missing, wrong, and non-Bearer credentials are 401 with WWW-Authenticate Bearer (7.406959ms)
+  ✔ a session cookie does not authorize whoami; GET /api/v1/me does not accept Bearer (10.413958ms)
+✔ GET /api/v1/agent/whoami Bearer failures (17.952084ms)
+▶ pending GitHub cannot generate Agent Keys
+  ✔ pending GitHub POST /api/v1/agent-keys returns 403 with the generate-gate message (4.988375ms)
+✔ pending GitHub cannot generate Agent Keys (5.096542ms)
+▶ approved GitHub claim_only self-service
+  ✔ approved GitHub claim_only can generate, list without plaintext, update last_used_at, and revoke immediately (11.621458ms)
+✔ approved GitHub claim_only self-service (11.729333ms)
+▶ GitLab and Gitea full+active self-service
+  ✔ GitLab full+active can generate keys without VAULT_MASTER_KEY; GET / stays 考拉任务服务占位 (8.685ms)
+  ✔ Gitea full+active can generate, list, and use Bearer whoami (5.129125ms)
+✔ GitLab and Gitea full+active self-service (13.91875ms)
+▶ list and revoke are own keys only
+  ✔ a full member cannot list or revoke another user's key; missing and not-owned DELETE are 404 not_found (6.09125ms)
+✔ list and revoke are own keys only (6.166833ms)
+▶ agent_keys hashed storage
+  ✔ SQLite stores sha256 hex of plaintext utf8, never the token, unique key_hash; failed Bearer does not set last_used_at (11.081125ms)
+✔ agent_keys hashed storage (11.140291ms)
+▶ login start paths
+  ✔ GET /login is allowed without a session (40.723666ms)
+  ✔ GET /login/github redirects to GitHub authorize (4.233417ms)
+  ✔ GET /login/gitlab redirects to the configured GitLab authorize URL (3.987083ms)
+  ✔ GET /login/gitea redirects to the configured Gitea authorize URL (4.475125ms)
+✔ login start paths (53.850125ms)
+▶ unauthenticated GET /api/v1/me
+  ✔ browser-like GET /api/v1/me redirects to /login and does not return a user (4.4575ms)
+  ✔ JSON GET /api/v1/me without a session returns 401 and does not return a user (3.019166ms)
+✔ unauthenticated GET /api/v1/me (7.651625ms)
+▶ OAuth callback first login
+  ✔ GitHub first login persists 待批准 claim_only user and a usable session (13.239291ms)
+  ✔ GitHub display_name falls back to login when name is null (5.192375ms)
+  ✔ GitLab first login persists active full user and a usable session (5.028ms)
+  ✔ Gitea first login persists active full user and a usable session (3.597791ms)
+  ✔ Gitea display_name falls back to login when full_name is empty (3.855083ms)
+  ✔ second GitHub callback with the same remote_id reuses the same user id (5.825625ms)
+  ✔ the same remote_id on GitHub and GitLab is two users (4.619167ms)
+✔ OAuth callback first login (41.626709ms)
+▶ pending GitHub users and approve
+  ✔ pending GitHub user cannot POST /api/v1/users/:id/approve (3.635208ms)
+  ✔ an active full member can approve a GitHub user to active while leaving claim_only (4.074375ms)
+  ✔ approving does not reset on GitHub re-login, and claim_only still cannot approve others (5.470792ms)
+✔ pending GitHub users and approve (13.279ms)
+▶ issue #9 lease-based claiming
+  ▶ authentication — Bearer only
+    ✔ unauthenticated claim, progress, and release are 401 unauthorized with WWW-Authenticate Bearer (49.038334ms)
+    ✔ wrong and non-Bearer credentials are 401 with WWW-Authenticate Bearer (9.452125ms)
+    ✔ a session cookie without Bearer does not authorize claim, progress, or release (12.100042ms)
+    ✔ unknown publicId with a valid Bearer key is 404 not_found (8.641125ms)
+    ✔ numeric PK in the path with a valid Bearer key is 404 not_found (8.456875ms)
+  ✔ authentication — Bearer only (88.1915ms)
+  ▶ POST /api/v1/tasks/:publicId/claim — 201 envelope
+    ✔ claiming an inline task returns 201 with task, forge token, lease TTL, and clone guidance (8.23325ms)
+    ✔ claiming a profile task returns 201; credential stays { profile_id }; token is the profile forge plaintext (8.723917ms)
+    ✔ session GET list and GET one after a successful claim still omit forge token and secret keys (8.576375ms)
+  ✔ POST /api/v1/tasks/:publicId/claim — 201 envelope (25.711ms)
+  ▶ AuthZ
+    ✔ pending 待批准 seeded Agent Key is 403, does not reveal the forge token, and writes no token 揭示 (13.7535ms)
+    ✔ approved GitHub claim_only can claim (8.174292ms)
+    ✔ active full can claim (7.339458ms)
+  ✔ AuthZ (29.407875ms)
+  ▶ conflicts / illegal states
+    ✔ second claim while 进行中 is 409 conflict, no token, and no second reveal (21.846125ms)
+    ✔ claiming a 已取消 task is 409 illegal_transition (5.808625ms)
+    ✔ claiming a 待验收 task is 409 illegal_transition (9.715166ms)
+    ✔ progress and release by a non-holder are 403 forbidden (8.015792ms)
+    ✔ progress and release with no live lease are 409 conflict 任务未被认领 (5.995416ms)
+    ✔ progress and release after the holder released are 409 任务未被认领 (5.535709ms)
+  ✔ conflicts / illegal states (57.082041ms)
+  ▶ heartbeat
+    ✔ omitted note still renews expires_at from heartbeat time and writes 心跳 with note empty string (13.855834ms)
+    ✔ a progress note is persisted on the 心跳 event; empty note still renews (18.737542ms)
+  ✔ heartbeat (32.680292ms)
+  ▶ release
+    ✔ holder release returns 200 { task } 待认领, marks the lease released, and writes 状态迁移 without reason (11.851625ms)
+    ✔ release with reason stores reason on the 状态迁移 event (11.982541ms)
+  ✔ release (23.907958ms)
+  ▶ expiry
+    ✔ check-on-read: after TTL, session GET list and GET one show 待认领, lease expired, actor_user_id null, reveal rows unchanged (12.336583ms)
+    ✔ check-on-write: after TTL, progress sweeps then returns 409 任务未被认领 (12.174042ms)
+    ✔ after expiry a different Agent Key can claim again and writes a second token 揭示 (14.006416ms)
+  ✔ expiry (38.608667ms)
+  ▶ reveal audit
+    ✔ inline claim writes token 揭示 { task_id, agent_key_id, credential: inline } and 状态迁移 待认领→进行中 (9.172542ms)
+    ✔ profile claim writes token 揭示 with credential profile and integer profile_id; no plaintext or ciphertext (9.811375ms)
+  ✔ reveal audit (19.052583ms)
+  ▶ leases table
+    ✔ successful claim inserts one active lease keyed by tasks.id PK; at most one active row per task (10.908292ms)
+  ✔ leases table (10.955167ms)
+✔ issue #9 lease-based claiming (325.922459ms)
+▶ issue #17 single-port 31415 hosting
+  ✔ omitted hosting options keep GET / as 考拉任务服务占位 with text/plain; webDist serves index.html at / (62.197959ms)
+  ✔ webDist SPA-fallbacks unmatched GET, serves assets, and does not swallow /api or /login (7.957167ms)
+  ✔ when webDist and viteDevTarget are both set, webDist wins (4.431166ms)
+  ✔ index.ts PORT default is 31415 (source pin; does not import index.ts) (0.719584ms)
+  ✔ auth.ts PUBLIC_URL default is http://localhost:31415 (source pin) (0.169834ms)
+  ✔ vite.config.ts proxies /api and /login to http://127.0.0.1:31415 (0.100959ms)
+  ✔ docker-compose maps 31415:31415 and sets PORT 31415 (0.081542ms)
+  ✔ Dockerfile EXPOSE 31415, ENV PORT=31415, and image build includes web dist (0.255208ms)
+  ✔ root package.json has a non-empty dev script (0.100833ms)
+✔ issue #17 single-port 31415 hosting (76.52425ms)
+▶ issue #12 POST /api/v1/tasks/import
+  ▶ authentication (same gate as POST /api/v1/tasks)
+    ✖ unauthenticated JSON POST returns 401 unauthorized (41.845334ms)
+    ✖ 待批准 GitHub user gets 403 forbidden (12.876625ms)
+    ✖ approved GitHub claim_only user gets 403 forbidden (7.429333ms)
+  ✖ authentication (same gate as POST /api/v1/tasks) (62.581709ms)
+  ▶ success is a pre-publish draft (200, no tasks row, no token)
+    ✖ inline credential returns 200 mapped fields and does not insert a tasks row (9.886334ms)
+    ✖ optional repo.full_name matching the parsed name still 200 (9.85075ms)
+    ✖ trailing slash on issue_url is stripped in source.issue_url (3.749042ms)
+    ✖ gitea constructor baseUrl is used, not the pasted issue host (SSRF) (4.158625ms)
+  ✖ success is a pre-publish draft (200, no tasks row, no token) (27.893667ms)
+  ▶ error mapping
+    ✖ generic parse / missing issue_url / missing forge is 400 invalid_body with no message (4.717625ms)
+    ✖ unparseable issue_url is 400 with 无法解析 Issue 地址 and does not fetch (4.83425ms)
+    ✖ repo.full_name that does not equal the parsed name is 400 Issue 地址与仓库不匹配 (4.338625ms)
+    ✖ repo.base_url that is not http(s)+host uses the publish Chinese message (4.770709ms)
+    ✖ forge 404 is 404 issue_not_found (5.099084ms)
+    ✖ forge 410 is 404 issue_not_found (4.148875ms)
+    ✖ forge 401 is 422 token_check_failed with missing 读 (4.665417ms)
+    ✖ other non-OK forge status is 502 forge_unreachable (4.137041ms)
+    ✖ fetch/network throw is 502 forge_unreachable (4.42275ms)
+  ✖ error mapping (41.508584ms)
+  ▶ profile credential bind, decrypt, and token 揭示
+    ✖ matching profile 200 writes token 揭示 outcome ok; no tasks row; no token in JSON (9.795375ms)
+    ✖ profile-path 404 still writes token 揭示 with outcome issue_not_found (8.693084ms)
+    ✖ profile-path 401 still writes token 揭示 with outcome token_check_failed (7.769083ms)
+    ✖ profile-path 502 still writes token 揭示 with outcome forge_unreachable (8.948667ms)
+    ✖ unparseable issue_url with profile_id does not decrypt (no token 揭示, no fetch) (11.1035ms)
+    ✖ missing profile is 400 所选凭证档案不存在 (4.108916ms)
+    ✖ profile bind is exact forge/base_url/parsed full_name (mismatch does not decrypt) (8.454167ms)
+    ✖ profile path without VAULT_MASTER_KEY returns 500 vault_unconfigured (3.768791ms)
+  ✖ profile credential bind, decrypt, and token 揭示 (62.918708ms)
+✖ issue #12 POST /api/v1/tasks/import (195.180583ms)
+▶ issue #10 MCP server
+  ▶ authentication — Bearer only, HTTP 401 before JSON-RPC
+    ✔ unauthenticated POST /api/mcp (missing Authorization) is 401 unauthorized with WWW-Authenticate Bearer (40.689417ms)
+    ✔ Token scheme, Basic, and wrong Bearer on POST /api/mcp are 401 with WWW-Authenticate Bearer (12.318375ms)
+    ✔ a session cookie without Bearer does not authorize POST /api/mcp (5.243833ms)
+    ✔ authenticated tools/list includes the six tools and claim_task describes token hygiene (22.970167ms)
+  ✔ authentication — Bearer only, HTTP 401 before JSON-RPC (81.63775ms)
+  ▶ list_tasks / get_task_brief
+    ✔ list_tasks returns { tasks } briefs that parse and never contain forge secrets (15.986917ms)
+    ✔ list_tasks filters by exact status, tag membership of one tag, and exact repo.forge (18.838125ms)
+    ✔ list_tasks and get_task_brief apply sweepExpiredLeases so an expired 进行中 task shows as 待认领 (12.337ms)
+    ✔ a pending 待批准 Agent Key may list_tasks (17.211125ms)
+    ✔ get_task_brief returns a top-level brief; missing and numeric ids are isError not_found (11.944458ms)
+  ✔ list_tasks / get_task_brief (76.596416ms)
+  ▶ claim_task
+    ✔ claim_task success envelope keys are exactly task, token, lease, clone with the REST clone pin (14.066917ms)
+    ✔ pending claim_task is isError matching REST 403, reveals no token, and writes no token 揭示 (14.467292ms)
+    ✔ second claim_task is conflict; list_tasks and get_task_brief still omit the forge token (23.662458ms)
+  ✔ claim_task (52.309833ms)
+  ▶ report_progress / release_task
+    ✔ report_progress wraps REST: optional note (omit → empty string), envelope { task, lease }, no token (16.047959ms)
+    ✔ release_task wraps REST: optional reason, envelope { task } 待认领, no token (25.850709ms)
+    ✔ non-holder report_progress and release_task are isError forbidden with no message (8.473334ms)
+    ✔ report_progress and release_task with no live lease are isError 任务未被认领 (7.093833ms)
+  ✔ report_progress / release_task (57.588583ms)
+  ▶ submit_pr
+    ✔ submit_pr success is { task, pr_url, summary } 待验收, persists submissions, clears the lease, writes 状态迁移 (14.070917ms)
+    ✔ submit_pr fails for non-holder, no lease, and not 进行中 (19.52925ms)
+  ✔ submit_pr (33.674959ms)
+✔ issue #10 MCP server (302.051292ms)
+✔ getPlaceholderBody returns the pinned non-empty placeholder HTTP body (0.347333ms)
+▶ issue #11 poller (pollPendingReviews)
+  ▶ getPullRequest-driven terminal transitions
+    ✔ merged PR: 待验收 → 已完成, submissions.pr_state → merged, system 状态迁移 (actor_user_id null) (77.329333ms)
+    ✔ closed (unmerged) PR: 待验收 → 已退回, submissions.pr_state → closed (21.469667ms)
+    ✔ open PR: task stays 待验收, pr_state stays open (18.742375ms)
+  ✔ getPullRequest-driven terminal transitions (117.900875ms)
+  ▶ scope: only 待验收 tasks are ever fetched
+    ✔ 待认领/进行中/已完成/已取消/已退回 tasks are never fetched as PRs and are left untouched (60.531083ms)
+  ✔ scope: only 待验收 tasks are ever fetched (60.633375ms)
+  ▶ resilience
+    ✔ a fetch failure on one 待验收 task is skipped, and a sibling 待验收 task still completes (31.469292ms)
+  ✔ resilience (31.548084ms)
+  ▶ reopen after a poller-driven 已退回
+    ✔ poster PATCH { status: 待认领 } succeeds after 已退回, and prior events + the submissions row remain (18.947083ms)
+  ✔ reopen after a poller-driven 已退回 (19.023625ms)
+  ▶ buildApp({ pollIntervalMs }) frequency contract
+    ✔ omitted pollIntervalMs registers no interval (3.031625ms)
+    ✔ pollIntervalMs: 0 registers no interval (5.497459ms)
+    ✔ pollIntervalMs: 1234 registers setInterval with delay 1234 (6.167916ms)
+  ✔ buildApp({ pollIntervalMs }) frequency contract (14.847375ms)
+✔ issue #11 poller (pollPendingReviews) (244.244166ms)
+▶ issue #7 tasks HTTP surface
+  ▶ authentication and DESIGN §11 permissions
+    ✔ unauthenticated JSON GET/POST/PATCH return 401 unauthorized (44.287333ms)
+    ✔ browser-like GET /api/v1/tasks redirects to /login (3.894875ms)
+    ✔ 待批准 GitHub user may read the board (§11 查看任务板 ✓) but not post (11.704708ms)
+    ✔ approved GitHub claim_only user may read the board but not post or patch (20.358625ms)
+    ✔ only the 发布者 may cancel — another active full member gets 403 (9.469959ms)
+  ✔ authentication and DESIGN §11 permissions (90.130125ms)
+  ▶ POST /api/v1/tasks — 凭证档案下拉选择 path
+    ✔ profile path creates a 待认领 task whose credential is { profile_id } (7.962459ms)
+    ✔ profile_id is accepted as a number and as a numeric string (6.850666ms)
+    ✔ an unknown profile_id is refused with 400 invalid_body and a Chinese message (4.314417ms)
+  ✔ POST /api/v1/tasks — 凭证档案下拉选择 path (19.2665ms)
+  ▶ POST /api/v1/tasks — 单任务临时 token path
+    ✔ inline token path creates a 待认领 task whose credential is { inline: true } (5.113333ms)
+    ✔ inline token is stored as ciphertext and recoverable through the vault (10.764958ms)
+    ✔ both credential paths return 500 vault_unconfigured without VAULT_MASTER_KEY (5.886958ms)
+  ✔ POST /api/v1/tasks — 单任务临时 token path (21.956125ms)
+  ▶ 发布即校验 — DESIGN §5
+    ✔ a token missing 推 and PR is refused with 422 and names both capabilities (6.119791ms)
+    ✔ a token that can push but cannot open PRs is refused naming only PR (3.601125ms)
+    ✔ a 401 token is refused with the token-invalid message, not the 权限不足 one (4.380042ms)
+    ✔ a token with no access to the repo is refused with the token-invalid message (6.83025ms)
+    ✔ an unreachable forge is a DIFFERENT outcome: 502 with its own Chinese message (5.309333ms)
+    ✔ the profile path is validated too — an under-scoped profile token is refused (8.226042ms)
+  ✔ 发布即校验 — DESIGN §5 (34.746708ms)
+  ▶ 任务卡字段完整符合 §6 schema
+    ✔ a full request body round-trips every DESIGN §6 field (5.111125ms)
+    ✔ pr_convention is derived from the public id, per DESIGN §6 (4.352334ms)
+    ✔ a client-supplied pr_convention or id or status is ignored — the server owns them (4.079083ms)
+    ✔ an imported source round-trips issue_url; a native source carries only type (4.981125ms)
+    ✔ a minimal request body is completed with the documented defaults (3.359ms)
+    ✔ created_at is ISO-8601 with offset and matches the stored unix seconds (7.2865ms)
+    ✔ POST with no title returns 400 invalid_body (2.773875ms)
+    ✔ POST with an empty title returns 400 invalid_body (2.618458ms)
+    ✔ POST with no repo returns 400 invalid_body (3.171708ms)
+    ✔ POST with an unknown forge returns 400 invalid_body (2.84875ms)
+    ✔ POST with no repo.full_name returns 400 invalid_body (3.651792ms)
+    ✔ POST with an unknown priority returns 400 invalid_body (3.562833ms)
+    ✔ POST with an unknown source type returns 400 invalid_body (2.918291ms)
+    ✔ POST with an imported source without issue_url returns 400 invalid_body (2.306708ms)
+    ✔ POST with no credential returns 400 invalid_body (2.9575ms)
+    ✔ POST with an empty credential returns 400 invalid_body (3.067792ms)
+    ✔ POST with both credential forms at once returns 400 invalid_body (2.789458ms)
+    ✔ POST with a bare inline marker and no token returns 400 invalid_body (2.639875ms)
+    ✔ POST with an empty inline token returns 400 invalid_body (2.613542ms)
+  ✔ 任务卡字段完整符合 §6 schema (67.48875ms)
+  ▶ public_id — kt-YYYY-NNNN
+    ✔ public_id has the kt-YYYY-NNNN form and carries the current year (3.406708ms)
+    ✔ public ids are distinct and their sequence increases (6.535583ms)
+    ✔ public_id is UNIQUE in SQLite (7.881083ms)
+  ✔ public_id — kt-YYYY-NNNN (17.905833ms)
+  ▶ token secrecy — DESIGN §7
+    ✔ no create/list/get response carries the inline token in any field (3.24425ms)
+    ✔ no create/list/get response carries the profile token in any field (3.676042ms)
+  ✔ token secrecy — DESIGN §7 (6.975792ms)
+  ▶ GET /api/v1/tasks and GET /api/v1/tasks/:public_id
+    ✔ list returns every task under a tasks key, each a §6 brief (3.587875ms)
+    ✔ get by public_id returns exactly the brief that create returned (2.845ms)
+    ✔ an unknown public_id returns 404 not_found (2.9495ms)
+    ✔ a numeric-looking id returns 404 not_found — tasks are addressed by public_id only (3.448334ms)
+  ✔ GET /api/v1/tasks and GET /api/v1/tasks/:public_id (12.916417ms)
+  ▶ PATCH /api/v1/tasks/:public_id — 取消 / 重新开放
+    ✔ 待认领 → 已取消 by the poster returns the updated brief (3.595334ms)
+    ✔ 已退回 → 待认领 reopens the task (8.818042ms)
+    ✔ 已退回 → 已取消 by the poster (7.9165ms)
+    ✔ an illegal transition 待认领 → 已完成 returns 409 with a Chinese message (3.304459ms)
+    ✔ 待认领 → 进行中 is claim territory, not a poster edit: 409 illegal_transition (2.673167ms)
+    ✔ 已取消 is terminal — 已取消 → 待认领 returns 409 (3.09825ms)
+    ✔ an unknown status value returns 400 invalid_body (7.18675ms)
+    ✔ PATCH on an unknown public_id returns 404 not_found (2.613958ms)
+  ✔ PATCH /api/v1/tasks/:public_id — 取消 / 重新开放 (39.361833ms)
+  ▶ audit — 状态迁移 events (DESIGN §10)
+    ✔ cancelling writes one 状态迁移 event naming the task, from, to and actor (6.966417ms)
+    ✔ reopening writes a 状态迁移 event from 已退回 to 待认领 (7.305083ms)
+    ✔ a refused transition writes no 状态迁移 event (6.419917ms)
+  ✔ audit — 状态迁移 events (DESIGN §10) (20.775333ms)
+  ▶ tasks table invariants (DESIGN §10: credential_profile_id / inline_token_encrypted 二选一)
+    ✔ the profile path stores credential_profile_id and leaves inline_token_encrypted NULL (6.888375ms)
+    ✔ SQLite refuses a row with BOTH credential columns set (5.445375ms)
+    ✔ SQLite refuses a row with NEITHER credential column set (5.2295ms)
+  ✔ tasks table invariants (DESIGN §10: credential_profile_id / inline_token_encrypted 二选一) (17.629333ms)
+  ▶ POST /api/v1/tasks — security-review repair (profile binding / base_url / audit)
+    ▶ F1 — profile-to-repo binding (exact forge + base_url + full_name)
+      ✔ gitlab profile + gitea request is 400 before decrypt and never sends the plaintext token (6.085958ms)
+      ✔ matching forge and full_name with an attacker base_url is 400 before decrypt (6.360333ms)
+      ✔ matching forge and base_url with a different full_name is 400 before decrypt (5.683167ms)
+    ✔ F1 — profile-to-repo binding (exact forge + base_url + full_name) (18.187459ms)
+    ▶ F2 — repo.base_url must be http(s) with a non-empty host
+      ✔ POST with repo.base_url a file: URL returns 400 invalid_body before any forge fetch (2.2615ms)
+      ✔ POST with repo.base_url a javascript: URL returns 400 invalid_body before any forge fetch (1.918625ms)
+      ✔ POST with repo.base_url a missing scheme returns 400 invalid_body before any forge fetch (1.860583ms)
+      ✔ POST with repo.base_url an empty host returns 400 invalid_body before any forge fetch (2.041375ms)
+    ✔ F2 — repo.base_url must be http(s) with a non-empty host (8.145042ms)
+    ▶ F3 — decrypting a stored profile for 发布即校验 writes token 揭示
+      ✔ a matching profile 201 writes token 揭示 with pinned details; an inline token does not (7.679917ms)
+      ✔ a profile-path 422 still writes token 揭示 (plaintext already left the process) (6.07025ms)
+      ✔ a profile-path 502 still writes token 揭示 (plaintext already left the process) (8.526209ms)
+    ✔ F3 — decrypting a stored profile for 发布即校验 writes token 揭示 (22.359958ms)
+  ✔ POST /api/v1/tasks — security-review repair (profile binding / base_url / audit) (48.739125ms)
+✔ issue #7 tasks HTTP surface (398.294667ms)
+▶ issue #5 credential vault
+  ▶ placeholder pin
+    ✔ GET / still returns 考拉任务服务占位 (37.14325ms)
+  ✔ placeholder pin (37.473042ms)
+  ▶ unauthenticated credential-profile routes
+    ✔ JSON GET/POST/DELETE without a session return 401 unauthorized (9.882333ms)
+    ✔ browser-like GET /api/v1/credential-profiles redirects to /login (3.56675ms)
+  ✔ unauthenticated credential-profile routes (13.568792ms)
+  ▶ credential profile CRUD (session, active full)
+    ✔ GitLab POST returns 201 public fields and GET lists them without secrets (10.285709ms)
+    ✔ Gitea active full member can POST a credential profile (6.931375ms)
+    ✔ duplicate (forge, base_url, repo_full_name) returns 409 conflict (9.166959ms)
+    ✔ DELETE returns forge-revoke copy; missing id is 404 not_found (6.109375ms)
+    ✔ any active full member lists and deletes team-shared profiles (6.113959ms)
+  ✔ credential profile CRUD (session, active full) (38.890959ms)
+  ▶ permission gate (profiles are active+full only)
+    ✔ pending GitHub user gets 403 forbidden on POST/GET/DELETE (6.147458ms)
+    ✔ approved GitHub claim_only still gets 403 forbidden on POST/GET/DELETE (8.011125ms)
+  ✔ permission gate (profiles are active+full only) (14.2745ms)
+  ▶ SQLite: no plaintext token; 变更 events
+    ✔ token_encrypted TEXT omits plaintext and create writes 变更 (10.445916ms)
+    ✔ DELETE writes 变更 action delete (14.517083ms)
+  ✔ SQLite: no plaintext token; 变更 events (25.051583ms)
+  ▶ vault_unconfigured
+    ✔ HTTP POST without VAULT_MASTER_KEY returns 500 vault_unconfigured (4.282833ms)
+  ✔ vault_unconfigured (4.39ms)
+  ▶ encryptToken / decryptToken (dynamic import ./vault.ts)
+    ✔ round-trips a one-off token string and ciphertext omits plaintext (0.411375ms)
+    ✔ encryptToken throws when VAULT_MASTER_KEY is missing (0.323625ms)
+  ✔ encryptToken / decryptToken (dynamic import ./vault.ts) (0.794458ms)
+  ▶ revealCredentialProfile (dynamic import ./vault.ts)
+    ✔ returns plaintext, writes token 揭示 audit, and throws after DELETE (15.080042ms)
+  ✔ revealCredentialProfile (dynamic import ./vault.ts) (15.131083ms)
+✔ issue #5 credential vault (150.064709ms)
+▶ getPullRequest shared spec
+  ▶ github
+    ✔ GETs the pull/merge-request endpoint with validateToken-style auth headers (11.074625ms)
+    ✔ merged → { state: "merged" } (0.375958ms)
+    ✔ closed and not merged → { state: "closed" } (0.218ms)
+    ✔ open → { state: "open" } (0.246792ms)
+    ✔ trailing slash on the pasted URL is stripped before parsing (0.777917ms)
+    ✔ non-OK HTTP response rejects (after actually calling fetch, not merely throwing) (0.265625ms)
+    ✔ an unparseable prUrl rejects without calling fetch, while a valid URL from the same adapter succeeds (1.613959ms)
+  ✔ github (15.022875ms)
+  ▶ gitlab
+    ✔ GETs the pull/merge-request endpoint with validateToken-style auth headers (0.343ms)
+    ✔ merged → { state: "merged" } (0.245166ms)
+    ✔ closed and not merged → { state: "closed" } (0.222708ms)
+    ✔ open → { state: "open" } (0.130708ms)
+    ✔ trailing slash on the pasted URL is stripped before parsing (0.09175ms)
+    ✔ non-OK HTTP response rejects (after actually calling fetch, not merely throwing) (0.089333ms)
+    ✔ an unparseable prUrl rejects without calling fetch, while a valid URL from the same adapter succeeds (0.110708ms)
+  ✔ gitlab (1.380916ms)
+  ▶ gitea
+    ✔ GETs the pull/merge-request endpoint with validateToken-style auth headers (0.251333ms)
+    ✔ merged → { state: "merged" } (0.133083ms)
+    ✔ closed and not merged → { state: "closed" } (0.088916ms)
+    ✔ open → { state: "open" } (0.085375ms)
+    ✔ trailing slash on the pasted URL is stripped before parsing (0.088125ms)
+    ✔ non-OK HTTP response rejects (after actually calling fetch, not merely throwing) (0.066584ms)
+    ✔ an unparseable prUrl rejects without calling fetch, while a valid URL from the same adapter succeeds (0.095709ms)
+  ✔ gitea (0.90225ms)
+  ✔ github: .diff and .patch suffixes on the pasted URL are stripped before parsing (0.162709ms)
+  ✔ github: always calls api.github.com regardless of a custom baseUrl option (0.097291ms)
+  ✔ gitlab: opened → open (verified 4-valued vendor enum mapped down to 3) (0.101542ms)
+  ✔ gitlab: locked (transient, en route to merged) → open, not merged and not closed (0.099958ms)
+  ✔ gitlab: a namespace path with subgroup slashes is encodeURIComponent-ed as a single :id segment (0.97ms)
+  ✔ gitlab/gitea: the API origin comes from the constructor baseUrl option, not from the prUrl host (0.233416ms)
+✔ getPullRequest shared spec (19.90375ms)
+▶ importIssue shared spec
+  ▶ github
+    ✖ GETs the issue endpoint with validateToken-style auth headers and returns ImportedIssue (0.54675ms)
+    ✖ trailing slash on the pasted URL is stripped before parsing and from returned issue_url (0.097792ms)
+    ✖ query and hash on the pasted URL are dropped by pathname when building the REST URL (0.067167ms)
+    ✖ null issue body/description maps to an empty description_md (0.082375ms)
+    ✖ missing issue body/description maps to an empty description_md (0.087583ms)
+    ✖ returned issue_url is the pasted web URL, not html_url / web_url from JSON (0.069417ms)
+    ✖ missing or non-string title rejects after fetch (0.469542ms)
+    ✖ non-OK HTTP response rejects after actually calling fetch, with status in the message (0.32925ms)
+    ✖ an unparseable issueUrl rejects without calling fetch (not merely notImplemented) (0.134875ms)
+    ✖ a pull/MR/work-item web path is unparseable and must not fetch (0.198583ms)
+  ✖ github (2.564792ms)
+  ▶ gitlab
+    ✖ GETs the issue endpoint with validateToken-style auth headers and returns ImportedIssue (0.144375ms)
+    ✖ trailing slash on the pasted URL is stripped before parsing and from returned issue_url (0.059042ms)
+    ✖ query and hash on the pasted URL are dropped by pathname when building the REST URL (0.037667ms)
+    ✖ null issue body/description maps to an empty description_md (0.04575ms)
+    ✖ missing issue body/description maps to an empty description_md (0.034292ms)
+    ✖ returned issue_url is the pasted web URL, not html_url / web_url from JSON (0.031083ms)
+    ✖ missing or non-string title rejects after fetch (0.083833ms)
+    ✖ non-OK HTTP response rejects after actually calling fetch, with status in the message (0.088333ms)
+    ✖ an unparseable issueUrl rejects without calling fetch (not merely notImplemented) (0.057625ms)
+    ✖ a pull/MR/work-item web path is unparseable and must not fetch (0.073792ms)
+  ✖ gitlab (0.77375ms)
+  ▶ gitea
+    ✖ GETs the issue endpoint with validateToken-style auth headers and returns ImportedIssue (0.092916ms)
+    ✖ trailing slash on the pasted URL is stripped before parsing and from returned issue_url (0.033583ms)
+    ✖ query and hash on the pasted URL are dropped by pathname when building the REST URL (0.041208ms)
+    ✖ null issue body/description maps to an empty description_md (0.039416ms)
+    ✖ missing issue body/description maps to an empty description_md (0.029041ms)
+    ✖ returned issue_url is the pasted web URL, not html_url / web_url from JSON (0.029125ms)
+    ✖ missing or non-string title rejects after fetch (0.067458ms)
+    ✖ non-OK HTTP response rejects after actually calling fetch, with status in the message (0.069ms)
+    ✖ an unparseable issueUrl rejects without calling fetch (not merely notImplemented) (0.05825ms)
+    ✖ a pull/MR/work-item web path is unparseable and must not fetch (0.069209ms)
+  ✖ gitea (0.62225ms)
+  ✖ github: always calls api.github.com regardless of a custom baseUrl option or pasted host (0.060792ms)
+  ✖ github/gitea: a GET /issues/{n} payload that includes pull_request is still accepted (0.057125ms)
+  ✖ gitlab: description_md comes from JSON description, not body (0.050625ms)
+  ✖ github/gitea: description_md comes from JSON body, not description (0.058916ms)
+  ✖ gitlab: a nested-group namespace is encodeURIComponent-ed as a single :id segment (0.070458ms)
+  ✖ gitlab: canonical /-/issues/ is not parsed as a legacy namespace ending in /- (0.04925ms)
+  ✖ gitlab: the legacy /issues/ web_url (no /-/) is also accepted (0.051375ms)
+  ✖ gitlab: /-/work_items/ is unparseable (zero fetch) (0.102083ms)
+  ✖ gitlab/gitea: the API origin comes from the constructor baseUrl option, not from the issueUrl host (0.064959ms)
+✖ importIssue shared spec (5.499875ms)
+✔ getForgeAdaptersHealth returns the pinned non-empty forge-adapters package health string (0.36775ms)
+▶ validateToken shared spec
+  ▶ github
+    ✔ all ok: GET user + push-capable repo → missing [] (same-repo, no /forks) (12.857291ms)
+    ✔ cannot read: repo/project GET 404 → missing includes 读 (0.379958ms)
+    ✔ dead token: user GET 401 → missing includes 读, 推, and PR (0.167875ms)
+    ✔ read but cannot push (Reporter / push:false / access_level 20) → missing 推, not 读 (0.412166ms)
+    ✔ cannot open PR/MR while readable → missing includes PR (0.912875ms)
+    ✔ custom baseUrl: GitLab/Gitea keep subpath; GitHub always api.github.com (0.323709ms)
+  ✔ github (15.437334ms)
+  ▶ gitlab
+    ✔ all ok: GET user + push-capable repo → missing [] (same-repo, no /forks) (0.339791ms)
+    ✔ cannot read: repo/project GET 404 → missing includes 读 (0.098583ms)
+    ✔ dead token: user GET 401 → missing includes 读, 推, and PR (0.075666ms)
+    ✔ read but cannot push (Reporter / push:false / access_level 20) → missing 推, not 读 (0.129416ms)
+    ✔ cannot open PR/MR while readable → missing includes PR (0.100917ms)
+    ✔ custom baseUrl: GitLab/Gitea keep subpath; GitHub always api.github.com (0.108791ms)
+  ✔ gitlab (0.964375ms)
+  ▶ gitea
+    ✔ all ok: GET user + push-capable repo → missing [] (same-repo, no /forks) (0.207875ms)
+    ✔ cannot read: repo/project GET 404 → missing includes 读 (0.068916ms)
+    ✔ dead token: user GET 401 → missing includes 读, 推, and PR (0.054333ms)
+    ✔ read but cannot push (Reporter / push:false / access_level 20) → missing 推, not 读 (0.093ms)
+    ✔ cannot open PR/MR while readable → missing includes PR (0.076458ms)
+    ✔ custom baseUrl: GitLab/Gitea keep subpath; GitHub always api.github.com (0.06725ms)
+  ✔ gitea (0.625125ms)
+  ✔ github classic PAT without repo scope cannot push or open PR (0.148708ms)
+✔ validateToken shared spec (17.374625ms)
+✔ getSharedHealth returns the pinned non-empty shared package health string (0.393417ms)
+▶ parseTaskBrief
+  ✔ parseTaskBrief accepts the DESIGN.md §6 Task Brief example including Chinese ellipsis description (2.250459ms)
+  ✔ parseTaskBrief accepts a valid brief whose source is native with no issue_url (0.4445ms)
+  ✔ parseTaskBrief accepts status 待认领 (0.148792ms)
+  ✔ parseTaskBrief accepts status 进行中 (0.091375ms)
+  ✔ parseTaskBrief accepts status 待验收 (0.10375ms)
+  ✔ parseTaskBrief accepts status 已完成 (0.090958ms)
+  ✔ parseTaskBrief accepts status 已退回 (0.092083ms)
+  ✔ parseTaskBrief accepts status 已取消 (0.095583ms)
+  ✔ parseTaskBrief accepts repo.forge github (0.166375ms)
+  ✔ parseTaskBrief accepts repo.forge gitlab (0.144042ms)
+  ✔ parseTaskBrief accepts repo.forge gitea (0.067ms)
+  ✔ parseTaskBrief accepts priority P0 (0.094291ms)
+  ✔ parseTaskBrief accepts priority P1 (0.064833ms)
+  ✔ parseTaskBrief accepts priority P2 (0.050834ms)
+  ✔ parseTaskBrief accepts priority P3 (0.060875ms)
+  ✔ parseTaskBrief rejects a brief missing required field id (0.448375ms)
+  ✔ parseTaskBrief rejects a brief missing required field title (0.196458ms)
+  ✔ parseTaskBrief rejects a brief missing required field description_md (0.116208ms)
+  ✔ parseTaskBrief rejects a brief missing required field source (0.075083ms)
+  ✔ parseTaskBrief rejects a brief missing required field repo (0.061916ms)
+  ✔ parseTaskBrief rejects a brief missing required field acceptance_criteria (0.057958ms)
+  ✔ parseTaskBrief rejects a brief missing required field test_command (0.213166ms)
+  ✔ parseTaskBrief rejects a brief missing required field constraints (0.374333ms)
+  ✔ parseTaskBrief rejects a brief missing required field pr_convention (0.42725ms)
+  ✔ parseTaskBrief rejects a brief missing required field credential (0.313ms)
+  ✔ parseTaskBrief rejects a brief missing required field priority (0.144375ms)
+  ✔ parseTaskBrief rejects a brief missing required field tags (0.086708ms)
+  ✔ parseTaskBrief rejects a brief missing required field poster (0.082125ms)
+  ✔ parseTaskBrief rejects a brief missing required field status (0.069125ms)
+  ✔ parseTaskBrief rejects a brief missing required field created_at (0.062417ms)
+  ✔ parseTaskBrief rejects a brief missing repo.forge (0.111084ms)
+  ✔ parseTaskBrief rejects a brief missing repo.base_url (0.065833ms)
+  ✔ parseTaskBrief rejects a brief missing repo.full_name (0.084667ms)
+  ✔ parseTaskBrief rejects a brief missing repo.base_branch (0.05825ms)
+  ✔ parseTaskBrief rejects a brief missing repo.suggested_dir (0.059209ms)
+  ✔ parseTaskBrief rejects a brief missing constraints.allowed_paths (0.062042ms)
+  ✔ parseTaskBrief rejects a brief missing constraints.forbidden_paths (0.056375ms)
+  ✔ parseTaskBrief rejects a brief missing pr_convention.branch_prefix (0.057333ms)
+  ✔ parseTaskBrief rejects a brief missing pr_convention.title_prefix (0.053125ms)
+  ✔ parseTaskBrief rejects status that is not one of the six Chinese labels (0.072958ms)
+  ✔ parseTaskBrief rejects repo.forge outside github | gitlab | gitea (0.063292ms)
+  ✔ parseTaskBrief rejects imported source without issue_url (0.070417ms)
+  ✔ parseTaskBrief rejects native source that includes issue_url (0.104167ms)
+  ✔ parseTaskBrief rejects priority outside P0|P1|P2|P3 (0.058875ms)
+  ✔ parseTaskBrief rejects a raw token field on the brief (0.091292ms)
+  ✔ parseTaskBrief rejects credential that has no profile_id (0.177458ms)
+  ✔ parseTaskBrief rejects a raw token field inside credential (0.091792ms)
+  ✔ parseTaskBrief rejects credential that includes both profile_id and a raw token (0.07625ms)
+✔ parseTaskBrief (8.744542ms)
+▶ parseTaskBrief credential union
+  ✔ parseTaskBrief accepts credential { profile_id } — the shared credential profile form (0.968709ms)
+  ✔ parseTaskBrief accepts credential { inline: true } — the single-task temporary token form (0.083458ms)
+  ✔ parseTaskBrief round-trips credential { inline: true } without adding or dropping keys (0.061583ms)
+  ✔ parseTaskBrief accepts the DESIGN.md §6 example when its credential row is the inline form (0.043625ms)
+  ✔ parseTaskBrief rejects credential { inline: false } — inline is a marker, only true is legal (0.079084ms)
+  ✔ parseTaskBrief rejects credential carrying both profile_id and inline (二选一, exactly one form) (0.067458ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type "yes" (0.078333ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type "true" (0.061667ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type 1 (0.051166ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type 0 (0.045208ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type null (0.043375ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type [] (0.0445ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type {} (0.042416ms)
+  ✔ parseTaskBrief rejects credential {} — neither form is present (0.062917ms)
+  ✔ parseTaskBrief rejects a credential shape that is neither profile_id nor inline (0.05775ms)
+  ✔ parseTaskBrief rejects an unknown extra key alongside profile_id (0.055208ms)
+  ✔ parseTaskBrief rejects an unknown extra key alongside inline: true (0.056ms)
+  ✔ parseTaskBrief rejects a raw token alongside inline: true (0.05775ms)
+  ✔ parseTaskBrief rejects a ciphertext-bearing credential even in the inline form (0.0745ms)
+  ✔ parseTaskBrief rejects profile_id that is not a string (0.070709ms)
+  ✔ parseTaskBrief rejects credential that is not an object: "cp-gitea-orders" (0.056083ms)
+  ✔ parseTaskBrief rejects credential that is not an object: 42 (0.0615ms)
+  ✔ parseTaskBrief rejects credential that is not an object: true (0.0525ms)
+  ✔ parseTaskBrief rejects credential that is not an object: null (0.045083ms)
+  ✔ parseTaskBrief rejects credential that is not an object: [] (0.040417ms)
+✔ parseTaskBrief credential union (2.553959ms)
+▶ transitionTaskStatus
+  ✔ transitionTaskStatus rejects 待认领 → 待认领 (0.201959ms)
+  ✔ transitionTaskStatus allows 待认领 → 进行中 (0.0385ms)
+  ✔ transitionTaskStatus rejects 待认领 → 待验收 (0.028083ms)
+  ✔ transitionTaskStatus rejects 待认领 → 已完成 (0.026083ms)
+  ✔ transitionTaskStatus rejects 待认领 → 已退回 (0.029417ms)
+  ✔ transitionTaskStatus allows 待认领 → 已取消 (0.0245ms)
+  ✔ transitionTaskStatus allows 进行中 → 待认领 (0.026167ms)
+  ✔ transitionTaskStatus rejects 进行中 → 进行中 (0.028333ms)
+  ✔ transitionTaskStatus allows 进行中 → 待验收 (0.034792ms)
+  ✔ transitionTaskStatus rejects 进行中 → 已完成 (0.02575ms)
+  ✔ transitionTaskStatus rejects 进行中 → 已退回 (0.028042ms)
+  ✔ transitionTaskStatus rejects 进行中 → 已取消 (0.030042ms)
+  ✔ transitionTaskStatus rejects 待验收 → 待认领 (0.026208ms)
+  ✔ transitionTaskStatus rejects 待验收 → 进行中 (0.028125ms)
+  ✔ transitionTaskStatus rejects 待验收 → 待验收 (0.024708ms)
+  ✔ transitionTaskStatus allows 待验收 → 已完成 (0.024625ms)
+  ✔ transitionTaskStatus allows 待验收 → 已退回 (0.024583ms)
+  ✔ transitionTaskStatus rejects 待验收 → 已取消 (0.025459ms)
+  ✔ transitionTaskStatus rejects 已完成 → 待认领 (0.02675ms)
+  ✔ transitionTaskStatus rejects 已完成 → 进行中 (0.026459ms)
+  ✔ transitionTaskStatus rejects 已完成 → 待验收 (0.025291ms)
+  ✔ transitionTaskStatus rejects 已完成 → 已完成 (0.026917ms)
+  ✔ transitionTaskStatus rejects 已完成 → 已退回 (0.033625ms)
+  ✔ transitionTaskStatus rejects 已完成 → 已取消 (0.029958ms)
+  ✔ transitionTaskStatus allows 已退回 → 待认领 (0.032542ms)
+  ✔ transitionTaskStatus rejects 已退回 → 进行中 (0.031041ms)
+  ✔ transitionTaskStatus rejects 已退回 → 待验收 (0.027542ms)
+  ✔ transitionTaskStatus rejects 已退回 → 已完成 (0.030334ms)
+  ✔ transitionTaskStatus rejects 已退回 → 已退回 (0.039ms)
+  ✔ transitionTaskStatus allows 已退回 → 已取消 (0.02525ms)
+  ✔ transitionTaskStatus rejects 已取消 → 待认领 (0.0255ms)
+  ✔ transitionTaskStatus rejects 已取消 → 进行中 (0.026541ms)
+  ✔ transitionTaskStatus rejects 已取消 → 待验收 (0.026459ms)
+  ✔ transitionTaskStatus rejects 已取消 → 已完成 (0.026334ms)
+  ✔ transitionTaskStatus rejects 已取消 → 已退回 (0.024625ms)
+  ✔ transitionTaskStatus rejects 已取消 → 已取消 (0.024333ms)
+  ✔ transitionTaskStatus rejects an unknown from status (0.048083ms)
+  ✔ transitionTaskStatus rejects an unknown to status (0.036333ms)
+✔ transitionTaskStatus (1.560459ms)
+ℹ tests 396
+ℹ suites 79
+ℹ pass 333
+ℹ fail 63
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 854.078208
+
+✖ failing tests:
+
+test at apps/server/src/import.test.ts:419:5
+✖ unauthenticated JSON POST returns 401 unauthorized (41.845334ms)
+  AssertionError [ERR_ASSERTION]: POST import: 404 {"message":"Route POST:/api/v1/tasks/import not found","error":"Not Found","statusCode":404}
+  
+  404 !== 401
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/apps/server/src/import.test.ts:422:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 401,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/import.test.ts:426:5
+✖ 待批准 GitHub user gets 403 forbidden (12.876625ms)
+  AssertionError [ERR_ASSERTION]: pending import: 404 {"message":"Route POST:/api/v1/tasks/import not found","error":"Not Found","statusCode":404}
+  
+  404 !== 403
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/apps/server/src/import.test.ts:432:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 403,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/import.test.ts:436:5
+✖ approved GitHub claim_only user gets 403 forbidden (7.429333ms)
+  AssertionError [ERR_ASSERTION]: claim_only import: 404 {"message":"Route POST:/api/v1/tasks/import not found","error":"Not Found","statusCode":404}
+  
+  404 !== 403
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/apps/server/src/import.test.ts:450:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 403,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/import.test.ts:456:5
+✖ inline credential returns 200 mapped fields and does not insert a tasks row (9.886334ms)
+  AssertionError [ERR_ASSERTION]: POST import: 404 {"message":"Route POST:/api/v1/tasks/import not found","error":"Not Found","statusCode":404}
+  
+  404 !== 200
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/apps/server/src/import.test.ts:465:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/import.test.ts:482:5
+✖ optional repo.full_name matching the parsed name still 200 (9.85075ms)
+  AssertionError [ERR_ASSERTION]: POST import: 404 {"message":"Route POST:/api/v1/tasks/import not found","error":"Not Found","statusCode":404}
+  
+  404 !== 200
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/apps/server/src/import.test.ts:493:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/import.test.ts:498:5
+✖ trailing slash on issue_url is stripped in source.issue_url (3.749042ms)
+  AssertionError [ERR_ASSERTION]: POST import: 404 {"message":"Route POST:/api/v1/tasks/import not found","error":"Not Found","statusCode":404}
+  
+  404 !== 200
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/apps/server/src/import.test.ts:504:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/import.test.ts:508:5
+✖ gitea constructor baseUrl is used, not the pasted issue host (SSRF) (4.158625ms)
+  AssertionError [ERR_ASSERTION]: POST import: 404 {"message":"Route POST:/api/v1/tasks/import not found","error":"Not Found","statusCode":404}
+  
+  404 !== 200
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/apps/server/src/import.test.ts:516:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/import.test.ts:532:5
+✖ generic parse / missing issue_url / missing forge is 400 invalid_body with no message (4.717625ms)
+  AssertionError [ERR_ASSERTION]: payload {"repo":{"forge":"gitea","base_url":"https://gitea.forge.example.test"},"credential":{"token":"gitea-INLINE-ONE-OFF-TOKEN-zzq7"}}: 404 {"message":"Route POST:/api/v1/tasks/import not found","error":"Not Found","statusCode":404}
+  
+  404 !== 400
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/apps/server/src/import.test.ts:548:16)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 400,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/import.test.ts:555:5
+✖ unparseable issue_url is 400 with 无法解析 Issue 地址 and does not fetch (4.83425ms)
+  AssertionError [ERR_ASSERTION]: POST import: 404 {"message":"Route POST:/api/v1/tasks/import not found","error":"Not Found","statusCode":404}
+  
+  404 !== 400
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/apps/server/src/import.test.ts:566:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 400,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/import.test.ts:571:5
+✖ repo.full_name that does not equal the parsed name is 400 Issue 地址与仓库不匹配 (4.338625ms)
+  AssertionError [ERR_ASSERTION]: POST import: 404 {"message":"Route POST:/api/v1/tasks/import not found","error":"Not Found","statusCode":404}
+  
+  404 !== 400
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/apps/server/src/import.test.ts:584:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 400,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/import.test.ts:589:5
+✖ repo.base_url that is not http(s)+host uses the publish Chinese message (4.770709ms)
+  AssertionError [ERR_ASSERTION]: POST import: 404 {"message":"Route POST:/api/v1/tasks/import not found","error":"Not Found","statusCode":404}
+  
+  404 !== 400
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/apps/server/src/import.test.ts:598:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 400,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/import.test.ts:602:5
+✖ forge 404 is 404 issue_not_found (5.099084ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    {
+  +   error: 'Not Found',
+  +   message: 'Route POST:/api/v1/tasks/import not found',
+  +   statusCode: 404
+  -   error: 'issue_not_found',
+  -   message: '无法读取该 Issue。'
+    }
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/apps/server/src/import.test.ts:609:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: { message: 'Route POST:/api/v1/tasks/import not found', error: 'Not Found', statusCode: 404 },
+    expected: { error: 'issue_not_found', message: '无法读取该 Issue。' },
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/import.test.ts:613:5
+✖ forge 410 is 404 issue_not_found (4.148875ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    {
+  +   error: 'Not Found',
+  +   message: 'Route POST:/api/v1/tasks/import not found',
+  +   statusCode: 404
+  -   error: 'issue_not_found',
+  -   message: '无法读取该 Issue。'
+    }
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/apps/server/src/import.test.ts:620:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: { message: 'Route POST:/api/v1/tasks/import not found', error: 'Not Found', statusCode: 404 },
+    expected: { error: 'issue_not_found', message: '无法读取该 Issue。' },
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/import.test.ts:623:5
+✖ forge 401 is 422 token_check_failed with missing 读 (4.665417ms)
+  AssertionError [ERR_ASSERTION]: POST import: 404 {"message":"Route POST:/api/v1/tasks/import not found","error":"Not Found","statusCode":404}
+  
+  404 !== 422
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/apps/server/src/import.test.ts:629:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 422,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/import.test.ts:637:5
+✖ other non-OK forge status is 502 forge_unreachable (4.137041ms)
+  AssertionError [ERR_ASSERTION]: POST import: 404 {"message":"Route POST:/api/v1/tasks/import not found","error":"Not Found","statusCode":404}
+  
+  404 !== 502
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/apps/server/src/import.test.ts:643:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 502,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/import.test.ts:647:5
+✖ fetch/network throw is 502 forge_unreachable (4.42275ms)
+  AssertionError [ERR_ASSERTION]: POST import: 404 {"message":"Route POST:/api/v1/tasks/import not found","error":"Not Found","statusCode":404}
+  
+  404 !== 502
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/apps/server/src/import.test.ts:653:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 502,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/import.test.ts:659:5
+✖ matching profile 200 writes token 揭示 outcome ok; no tasks row; no token in JSON (9.795375ms)
+  AssertionError [ERR_ASSERTION]: POST import: 404 {"message":"Route POST:/api/v1/tasks/import not found","error":"Not Found","statusCode":404}
+  
+  404 !== 200
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/apps/server/src/import.test.ts:673:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/import.test.ts:704:5
+✖ profile-path 404 still writes token 揭示 with outcome issue_not_found (8.693084ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 'Not Found'
+  - 'issue_not_found'
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/apps/server/src/import.test.ts:717:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'Not Found',
+    expected: 'issue_not_found',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/import.test.ts:726:5
+✖ profile-path 401 still writes token 揭示 with outcome token_check_failed (7.769083ms)
+  AssertionError [ERR_ASSERTION]: POST import: 404 {"message":"Route POST:/api/v1/tasks/import not found","error":"Not Found","statusCode":404}
+  
+  404 !== 422
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/apps/server/src/import.test.ts:738:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 422,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/import.test.ts:745:5
+✖ profile-path 502 still writes token 揭示 with outcome forge_unreachable (8.948667ms)
+  AssertionError [ERR_ASSERTION]: POST import: 404 {"message":"Route POST:/api/v1/tasks/import not found","error":"Not Found","statusCode":404}
+  
+  404 !== 502
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/apps/server/src/import.test.ts:757:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 502,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/import.test.ts:764:5
+✖ unparseable issue_url with profile_id does not decrypt (no token 揭示, no fetch) (11.1035ms)
+  AssertionError [ERR_ASSERTION]: POST import: 404 {"message":"Route POST:/api/v1/tasks/import not found","error":"Not Found","statusCode":404}
+  
+  404 !== 400
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/apps/server/src/import.test.ts:780:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 400,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/import.test.ts:791:5
+✖ missing profile is 400 所选凭证档案不存在 (4.108916ms)
+  AssertionError [ERR_ASSERTION]: POST import: 404 {"message":"Route POST:/api/v1/tasks/import not found","error":"Not Found","statusCode":404}
+  
+  404 !== 400
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/apps/server/src/import.test.ts:796:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 400,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/import.test.ts:800:5
+✖ profile bind is exact forge/base_url/parsed full_name (mismatch does not decrypt) (8.454167ms)
+  AssertionError [ERR_ASSERTION]: POST import: 404 {"message":"Route POST:/api/v1/tasks/import not found","error":"Not Found","statusCode":404}
+  
+  404 !== 400
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/apps/server/src/import.test.ts:813:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 400,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/import.test.ts:824:5
+✖ profile path without VAULT_MASTER_KEY returns 500 vault_unconfigured (3.768791ms)
+  AssertionError [ERR_ASSERTION]: POST import: 404 {"message":"Route POST:/api/v1/tasks/import not found","error":"Not Found","statusCode":404}
+  
+  404 !== 500
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/apps/server/src/import.test.ts:840:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 500,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/import-issue.shared.test.ts:222:7
+✖ GETs the issue endpoint with validateToken-style auth headers and returns ImportedIssue (0.54675ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:228:38)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.start (node:internal/test_runner/test:1015:17)
+      at node:internal/test_runner/test:1531:71
+      at node:internal/per_context/primordials:466:82
+      at new Promise (<anonymous>)
+      at new SafePromise (node:internal/per_context/primordials:435:3)
+      at node:internal/per_context/primordials:466:9
+
+test at packages/forge-adapters/src/import-issue.shared.test.ts:247:7
+✖ trailing slash on the pasted URL is stripped before parsing and from returned issue_url (0.097792ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:253:38)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Promise.all (index 0)
+
+test at packages/forge-adapters/src/import-issue.shared.test.ts:263:7
+✖ query and hash on the pasted URL are dropped by pathname when building the REST URL (0.067167ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:269:38)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/import-issue.shared.test.ts:274:7
+✖ null issue body/description maps to an empty description_md (0.082375ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:280:40)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/import-issue.shared.test.ts:284:7
+✖ missing issue body/description maps to an empty description_md (0.087583ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:288:43)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/import-issue.shared.test.ts:295:7
+✖ returned issue_url is the pasted web URL, not html_url / web_url from JSON (0.069417ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:306:38)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/import-issue.shared.test.ts:310:7
+✖ missing or non-string title rejects after fetch (0.469542ms)
+  AssertionError [ERR_ASSERTION]: a 200 JSON payload with a bad title must still have fetched once
+  
+  0 !== 1
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:317:16)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/import-issue.shared.test.ts:324:7
+✖ non-OK HTTP response rejects after actually calling fetch, with status in the message (0.32925ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /github responded 404/. Input:
+  
+  'not implemented'
+  
+      at Object.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:334:20)
+      at expectedException (node:assert:578:17)
+      at expectsError (node:assert:703:21)
+      at strict.rejects (node:assert:769:3)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:328:9)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'not implemented',
+    expected: /github responded 404/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/import-issue.shared.test.ts:346:7
+✖ an unparseable issueUrl rejects without calling fetch (not merely notImplemented) (0.134875ms)
+  AssertionError [ERR_ASSERTION]: unparseable must fail as a parse error, not the notImplemented placeholder
+      at Object.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:356:20)
+      at expectedException (node:assert:578:17)
+      at expectsError (node:assert:703:21)
+      at strict.rejects (node:assert:769:3)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:350:9)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'not implemented',
+    expected: 'not implemented',
+    operator: 'notStrictEqual',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/import-issue.shared.test.ts:367:7
+✖ a pull/MR/work-item web path is unparseable and must not fetch (0.198583ms)
+  AssertionError [ERR_ASSERTION]: Expected "actual" to be strictly unequal to:
+  
+  'not implemented'
+      at Object.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:379:20)
+      at expectedException (node:assert:578:17)
+      at expectsError (node:assert:703:21)
+      at strict.rejects (node:assert:769:3)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:373:9)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'not implemented',
+    expected: 'not implemented',
+    operator: 'notStrictEqual',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/import-issue.shared.test.ts:222:7
+✖ GETs the issue endpoint with validateToken-style auth headers and returns ImportedIssue (0.144375ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:228:38)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.start (node:internal/test_runner/test:1015:17)
+      at node:internal/test_runner/test:1531:71
+      at node:internal/per_context/primordials:466:82
+      at new Promise (<anonymous>)
+      at new SafePromise (node:internal/per_context/primordials:435:3)
+      at node:internal/per_context/primordials:466:9
+
+test at packages/forge-adapters/src/import-issue.shared.test.ts:247:7
+✖ trailing slash on the pasted URL is stripped before parsing and from returned issue_url (0.059042ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:253:38)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/import-issue.shared.test.ts:263:7
+✖ query and hash on the pasted URL are dropped by pathname when building the REST URL (0.037667ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:269:38)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/import-issue.shared.test.ts:274:7
+✖ null issue body/description maps to an empty description_md (0.04575ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:280:40)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/import-issue.shared.test.ts:284:7
+✖ missing issue body/description maps to an empty description_md (0.034292ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:288:43)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/import-issue.shared.test.ts:295:7
+✖ returned issue_url is the pasted web URL, not html_url / web_url from JSON (0.031083ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:306:38)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/import-issue.shared.test.ts:310:7
+✖ missing or non-string title rejects after fetch (0.083833ms)
+  AssertionError [ERR_ASSERTION]: a 200 JSON payload with a bad title must still have fetched once
+  
+  0 !== 1
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:317:16)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/import-issue.shared.test.ts:324:7
+✖ non-OK HTTP response rejects after actually calling fetch, with status in the message (0.088333ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /gitlab responded 404/. Input:
+  
+  'not implemented'
+  
+      at Object.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:334:20)
+      at expectedException (node:assert:578:17)
+      at expectsError (node:assert:703:21)
+      at strict.rejects (node:assert:769:3)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:328:9)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'not implemented',
+    expected: /gitlab responded 404/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/import-issue.shared.test.ts:346:7
+✖ an unparseable issueUrl rejects without calling fetch (not merely notImplemented) (0.057625ms)
+  AssertionError [ERR_ASSERTION]: unparseable must fail as a parse error, not the notImplemented placeholder
+      at Object.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:356:20)
+      at expectedException (node:assert:578:17)
+      at expectsError (node:assert:703:21)
+      at strict.rejects (node:assert:769:3)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:350:9)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'not implemented',
+    expected: 'not implemented',
+    operator: 'notStrictEqual',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/import-issue.shared.test.ts:367:7
+✖ a pull/MR/work-item web path is unparseable and must not fetch (0.073792ms)
+  AssertionError [ERR_ASSERTION]: Expected "actual" to be strictly unequal to:
+  
+  'not implemented'
+      at Object.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:379:20)
+      at expectedException (node:assert:578:17)
+      at expectsError (node:assert:703:21)
+      at strict.rejects (node:assert:769:3)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:373:9)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'not implemented',
+    expected: 'not implemented',
+    operator: 'notStrictEqual',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/import-issue.shared.test.ts:222:7
+✖ GETs the issue endpoint with validateToken-style auth headers and returns ImportedIssue (0.092916ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:228:38)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.start (node:internal/test_runner/test:1015:17)
+      at node:internal/test_runner/test:1531:71
+      at node:internal/per_context/primordials:466:82
+      at new Promise (<anonymous>)
+      at new SafePromise (node:internal/per_context/primordials:435:3)
+      at node:internal/per_context/primordials:466:9
+
+test at packages/forge-adapters/src/import-issue.shared.test.ts:247:7
+✖ trailing slash on the pasted URL is stripped before parsing and from returned issue_url (0.033583ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:253:38)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/import-issue.shared.test.ts:263:7
+✖ query and hash on the pasted URL are dropped by pathname when building the REST URL (0.041208ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:269:38)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/import-issue.shared.test.ts:274:7
+✖ null issue body/description maps to an empty description_md (0.039416ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:280:40)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/import-issue.shared.test.ts:284:7
+✖ missing issue body/description maps to an empty description_md (0.029041ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:288:43)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/import-issue.shared.test.ts:295:7
+✖ returned issue_url is the pasted web URL, not html_url / web_url from JSON (0.029125ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:306:38)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/import-issue.shared.test.ts:310:7
+✖ missing or non-string title rejects after fetch (0.067458ms)
+  AssertionError [ERR_ASSERTION]: a 200 JSON payload with a bad title must still have fetched once
+  
+  0 !== 1
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:317:16)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/import-issue.shared.test.ts:324:7
+✖ non-OK HTTP response rejects after actually calling fetch, with status in the message (0.069ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /gitea responded 404/. Input:
+  
+  'not implemented'
+  
+      at Object.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:334:20)
+      at expectedException (node:assert:578:17)
+      at expectsError (node:assert:703:21)
+      at strict.rejects (node:assert:769:3)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:328:9)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'not implemented',
+    expected: /gitea responded 404/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/import-issue.shared.test.ts:346:7
+✖ an unparseable issueUrl rejects without calling fetch (not merely notImplemented) (0.05825ms)
+  AssertionError [ERR_ASSERTION]: unparseable must fail as a parse error, not the notImplemented placeholder
+      at Object.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:356:20)
+      at expectedException (node:assert:578:17)
+      at expectsError (node:assert:703:21)
+      at strict.rejects (node:assert:769:3)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:350:9)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'not implemented',
+    expected: 'not implemented',
+    operator: 'notStrictEqual',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/import-issue.shared.test.ts:367:7
+✖ a pull/MR/work-item web path is unparseable and must not fetch (0.069209ms)
+  AssertionError [ERR_ASSERTION]: Expected "actual" to be strictly unequal to:
+  
+  'not implemented'
+      at Object.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:379:20)
+      at expectedException (node:assert:578:17)
+      at expectsError (node:assert:703:21)
+      at strict.rejects (node:assert:769:3)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:373:9)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'not implemented',
+    expected: 'not implemented',
+    operator: 'notStrictEqual',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/import-issue.shared.test.ts:388:3
+✖ github: always calls api.github.com regardless of a custom baseUrl option or pasted host (0.060792ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:393:34)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Suite.postRun (node:internal/test_runner/test:1247:19)
+      at Suite.run (node:internal/test_runner/test:1548:10)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/import-issue.shared.test.ts:405:3
+✖ github/gitea: a GET /issues/{n} payload that includes pull_request is still accepted (0.057125ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:413:36)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/import-issue.shared.test.ts:420:3
+✖ gitlab: description_md comes from JSON description, not body (0.050625ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:430:34)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/import-issue.shared.test.ts:434:3
+✖ github/gitea: description_md comes from JSON body, not description (0.058916ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:445:36)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/import-issue.shared.test.ts:450:3
+✖ gitlab: a nested-group namespace is encodeURIComponent-ed as a single :id segment (0.070458ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:455:34)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/import-issue.shared.test.ts:468:3
+✖ gitlab: canonical /-/issues/ is not parsed as a legacy namespace ending in /- (0.04925ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:473:19)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/import-issue.shared.test.ts:482:3
+✖ gitlab: the legacy /issues/ web_url (no /-/) is also accepted (0.051375ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:488:34)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/import-issue.shared.test.ts:498:3
+✖ gitlab: /-/work_items/ is unparseable (zero fetch) (0.102083ms)
+  AssertionError [ERR_ASSERTION]: Expected "actual" to be strictly unequal to:
+  
+  'not implemented'
+      at Object.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:510:16)
+      at expectedException (node:assert:578:17)
+      at expectsError (node:assert:703:21)
+      at strict.rejects (node:assert:769:3)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:501:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'not implemented',
+    expected: 'not implemented',
+    operator: 'notStrictEqual',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/import-issue.shared.test.ts:517:3
+✖ gitlab/gitea: the API origin comes from the constructor baseUrl option, not from the issueUrl host (0.064959ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/index.ts:64:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-12/packages/forge-adapters/src/import-issue.shared.test.ts:528:36)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+[ELIFECYCLE] Test failed. See above for more details.
