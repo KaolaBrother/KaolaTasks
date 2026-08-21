@@ -10,7 +10,9 @@ import { createDb } from './db.ts'
 import { registerMcp } from './mcp.ts'
 import { getPlaceholderBody } from './placeholder.ts'
 import { pollPendingReviews } from './poller.ts'
+import type { ForgeInstanceConfig } from './poller.ts'
 import { registerTasks } from './tasks.ts'
+import { registerWebhooks } from './webhook.ts'
 
 function nonemptyOption(value: string | undefined): string | undefined {
   return value != null && value !== '' ? value : undefined
@@ -31,12 +33,15 @@ export function buildApp(options?: {
   webDist?: string
   viteDevTarget?: string
   pollIntervalMs?: number
+  forgeInstances?: ForgeInstanceConfig[]
 }) {
   const db = createDb(options?.sqlitePath ?? ':memory:')
   const app = Fastify()
   app.addHook('onClose', () => {
     db.$client.close()
   })
+
+  const forgeInstances = options?.forgeInstances
 
   const pollIntervalMs = options?.pollIntervalMs
   if (pollIntervalMs != null && pollIntervalMs > 0) {
@@ -51,7 +56,7 @@ export function buildApp(options?: {
       const timer = setInterval(() => {
         if (polling) return
         polling = true
-        pollPendingReviews(db)
+        pollPendingReviews(db, forgeInstances)
           .catch(() => {})
           .finally(() => {
             polling = false
@@ -79,6 +84,7 @@ export function buildApp(options?: {
   registerTasks(app, db)
   registerClaim(app, db)
   registerMcp(app, db)
+  registerWebhooks(app, db, forgeInstances)
 
   if (webDist != null) {
     const root = resolve(webDist)

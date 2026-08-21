@@ -4,13 +4,13 @@ Document public APIs, endpoints, schemas, events, and integration contracts.
 
 Product contracts that are not yet in source remain in [DESIGN.md](DESIGN.md) §6 (任务卡 Schema), §8 (ForgeAdapter), §9 (MCP 工具面 / REST). This file records what is implemented.
 
-MCP tools (`list_tasks`, `get_task_brief`, `claim_task`, `report_progress`, `submit_pr`, `release_task`) are implemented (`registerMcp` in `apps/server/src/mcp.ts`): Bearer `POST /api/mcp` Streamable HTTP. Claim HTTP is also implemented (`registerClaim` in `apps/server/src/claim.ts`): Bearer `POST /api/v1/tasks/:publicId/claim`, `…/progress`, `…/release` (no REST `submit_pr`). Forge token reveal channels: successful `POST …/claim` `201` top-level `token` **and** MCP `claim_task` success `token`. Session `GET /api/v1/tasks` and `GET /api/v1/tasks/:publicId` never contain it. `POST /api/v1/tasks/import` `200` never contains a forge token. Task CRUD HTTP is implemented (`registerTasks` in `apps/server/src/tasks.ts`), including the pre-publish draft `POST /api/v1/tasks/import`. `revealCredentialProfile` is a module export from `apps/server/src/vault.ts` (not itself HTTP). PR polling (`pollPendingReviews` in `apps/server/src/poller.ts`) is **not** an HTTP route — it is either called directly (tests) or driven by an internal `setInterval` registered by `buildApp({ pollIntervalMs })`; it is the only thing that moves a task out of `待验收`. There is still no webhook route.
+MCP tools (`list_tasks`, `get_task_brief`, `claim_task`, `report_progress`, `submit_pr`, `release_task`) are implemented (`registerMcp` in `apps/server/src/mcp.ts`): Bearer `POST /api/mcp` Streamable HTTP. Claim HTTP is also implemented (`registerClaim` in `apps/server/src/claim.ts`): Bearer `POST /api/v1/tasks/:publicId/claim`, `…/progress`, `…/release` (no REST `submit_pr`). Forge token reveal channels: successful `POST …/claim` `201` top-level `token` **and** MCP `claim_task` success `token`. Session `GET /api/v1/tasks` and `GET /api/v1/tasks/:publicId` never contain it. `POST /api/v1/tasks/import` `200` never contains a forge token. Task CRUD HTTP is implemented (`registerTasks` in `apps/server/src/tasks.ts`), including the pre-publish draft `POST /api/v1/tasks/import`. `revealCredentialProfile` is a module export from `apps/server/src/vault.ts` (not itself HTTP). Two mechanisms now drive `待验收` → `已完成`/`已退回` (#13): PR polling (`pollPendingReviews` in `apps/server/src/poller.ts`, still **not** an HTTP route — either called directly (tests) or driven by an internal `setInterval` registered by `buildApp({ pollIntervalMs })`) and the webhook receiver (`registerWebhooks` in `apps/server/src/webhook.ts`, `POST /api/v1/webhooks/:publicId`, no session, no Bearer — the forge signature is the sole auth). Both share the same terminal-transition write path (`applyPrTerminalTransition`, extracted in `poller.ts`). `buildApp({ forgeInstances? })` lets a `syncMode: 'webhook'` instance opt its repo out of polling (`pollPendingReviews` skips it); a poll-mode or unlisted instance is unaffected. `commentOnIssue` / status write-back to the source Issue is still not implemented (#14).
 
 ## HTTP (`@kaola/server`)
 
-Sources: `apps/server/src/app.ts`, `auth.ts`, `agent-keys.ts`, `agent-bearer.ts`, `credential-profiles.ts`, `vault.ts`, `tasks.ts`, `claim.ts`, `leases.ts`, `mcp.ts`, `poller.ts`, `schema.ts`, `db.ts`, `placeholder.ts`, `index.ts`.
+Sources: `apps/server/src/app.ts`, `auth.ts`, `agent-keys.ts`, `agent-bearer.ts`, `credential-profiles.ts`, `vault.ts`, `tasks.ts`, `claim.ts`, `leases.ts`, `mcp.ts`, `poller.ts`, `webhook.ts`, `schema.ts`, `db.ts`, `placeholder.ts`, `index.ts`.
 
-`buildApp({ sqlitePath?, webDist?, viteDevTarget?, pollIntervalMs? })` creates its own SQLite via `createDb`. Process `index.ts` uses `SQLITE_PATH ?? ':memory:'`, and passes `WEB_DIST` / `VITE_DEV_TARGET` / `pollIntervalMs` into `buildApp`. Empty string is treated as omitted for `webDist`/`viteDevTarget`.
+`buildApp({ sqlitePath?, webDist?, viteDevTarget?, pollIntervalMs?, forgeInstances? })` creates its own SQLite via `createDb`. Process `index.ts` uses `SQLITE_PATH ?? ':memory:'`, and passes `WEB_DIST` / `VITE_DEV_TARGET` / `pollIntervalMs` / `forgeInstances` into `buildApp`. Empty string is treated as omitted for `webDist`/`viteDevTarget`. `forgeInstances` (from `FORGE_INSTANCES`, a JSON array; unset/`''` → `[]`; invalid JSON throws, failing boot) has no dedicated table — it is process config, threaded into both the poller (§ PR polling below) and the webhook receiver (§ webhook below).
 
 ### `GET /`
 
@@ -223,21 +223,37 @@ Six `registerTool` names:
 
 ### PR polling (`pollPendingReviews`, not an HTTP route)
 
-`pollPendingReviews(db: AppDb): Promise<void>` (`apps/server/src/poller.ts`) is the only driver of `待验收` → `已完成`/`已退回`. It is never itself exposed over HTTP; it runs either on direct call (tests) or on an interval registered by `buildApp({ pollIntervalMs })` (see below).
+`pollPendingReviews(db: AppDb, forgeInstances?: ForgeInstanceConfig[]): Promise<void>` (`apps/server/src/poller.ts`) drives `待验收` → `已完成`/`已退回` for every task **not** managed by a `syncMode: 'webhook'` instance (see the webhook section below for the second driver, added in #13). It is never itself exposed over HTTP; it runs either on direct call (tests) or on an interval registered by `buildApp({ pollIntervalMs })` (see below).
 
-Each call: selects `tasks` where `status === '待验收'`; for each row, reads the latest `submissions` row for that task (`orderBy(desc(submissions.id)).limit(1)`); decrypts the task's credential (profile or inline — same branch as `claimTask`'s resolution); calls `createForgeAdapter(task.repoForge, { baseUrl: task.repoBaseUrl }).getPullRequest({ token }, submission.prUrl)`.
+Each call: selects `tasks` where `status === '待验收'`; skips any task whose `(repoForge, repoBaseUrl)` exactly matches a `forgeInstances` entry with `syncMode === 'webhook'` (`isWebhookManaged` / `taskMatchesForgeInstance`; zero fetches for that task — the webhook receiver is expected to complete it instead). For the rest: reads the latest `submissions` row for that task (`orderBy(desc(submissions.id)).limit(1)`); decrypts the task's credential (profile or inline — same branch as `claimTask`'s resolution); calls `createForgeAdapter(task.repoForge, { baseUrl: task.repoBaseUrl }).getPullRequest({ token }, submission.prUrl)`.
 
 - `state: 'open'` — task and `submissions.pr_state` are left unchanged.
 - `state: 'merged'` — `transitionTaskStatus('待验收', '已完成')`; `submissions.pr_state` set to `'merged'`.
 - `state: 'closed'` (closed without merging) — transitions to `已退回`; `pr_state` set to `'closed'`.
 
-A successful transition writes, in one `db.transaction` together with the two updates above, `events.type` `状态迁移`, `actor_user_id` `null` (system-driven, same shape as lease-expiry events), `details` `{ task_id, from: '待验收', to, pr_url }` (`task_id` is the `public_id` string; there is no `summary` key here, unlike MCP `submit_pr`'s own `状态迁移` event).
+A successful transition calls `applyPrTerminalTransition(db, task, submissionId, terminal, prUrl)` (exported from `poller.ts`, also reused by the webhook receiver), which in one `db.transaction` writes the two updates above plus `events.type` `状态迁移`, `actor_user_id` `null` (system-driven, same shape as lease-expiry events), `details` `{ task_id, from: '待验收', to, pr_url }` (`task_id` is the `public_id` string; there is no `summary` key here, unlike MCP `submit_pr`'s own `状态迁移` event).
 
 Never throws: a missing/undecryptable credential, an unreachable forge, a non-OK forge response, or a DB fault while writing one task's row is caught and only that task is skipped — the remaining `待验收` tasks are still polled in the same call, and `pollPendingReviews` itself always resolves. Tasks in any other status are never selected and never fetched as a PR. The pre-existing poster `PATCH /api/v1/tasks/:publicId` `已退回` → `待认领` edge is unaffected by, and works after, a poller-driven `已退回`; prior `状态迁移` events and the `submissions` row survive that reopen unmodified.
 
-`buildApp({ pollIntervalMs? })`: omitted or `<= 0` registers no timer. A positive number registers exactly one `setInterval(fn, pollIntervalMs)` inside its own child plugin context (so its `onClose` hook — which `clearInterval`s — runs before the root db-close hook regardless of registration order); an in-flight guard skips a tick if the previous pass has not finished, so an overrunning poll is never re-entered. `app.close()` clears the timer. Process `index.ts` reads `POLL_INTERVAL_MS` (unset or `''` → `60000`; otherwise `Number.parseInt(value, 10)`) and passes it as `pollIntervalMs`.
+`buildApp({ pollIntervalMs?, forgeInstances? })`: `pollIntervalMs` omitted or `<= 0` registers no timer. A positive number registers exactly one `setInterval(fn, pollIntervalMs)` inside its own child plugin context (so its `onClose` hook — which `clearInterval`s — runs before the root db-close hook regardless of registration order); an in-flight guard skips a tick if the previous pass has not finished, so an overrunning poll is never re-entered. `app.close()` clears the timer. `forgeInstances` (same array passed to `registerWebhooks`, below) is threaded into every `pollPendingReviews(db, forgeInstances)` call the timer makes. Process `index.ts` reads `POLL_INTERVAL_MS` (unset or `''` → `60000`; otherwise `Number.parseInt(value, 10)`) and `FORGE_INSTANCES` (JSON array; unset/`''` → `[]`; invalid JSON throws, failing boot) and passes them as `pollIntervalMs` / `forgeInstances`.
 
-There is no REST `POST /api/v1/tasks/:publicId/submit_pr` (unchanged) and no webhook route. `pollPendingReviews` — on-demand or on the `pollIntervalMs` timer — is the only thing that ever moves a task out of `待验收`.
+There is still no REST `POST /api/v1/tasks/:publicId/submit_pr`. `pollPendingReviews` and the webhook receiver together are the only things that ever move a task out of `待验收`.
+
+### `POST /api/v1/webhooks/:publicId` (`registerWebhooks`, #13)
+
+`registerWebhooks(app, db, forgeInstances?)` (`apps/server/src/webhook.ts`), wired in `app.ts` after `registerMcp`. No session cookie, no Bearer — the forge signature is the sole authentication. `:publicId` identifies an entry in `forgeInstances` (`{ publicId, forge, baseUrl, syncMode, webhookSecret }`), **not** a task's `public_id`.
+
+The route is registered inside its own child plugin with a dedicated `addContentTypeParser('application/json', { parseAs: 'string' }, ...)` so the exact raw request body string reaches the handler for signature verification — this parser override applies only to this route, not to any other route in the app.
+
+- Unknown `publicId` (no `forgeInstances` entry) → `404` `{ error: 'not_found' }`. No signature is checked first.
+- The matched instance's `createForgeAdapter(instance.forge, { baseUrl: instance.baseUrl, webhookSecret: instance.webhookSecret }).parseWebhook(headers, request.body)` is called (`headers` built as a Web `Headers` from Fastify's `request.headers`). A thrown `WebhookSignatureError` → `401` `{ error: 'invalid_signature' }` (never leaks the secret, an expected digest, or a forge token). Any other thrown error propagates (500).
+- `parseWebhook` returning `null` (ping, non-`pull_request`/`Merge Request Hook` event, non-terminal action/state, or an unparseable-but-signed payload) → `204` empty body.
+- On a concrete `ForgeEvent`: `findPendingReviewMatch(db, instance, event.pr_url)` first restricts candidate tasks to `待验收` rows whose `(repoForge, repoBaseUrl)` match the **signature-verified** instance (`taskMatchesForgeInstance`), then matches the latest `submissions.prUrl` (`latestSubmission`) against `event.pr_url`. No match (wrong instance, no `pr_url` match, or the task is no longer `待验收`) → `204`, no writes — a valid forge delivery is never 404'd.
+- On match: `applyPrTerminalTransition(db, task, submissionId, event.state, event.pr_url)` (the same helper the poller uses) writes `tasks.status` → `已完成`/`已退回`, `submissions.pr_state` → `merged`/`closed`, and one `状态迁移` event (`actor_user_id: null`, `details: { task_id, from, to, pr_url }`) in one transaction, then `204`.
+
+This route never decrypts a forge token and never calls `adapter.getPullRequest` — the signed payload itself is the source of truth for merge/close, so no forge round-trip is needed. It is not a third token-reveal channel: nothing in a `404`/`401`/`204` response contains a token, the `webhookSecret`, or ciphertext.
+
+A `syncMode: 'poll'` instance's webhook deliveries are still accepted and can still complete a task (harmless and idempotent) — `syncMode` only gates whether `pollPendingReviews` also polls that instance, not whether this route accepts its deliveries.
 
 ### `users` table
 
@@ -293,7 +309,7 @@ No events HTTP. Rows written in source:
 - POST `/api/v1/tasks/:publicId/release` success: `type` `状态迁移`, `details` JSON `{ "task_id": <public_id>, "from": <status>, "to": <status>, "reason"? }` (`reason` only when body had string `reason`)
 - MCP `submit_pr` success (`submitPr` in `claim.ts`): `type` `状态迁移`, `details` JSON `{ "task_id": <public_id>, "from": "进行中", "to": "待验收", "pr_url": <string>, "summary": <string> }` (claimer `actor_user_id`)
 - lease expiry in `sweepExpiredLeases`: `type` `状态迁移`, `details` JSON `{ "task_id": <public_id>, "from": "进行中", "to": "待认领" }`, `actor_user_id` null
-- `pollPendingReviews` merged/closed transition (`poller.ts`): `type` `状态迁移`, `details` JSON `{ "task_id": <public_id>, "from": "待验收", "to": "已完成" | "已退回", "pr_url": <string> }` (no `summary` key), `actor_user_id` null
+- `applyPrTerminalTransition` merged/closed transition (`poller.ts`, shared by `pollPendingReviews` and `registerWebhooks`'s `POST /api/v1/webhooks/:publicId`, #13): `type` `状态迁移`, `details` JSON `{ "task_id": <public_id>, "from": "待验收", "to": "已完成" | "已退回", "pr_url": <string> }` (no `summary` key), `actor_user_id` null
 
 `created_at` is unix seconds.
 
@@ -328,20 +344,44 @@ Server dependencies: `@fastify/oauth2@^8.3.0`, `@fastify/cookie@^11.1.2`, `@fast
 Package export `"."` → `./src/index.ts`. No runtime HTTP dependency (global `fetch`).
 
 - `getForgeAdaptersHealth(): string` → `'kaola-forge-adapters-ready'`
-- `createForgeAdapter(kind, options?: { baseUrl?: string }): ForgeAdapter`
+- `createForgeAdapter(kind, options?: { baseUrl?: string; webhookSecret?: string }): ForgeAdapter`
 - `parseIssueUrl(kind, issueUrl): { full_name: string } | undefined`
+- `class WebhookSignatureError extends Error` (`name === 'WebhookSignatureError'`, default message `'invalid webhook signature'`)
 
 Unknown `kind` to `createForgeAdapter` throws `Error('unknown forge kind: …')`.
 
-`validateToken` is `ForgeAdapter.validateToken`, not a package-level export. `importIssue` is `ForgeAdapter.importIssue`, not a package-level export. `parseIssueUrl(kind, issueUrl): { full_name: string } | undefined` **is** a package-level export (same Issue URL parsers as `importIssue`).
+`validateToken`, `importIssue`, `registerWebhook`, `parseWebhook` are `ForgeAdapter` methods, not package-level exports. `parseIssueUrl(kind, issueUrl): { full_name: string } | undefined` **is** a package-level export (same Issue URL parsers as `importIssue`).
 
-Types: `ForgeKind` `'github' | 'gitlab' | 'gitea'`; `Credential` `{ token: string }`; `RepoRef` `{ full_name: string; base_url: string }`; `TokenCapability` `'读' | '推' | 'PR'`; `TokenCheck` `{ missing: TokenCapability[] }`; `CreateForgeAdapterOptions`; `ForgeAdapter`.
+Types: `ForgeKind` `'github' | 'gitlab' | 'gitea'`; `Credential` `{ token: string }`; `RepoRef` `{ full_name: string; base_url: string }`; `TokenCapability` `'读' | '推' | 'PR'`; `TokenCheck` `{ missing: TokenCapability[] }`; `CreateForgeAdapterOptions` (`{ baseUrl?: string; webhookSecret?: string }`); `ForgeAdapter`.
 
-`ImportedIssue` is `{ title: string; description_md: string; issue_url: string; repo: { full_name: string } }` (no longer `unknown`, #12). Placeholders: `ForgeEvent`, `IssueRef` are `unknown`. `PrStatus` is `{ state: 'open' | 'merged' | 'closed' }` (no longer `unknown`, #11).
+`ImportedIssue` is `{ title: string; description_md: string; issue_url: string; repo: { full_name: string } }` (no longer `unknown`, #12). `PrStatus` is `{ state: 'open' | 'merged' | 'closed' }` (no longer `unknown`, #11). `ForgeEvent` is `{ type: 'pull_request'; state: 'merged' | 'closed'; pr_url: string; repo: { full_name: string } }` (no longer `unknown`, #13) — `parseWebhook` returns this or `null`; `IssueRef` remains `unknown`.
 
-Implemented: `kind` + `validateToken` (GET-only) + `getPullRequest` (GET-only, #11) + `importIssue` (GET-only, #12). `registerWebhook` / `parseWebhook` / `commentOnIssue` throw `Error('not implemented')`.
+Implemented: `kind` + `validateToken` (GET-only) + `getPullRequest` (GET-only, #11) + `importIssue` (GET-only, #12) + `registerWebhook` (POST, #13) + `parseWebhook` (no fetch, #13). `commentOnIssue` still throws `Error('not implemented')` (#14, out of scope).
 
-API hosts: GitHub always `https://api.github.com` (ignores `baseUrl`). GitLab: strip trailing slashes then `/api/v4`. Gitea: `/api/v1`. GitLab/Gitea origin is `options?.baseUrl ?? repo.base_url`. GitLab repo path: `/projects/${encodeURIComponent(full_name)}`. GitHub/Gitea repo path: `/repos/${full_name}`. User path: `/user`.
+API hosts: GitHub always `https://api.github.com` (ignores `baseUrl`). GitLab: strip trailing slashes then `/api/v4`. Gitea: `/api/v1`. GitLab/Gitea origin is `options?.baseUrl ?? repo.base_url`. GitLab repo path: `/projects/${encodeURIComponent(full_name)}`. GitHub/Gitea repo path: `/repos/${full_name}`. User path: `/user`. `registerWebhook`'s host rule is the same: GitHub always `https://api.github.com`, GitLab/Gitea use constructor `options.baseUrl`. `parseWebhook` never fetches.
+
+### `parseWebhook(headers, body)` and `registerWebhook(cred, repo, callback)` (#13)
+
+`parseWebhook(headers: Headers, body: unknown): ForgeEvent | null`. `body` is the **raw** request body (`string` or `Buffer`) — verification happens before `JSON.parse`, never against a re-serialized object. `options.webhookSecret` missing or `''` throws `WebhookSignatureError` before any header is read.
+
+Per-kind signature check (all via `node:crypto`'s `createHmac`/`timingSafeEqual`, with a length-check wrapper before `timingSafeEqual` so mismatched-length buffers return `false` instead of throwing):
+
+- GitHub: header `x-hub-signature-256`, expected value `sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}`. Missing header or mismatch → `WebhookSignatureError`.
+- GitLab: header `x-gitlab-token`, compared directly (timing-safe) to `webhookSecret` — a plaintext-token check, not HMAC (GitLab's newer `webhook-signature`/`signing_token` scheme is out of scope for this issue). Missing header or mismatch → `WebhookSignatureError`.
+- Gitea: header `x-gitea-signature`, expected value `createHmac('sha256', secret).update(rawBody).digest('hex')` — **no** `sha256=` prefix (unlike GitHub). Missing header or mismatch → `WebhookSignatureError`.
+
+After signature verification, `JSON.parse(rawBody)` (parse failure → `null`, not a throw). Event mapping:
+
+- GitHub/Gitea (`mapGithubShapedEvent`): header `x-github-event`/`x-gitea-event` must equal `'pull_request'`; payload `action` must equal `'closed'`; `state` is `'merged'` iff `pull_request.merged === true`, else `'closed'`; `pr_url` = `pull_request.html_url`; `repo.full_name` = `repository.full_name`. Any missing/wrong-typed field → `null`.
+- GitLab (`mapGitlabEvent`): header `x-gitlab-event` must equal `'Merge Request Hook'`; `object_attributes.state` must be `'merged'` or `'closed'`; `pr_url` = `object_attributes.url`; `repo.full_name` = `project.path_with_namespace`. Any missing/wrong-typed field → `null`.
+
+`registerWebhook(cred, repo, callback)`: one `POST`, non-OK response rejects with `registerWebhook: ${kind} responded ${status}`.
+
+- GitHub: `POST https://api.github.com/repos/{encodeURIComponent(owner)}/{encodeURIComponent(name)}/hooks` body `{ name: 'web', events: ['pull_request'], config: { url: callback, content_type: 'json', secret: webhookSecret, insecure_ssl: '0' } }`.
+- GitLab: `POST {baseUrl}/api/v4/projects/{encodeURIComponent(repo.full_name)}/hooks` body `{ url: callback, merge_requests_events: true, token: webhookSecret }` (legacy `token` field, not `signing_token`).
+- Gitea: `POST {baseUrl}/api/v1/repos/{encodeURIComponent(owner)}/{encodeURIComponent(name)}/hooks` body `{ type: 'gitea', events: ['pull_request'], config: { url: callback, content_type: 'json', secret: webhookSecret }, active: true }` (owner/repo individually `encodeURIComponent`-ed, matching the GitHub branch).
+
+New shared spec `packages/forge-adapters/src/webhook.shared.test.ts`, parameterized over github/gitlab/gitea, copied/trimmed fetch-stub helpers (not imported from `get-pull-request.shared.test.ts`).
 
 Auth headers: GitHub `Authorization: Bearer`, `User-Agent: KaolaTasks`, `Accept: application/vnd.github+json`; GitLab `PRIVATE-TOKEN`; Gitea `Authorization: token`.
 

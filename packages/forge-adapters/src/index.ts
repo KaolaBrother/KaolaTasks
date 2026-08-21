@@ -1,3 +1,5 @@
+import { createHmac, timingSafeEqual } from 'node:crypto'
+
 export function getForgeAdaptersHealth(): string {
   return 'kaola-forge-adapters-ready'
 }
@@ -24,8 +26,27 @@ export type ImportedIssue = {
   repo: { full_name: string }
 }
 export type PrStatus = { state: 'open' | 'merged' | 'closed' }
-export type ForgeEvent = unknown
+
+// Issue #13: the only two terminal PR/MR outcomes a webhook (or the poller) ever needs to act on.
+// `parseWebhook` returns this or `null` — `null` means "ignore" (ping, non-terminal action/state,
+// an event type we don't understand); anything signed-but-invalid is a thrown
+// `WebhookSignatureError`, never a `null`.
+export type ForgeEvent = {
+  type: 'pull_request'
+  state: 'merged' | 'closed'
+  pr_url: string
+  repo: { full_name: string }
+}
 export type IssueRef = unknown
+
+// Distinct `name` so callers (the Fastify receiver) can tell "reject the HTTP request" (bad or
+// missing signature/secret) apart from `parseWebhook`'s `null` return ("ignore, still 204").
+export class WebhookSignatureError extends Error {
+  constructor(message = 'invalid webhook signature') {
+    super(message)
+    this.name = 'WebhookSignatureError'
+  }
+}
 
 export interface ForgeAdapter {
   readonly kind: ForgeKind
@@ -39,6 +60,7 @@ export interface ForgeAdapter {
 
 export type CreateForgeAdapterOptions = {
   baseUrl?: string
+  webhookSecret?: string
 }
 
 const ALL_MISSING: TokenCheck = { missing: ['读', '推', 'PR'] }
@@ -58,8 +80,8 @@ export function createForgeAdapter(
     validateToken: (cred, repo) => validateToken(kind, options, cred, repo),
     importIssue: (cred, issueUrl) => importIssue(kind, options, cred, issueUrl),
     getPullRequest: (cred, prUrl) => getPullRequest(kind, options, cred, prUrl),
-    registerWebhook: notImplemented,
-    parseWebhook: notImplemented,
+    registerWebhook: (cred, repo, callback) => registerWebhook(kind, options, cred, repo, callback),
+    parseWebhook: (headers, body) => parseWebhook(kind, options, headers, body),
     commentOnIssue: notImplemented,
   }
 }
@@ -198,6 +220,168 @@ async function getPullRequest(
   }
   const body: unknown = await res.json()
   return { state: derivePrState(kind, body) }
+}
+
+// Issue #13: verify + parse an inbound webhook delivery, and register one with the forge.
+// `parseWebhook` never fetches — the host rule below only governs `registerWebhook`.
+
+function rawBodyString(body: unknown): string {
+  if (Buffer.isBuffer(body)) return body.toString('utf8')
+  if (typeof body === 'string') return body
+  return String(body)
+}
+
+function timingSafeEqualStrings(a: string, b: string): boolean {
+  const bufA = Buffer.from(a, 'utf8')
+  const bufB = Buffer.from(b, 'utf8')
+  if (bufA.length !== bufB.length) return false
+  return timingSafeEqual(bufA, bufB)
+}
+
+function verifyGithubSignature(secret: string, rawBody: string, headers: Headers): void {
+  const header = headers.get('x-hub-signature-256')
+  if (header == null) throw new WebhookSignatureError()
+  const expected = `sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}`
+  if (!timingSafeEqualStrings(header, expected)) throw new WebhookSignatureError()
+}
+
+function verifyGiteaSignature(secret: string, rawBody: string, headers: Headers): void {
+  const header = headers.get('x-gitea-signature')
+  if (header == null) throw new WebhookSignatureError()
+  const expected = createHmac('sha256', secret).update(rawBody).digest('hex')
+  if (!timingSafeEqualStrings(header, expected)) throw new WebhookSignatureError()
+}
+
+function verifyGitlabToken(secret: string, headers: Headers): void {
+  const header = headers.get('x-gitlab-token')
+  if (header == null) throw new WebhookSignatureError()
+  if (!timingSafeEqualStrings(header, secret)) throw new WebhookSignatureError()
+}
+
+function mapGithubShapedEvent(
+  kind: 'github' | 'gitea',
+  headers: Headers,
+  payload: unknown,
+): ForgeEvent | null {
+  const eventHeader = kind === 'github' ? 'x-github-event' : 'x-gitea-event'
+  if (headers.get(eventHeader) !== 'pull_request') return null
+  const obj = asObject(payload)
+  if (obj?.action !== 'closed') return null
+  const pr = asObject(obj.pull_request)
+  const repo = asObject(obj.repository)
+  const prUrl = pr?.html_url
+  const fullName = repo?.full_name
+  if (typeof prUrl !== 'string' || typeof fullName !== 'string') return null
+  const state: 'merged' | 'closed' = pr?.merged === true ? 'merged' : 'closed'
+  return { type: 'pull_request', state, pr_url: prUrl, repo: { full_name: fullName } }
+}
+
+function mapGitlabEvent(headers: Headers, payload: unknown): ForgeEvent | null {
+  if (headers.get('x-gitlab-event') !== 'Merge Request Hook') return null
+  const obj = asObject(payload)
+  const attrs = asObject(obj?.object_attributes)
+  const rawState = attrs?.state
+  if (rawState !== 'merged' && rawState !== 'closed') return null
+  const project = asObject(obj?.project)
+  const prUrl = attrs?.url
+  const fullName = project?.path_with_namespace
+  if (typeof prUrl !== 'string' || typeof fullName !== 'string') return null
+  return { type: 'pull_request', state: rawState, pr_url: prUrl, repo: { full_name: fullName } }
+}
+
+function parseWebhook(
+  kind: ForgeKind,
+  options: CreateForgeAdapterOptions | undefined,
+  headers: Headers,
+  body: unknown,
+): ForgeEvent | null {
+  const secret = options?.webhookSecret
+  if (secret == null || secret === '') {
+    throw new WebhookSignatureError()
+  }
+  const rawBody = rawBodyString(body)
+  if (kind === 'github') {
+    verifyGithubSignature(secret, rawBody, headers)
+  } else if (kind === 'gitlab') {
+    verifyGitlabToken(secret, headers)
+  } else {
+    verifyGiteaSignature(secret, rawBody, headers)
+  }
+
+  let payload: unknown
+  try {
+    payload = JSON.parse(rawBody)
+  } catch {
+    return null
+  }
+
+  if (kind === 'gitlab') {
+    return mapGitlabEvent(headers, payload)
+  }
+  return mapGithubShapedEvent(kind, headers, payload)
+}
+
+function splitFullName(fullName: string): [string, string] {
+  const idx = fullName.indexOf('/')
+  if (idx === -1) return [fullName, '']
+  return [fullName.slice(0, idx), fullName.slice(idx + 1)]
+}
+
+async function forgePost(
+  kind: ForgeKind,
+  url: string,
+  token: string,
+  body: unknown,
+): Promise<Response> {
+  return globalThis.fetch(url, {
+    method: 'POST',
+    headers: { ...authHeaders(kind, token), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+}
+
+async function registerWebhook(
+  kind: ForgeKind,
+  options: CreateForgeAdapterOptions | undefined,
+  cred: Credential,
+  repo: RepoRef,
+  callback: string,
+): Promise<void> {
+  const secret = options?.webhookSecret
+
+  if (kind === 'github') {
+    const [owner, name] = splitFullName(repo.full_name)
+    const url = `${GITHUB_API_ORIGIN}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/hooks`
+    const body = {
+      name: 'web',
+      events: ['pull_request'],
+      config: { url: callback, content_type: 'json', secret, insecure_ssl: '0' },
+    }
+    const res = await forgePost(kind, url, cred.token, body)
+    if (!res.ok) throw new Error(`registerWebhook: ${kind} responded ${res.status}`)
+    return
+  }
+
+  if (kind === 'gitlab') {
+    const origin = (options?.baseUrl ?? '').replace(/\/+$/u, '')
+    const url = `${origin}/api/v4/projects/${encodeURIComponent(repo.full_name)}/hooks`
+    const body = { url: callback, merge_requests_events: true, token: secret }
+    const res = await forgePost(kind, url, cred.token, body)
+    if (!res.ok) throw new Error(`registerWebhook: ${kind} responded ${res.status}`)
+    return
+  }
+
+  const origin = (options?.baseUrl ?? '').replace(/\/+$/u, '')
+  const [giteaOwner, giteaName] = splitFullName(repo.full_name)
+  const url = `${origin}/api/v1/repos/${encodeURIComponent(giteaOwner)}/${encodeURIComponent(giteaName)}/hooks`
+  const body = {
+    type: 'gitea',
+    events: ['pull_request'],
+    config: { url: callback, content_type: 'json', secret },
+    active: true,
+  }
+  const res = await forgePost(kind, url, cred.token, body)
+  if (!res.ok) throw new Error(`registerWebhook: ${kind} responded ${res.status}`)
 }
 
 // Issue #12: import a forge Issue by its web URL. Host rule matches getPullRequest (GitHub always

@@ -830,3 +830,157 @@ describe('issue #11 poller (pollPendingReviews)', { concurrency: false }, () => 
     })
   })
 })
+
+// Issue #13. ADD-only: per-instance webhook-vs-poll config that `pollPendingReviews` must honor.
+// `pollPendingReviews(db, forgeInstances)` is called directly here — the same style every other
+// test in this file already uses to drive the poller — with a second argument the function does
+// not accept on HEAD `44eca32b` (that HEAD's `pollPendingReviews` takes only `db`, has no concept
+// of an "instance", and therefore can never skip any 待验收 row). None of the tests above this
+// marker are modified.
+describe('issue #13: per-instance webhook-vs-poll config (pollPendingReviews honors forgeInstances)', { concurrency: false }, () => {
+  test('a syncMode: "webhook" instance matching (repoForge, repoBaseUrl) is skipped: zero getPullRequest fetches, task stays 待验收', async (t) => {
+    const sqlitePath = sqliteFile(t)
+    const { app, stub } = await boot(t, sqlitePath)
+    const poster = await loginGitea(app, stub, 'skip-webhook-mode')
+    const key = await mintAgentKey(app, poster.cookies, 'poller')
+
+    const setup = await createPendingReviewTask(app, stub, poster, key, {
+      title: 'webhook 模式跳过用例',
+      prNumber: 501,
+      summary: '应被跳过',
+    })
+    // Tripwire: if the poller mistakenly fetches this PR despite webhook mode, this merged: true
+    // stub would flip the status below — the skip is proven by observed behavior, not merely by
+    // the absence of a recorded request.
+    stub.pr.set(setup.prNumber, { body: { number: 501, state: 'closed', merged: true } })
+
+    const forgeInstances = [
+      {
+        publicId: 'inst-webhook-mode',
+        forge: 'gitea',
+        baseUrl: FORGE_BASE_URL,
+        syncMode: 'webhook',
+        webhookSecret: 'test-webhook-secret-aa',
+      },
+    ]
+
+    const db = openDb(t, sqlitePath)
+    await pollPendingReviews(db, forgeInstances)
+
+    const after = taskRow(db, setup.publicId)
+    assert.equal(
+      after.status,
+      '待验收',
+      `a webhook-mode instance's task must not be advanced by the poller, got ${JSON.stringify(after)}`,
+    )
+    assert.equal(
+      stub.requests.some((r) => r.url.includes(`/pulls/${setup.prNumber}`)),
+      false,
+      'a webhook-mode instance must result in zero getPullRequest fetches for its tasks',
+    )
+    assert.equal(submissionRows(db, after.id)[0].pr_state, 'open')
+  })
+
+  test('an unlisted/mismatched instance (wrong base_url, or right base_url with the wrong forge) is still polled as before', async (t) => {
+    const sqlitePath = sqliteFile(t)
+    const { app, stub } = await boot(t, sqlitePath)
+    const poster = await loginGitea(app, stub, 'skip-unlisted')
+    const key = await mintAgentKey(app, poster.cookies, 'poller')
+
+    const setup = await createPendingReviewTask(app, stub, poster, key, {
+      title: '未列出实例仍轮询用例',
+      prNumber: 502,
+      summary: '应正常完成',
+    })
+    stub.pr.set(setup.prNumber, { body: { number: 502, state: 'closed', merged: true } })
+
+    // Neither entry is an exact (forge, base_url) match for the task's (gitea, FORGE_BASE_URL):
+    // the first has the right forge but a different base_url, the second has the right base_url
+    // but a different forge. The match must be the exact tuple, not either field alone.
+    const forgeInstances = [
+      {
+        publicId: 'inst-other-host',
+        forge: 'gitea',
+        baseUrl: 'https://gitea.unrelated.example.test',
+        syncMode: 'webhook',
+        webhookSecret: 'x',
+      },
+      {
+        publicId: 'inst-wrong-forge',
+        forge: 'github',
+        baseUrl: FORGE_BASE_URL,
+        syncMode: 'webhook',
+        webhookSecret: 'y',
+      },
+    ]
+
+    const db = openDb(t, sqlitePath)
+    await pollPendingReviews(db, forgeInstances)
+
+    const after = taskRow(db, setup.publicId)
+    assert.equal(
+      after.status,
+      '已完成',
+      `a task matching no forgeInstances entry by the exact (forge, base_url) tuple must still be polled, got ${JSON.stringify(after)}`,
+    )
+    assert.equal(
+      stub.requests.some((r) => r.url.includes(`/pulls/${setup.prNumber}`)),
+      true,
+      'expected the unlisted-instance task to actually be fetched',
+    )
+  })
+
+  test('a syncMode: "poll" instance matching (repoForge, repoBaseUrl) is still polled', async (t) => {
+    const sqlitePath = sqliteFile(t)
+    const { app, stub } = await boot(t, sqlitePath)
+    const poster = await loginGitea(app, stub, 'skip-poll-mode')
+    const key = await mintAgentKey(app, poster.cookies, 'poller')
+
+    const setup = await createPendingReviewTask(app, stub, poster, key, {
+      title: 'poll 模式仍轮询用例',
+      prNumber: 503,
+      summary: '应正常完成',
+    })
+    stub.pr.set(setup.prNumber, { body: { number: 503, state: 'closed', merged: true } })
+
+    const forgeInstances = [
+      {
+        publicId: 'inst-poll-mode',
+        forge: 'gitea',
+        baseUrl: FORGE_BASE_URL,
+        syncMode: 'poll',
+        webhookSecret: 'test-webhook-secret-bb',
+      },
+    ]
+
+    const db = openDb(t, sqlitePath)
+    await pollPendingReviews(db, forgeInstances)
+
+    const after = taskRow(db, setup.publicId)
+    assert.equal(after.status, '已完成', 'a syncMode: poll instance must not be skipped by the poller')
+    assert.equal(
+      stub.requests.some((r) => r.url.includes(`/pulls/${setup.prNumber}`)),
+      true,
+    )
+  })
+
+  test('an explicit empty forgeInstances array polls every 待验收 task exactly as omitting the argument does', async (t) => {
+    const sqlitePath = sqliteFile(t)
+    const { app, stub } = await boot(t, sqlitePath)
+    const poster = await loginGitea(app, stub, 'skip-empty-array')
+    const key = await mintAgentKey(app, poster.cookies, 'poller')
+
+    const setup = await createPendingReviewTask(app, stub, poster, key, {
+      title: '空实例列表用例',
+      prNumber: 504,
+      summary: '应正常完成',
+    })
+    stub.pr.set(setup.prNumber, { body: { number: 504, state: 'closed', merged: true } })
+
+    const db = openDb(t, sqlitePath)
+    await pollPendingReviews(db, [])
+
+    const after = taskRow(db, setup.publicId)
+    assert.equal(after.status, '已完成', 'an empty forgeInstances array must behave like today: poll everything')
+  })
+})

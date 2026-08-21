@@ -1,5 +1,5 @@
 import { createForgeAdapter } from '@kaola/forge-adapters'
-import type { PrStatus } from '@kaola/forge-adapters'
+import type { ForgeKind, PrStatus } from '@kaola/forge-adapters'
 import { transitionTaskStatus } from '@kaola/shared'
 import type { TaskStatus } from '@kaola/shared'
 import { desc, eq } from 'drizzle-orm'
@@ -14,7 +14,36 @@ import { decryptToken, insertAuditEvent } from './vault.ts'
 const PENDING_REVIEW_STATUS = '待验收'
 const STATUS_TRANSITION_EVENT = '状态迁移'
 
-function latestSubmission(db: AppDb, taskId: number) {
+// Issue #13: `buildApp({ forgeInstances })` config. `pollPendingReviews` skips a task whose
+// `(repoForge, repoBaseUrl)` exactly matches a `syncMode: 'webhook'` instance — that repo's
+// terminal transitions arrive over `POST /api/v1/webhooks/:publicId` instead (see webhook.ts).
+// The same shape also carries the secret the webhook receiver verifies deliveries against.
+export type ForgeInstanceConfig = {
+  publicId: string
+  forge: ForgeKind
+  baseUrl: string
+  syncMode: 'webhook' | 'poll'
+  webhookSecret: string
+}
+
+// Shared by `isWebhookManaged` (below) and the webhook receiver (webhook.ts): the same
+// (forge, base_url) equality binds a task to the one signature-verified instance a delivery
+// arrived on, so a task can never be advanced by an instance it does not belong to.
+export function taskMatchesForgeInstance(
+  task: Task,
+  instance: Pick<ForgeInstanceConfig, 'forge' | 'baseUrl'>,
+): boolean {
+  return instance.forge === task.repoForge && instance.baseUrl === task.repoBaseUrl
+}
+
+function isWebhookManaged(task: Task, forgeInstances: ForgeInstanceConfig[] | undefined): boolean {
+  if (forgeInstances == null) return false
+  return forgeInstances.some(
+    (instance) => instance.syncMode === 'webhook' && taskMatchesForgeInstance(task, instance),
+  )
+}
+
+export function latestSubmission(db: AppDb, taskId: number) {
   return db
     .select()
     .from(submissions)
@@ -22,6 +51,35 @@ function latestSubmission(db: AppDb, taskId: number) {
     .orderBy(desc(submissions.id))
     .limit(1)
     .get()
+}
+
+// Shared by the poller (below) and the webhook receiver (webhook.ts): both drive 待验收 to its
+// terminal 已完成/已退回 through the exact same write shape, so the transition itself — not just
+// its trigger — stays in one place. The webhook path never decrypts a token or calls
+// `getPullRequest`; it calls this directly off the payload's own merged/closed verdict.
+export function applyPrTerminalTransition(
+  db: AppDb,
+  task: Task,
+  submissionId: number,
+  terminal: 'merged' | 'closed',
+  prUrl: string,
+): void {
+  const from = task.status as TaskStatus
+  const toChinese = terminal === 'merged' ? '已完成' : '已退回'
+  const to = transitionTaskStatus(from, toChinese) as TaskStatus
+  const prState = terminal === 'merged' ? 'merged' : 'closed'
+
+  // One transaction so a fault between the two updates and the audit insert cannot leave a task
+  // advanced to 已完成/已退回 with no 状态迁移 event recording it.
+  db.transaction((tx) => {
+    tx.update(tasks).set({ status: to }).where(eq(tasks.id, task.id)).run()
+    tx.update(submissions).set({ prState }).where(eq(submissions.id, submissionId)).run()
+    insertAuditEvent(tx, {
+      type: STATUS_TRANSITION_EVENT,
+      actorUserId: null,
+      details: { task_id: task.publicId, from, to, pr_url: prUrl },
+    })
+  })
 }
 
 // Same branch as `claimTask`'s credential resolution, except any failure here (vault
@@ -63,29 +121,21 @@ async function pollOneTask(db: AppDb, task: Task): Promise<void> {
   const status = await fetchPrStatus(db, task, submission.prUrl)
   if (status == null || status.state === 'open') return
 
-  const from = task.status as TaskStatus
-  const toChinese = status.state === 'merged' ? '已完成' : '已退回'
-  const to = transitionTaskStatus(from, toChinese) as TaskStatus
-  const prState = status.state === 'merged' ? 'merged' : 'closed'
-
-  // One transaction so a fault between the two updates and the audit insert cannot leave a task
-  // advanced to 已完成/已退回 with no 状态迁移 event recording it.
-  db.transaction((tx) => {
-    tx.update(tasks).set({ status: to }).where(eq(tasks.id, task.id)).run()
-    tx.update(submissions).set({ prState }).where(eq(submissions.id, submission.id)).run()
-    insertAuditEvent(tx, {
-      type: STATUS_TRANSITION_EVENT,
-      actorUserId: null,
-      details: { task_id: task.publicId, from, to, pr_url: submission.prUrl },
-    })
-  })
+  applyPrTerminalTransition(db, task, submission.id, status.state, submission.prUrl)
 }
 
 // Must never reject: this drives a `setInterval` (see app.ts), and an unhandled rejection there
 // would take down the whole process under Node's default `--unhandled-rejections=throw`. Every
 // fault — the initial select or any single task's write phase — is caught and skips only the
 // affected row so the rest of the pending set still gets polled.
-export async function pollPendingReviews(db: AppDb): Promise<void> {
+//
+// Issue #13: `forgeInstances` (omitted or `[]` = poll every 待验收 row, same as before) lets a
+// `syncMode: 'webhook'` instance opt its repo out of polling — that instance's tasks are advanced
+// by the webhook receiver (webhook.ts) instead.
+export async function pollPendingReviews(
+  db: AppDb,
+  forgeInstances?: ForgeInstanceConfig[],
+): Promise<void> {
   let pending: Task[]
   try {
     pending = db.select().from(tasks).where(eq(tasks.status, PENDING_REVIEW_STATUS)).all()
@@ -93,6 +143,7 @@ export async function pollPendingReviews(db: AppDb): Promise<void> {
     return
   }
   for (const task of pending) {
+    if (isWebhookManaged(task, forgeInstances)) continue
     try {
       await pollOneTask(db, task)
     } catch {
