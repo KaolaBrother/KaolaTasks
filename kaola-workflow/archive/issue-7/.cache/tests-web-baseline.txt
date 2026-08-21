@@ -1,0 +1,783 @@
+Scope: all 5 workspace projects
+✓ Lockfile passes supply-chain policies (verified 9m ago)
+Lockfile is up to date, resolution step is skipped
+Already up to date
+
+Done in 246ms using pnpm v11.19.0
+$ node --experimental-strip-types --test packages/shared/src/index.test.ts packages/forge-adapters/src/index.test.ts packages/forge-adapters/src/validate-token.shared.test.ts apps/server/src/placeholder.test.ts apps/server/src/auth.test.ts apps/server/src/agent-keys.test.ts apps/server/src/vault.test.ts apps/server/src/tasks.test.ts && pnpm --filter @kaola/web test
+▶ unauthenticated session agent-key routes
+  ✔ JSON Accept is 401 unauthorized without WWW-Authenticate; browser-like requests redirect to /login (40.694583ms)
+✔ unauthenticated session agent-key routes (41.005333ms)
+▶ GET /api/v1/agent/whoami Bearer failures
+  ✔ missing, wrong, and non-Bearer credentials are 401 with WWW-Authenticate Bearer (4.493709ms)
+  ✔ a session cookie does not authorize whoami; GET /api/v1/me does not accept Bearer (10.463292ms)
+✔ GET /api/v1/agent/whoami Bearer failures (15.052375ms)
+▶ pending GitHub cannot generate Agent Keys
+  ✔ pending GitHub POST /api/v1/agent-keys returns 403 with the generate-gate message (3.344083ms)
+✔ pending GitHub cannot generate Agent Keys (3.426125ms)
+▶ approved GitHub claim_only self-service
+  ✔ approved GitHub claim_only can generate, list without plaintext, update last_used_at, and revoke immediately (6.343458ms)
+✔ approved GitHub claim_only self-service (6.40575ms)
+▶ GitLab and Gitea full+active self-service
+  ✔ GitLab full+active can generate keys without VAULT_MASTER_KEY; GET / stays 考拉任务服务占位 (5.239459ms)
+  ✔ Gitea full+active can generate, list, and use Bearer whoami (3.356625ms)
+✔ GitLab and Gitea full+active self-service (8.674791ms)
+▶ list and revoke are own keys only
+  ✔ a full member cannot list or revoke another user's key; missing and not-owned DELETE are 404 not_found (4.173542ms)
+✔ list and revoke are own keys only (4.214917ms)
+▶ agent_keys hashed storage
+  ✔ SQLite stores sha256 hex of plaintext utf8, never the token, unique key_hash; failed Bearer does not set last_used_at (10.831042ms)
+✔ agent_keys hashed storage (10.884417ms)
+▶ login start paths
+  ✔ GET /login is allowed without a session (37.664917ms)
+  ✔ GET /login/github redirects to GitHub authorize (3.37125ms)
+  ✔ GET /login/gitlab redirects to the configured GitLab authorize URL (2.456459ms)
+  ✔ GET /login/gitea redirects to the configured Gitea authorize URL (2.621ms)
+✔ login start paths (46.50475ms)
+▶ unauthenticated GET /api/v1/me
+  ✔ browser-like GET /api/v1/me redirects to /login and does not return a user (2.558958ms)
+  ✔ JSON GET /api/v1/me without a session returns 401 and does not return a user (2.189666ms)
+✔ unauthenticated GET /api/v1/me (4.831792ms)
+▶ OAuth callback first login
+  ✔ GitHub first login persists 待批准 claim_only user and a usable session (9.053084ms)
+  ✔ GitHub display_name falls back to login when name is null (3.069ms)
+  ✔ GitLab first login persists active full user and a usable session (2.663042ms)
+  ✔ Gitea first login persists active full user and a usable session (2.958042ms)
+  ✔ Gitea display_name falls back to login when full_name is empty (2.519333ms)
+  ✔ second GitHub callback with the same remote_id reuses the same user id (2.979334ms)
+  ✔ the same remote_id on GitHub and GitLab is two users (2.997708ms)
+✔ OAuth callback first login (26.42525ms)
+▶ pending GitHub users and approve
+  ✔ pending GitHub user cannot POST /api/v1/users/:id/approve (2.732583ms)
+  ✔ an active full member can approve a GitHub user to active while leaving claim_only (3.025458ms)
+  ✔ approving does not reset on GitHub re-login, and claim_only still cannot approve others (3.473333ms)
+✔ pending GitHub users and approve (9.310083ms)
+✔ getPlaceholderBody returns the pinned non-empty placeholder HTTP body (0.277625ms)
+▶ issue #7 tasks HTTP surface
+  ▶ authentication and DESIGN §11 permissions
+    ✔ unauthenticated JSON GET/POST/PATCH return 401 unauthorized (39.288458ms)
+    ✔ browser-like GET /api/v1/tasks redirects to /login (2.8435ms)
+    ✔ 待批准 GitHub user may read the board (§11 查看任务板 ✓) but not post (10.690916ms)
+    ✔ approved GitHub claim_only user may read the board but not post or patch (12.831958ms)
+    ✔ only the 发布者 may cancel — another active full member gets 403 (5.763917ms)
+  ✔ authentication and DESIGN §11 permissions (71.8065ms)
+  ▶ POST /api/v1/tasks — 凭证档案下拉选择 path
+    ✔ profile path creates a 待认领 task whose credential is { profile_id } (5.343292ms)
+    ✔ profile_id is accepted as a number and as a numeric string (4.98325ms)
+    ✔ an unknown profile_id is refused with 400 invalid_body and a Chinese message (3.066542ms)
+  ✔ POST /api/v1/tasks — 凭证档案下拉选择 path (13.547709ms)
+  ▶ POST /api/v1/tasks — 单任务临时 token path
+    ✔ inline token path creates a 待认领 task whose credential is { inline: true } (3.316625ms)
+    ✔ inline token is stored as ciphertext and recoverable through the vault (5.66825ms)
+    ✔ both credential paths return 500 vault_unconfigured without VAULT_MASTER_KEY (2.752125ms)
+  ✔ POST /api/v1/tasks — 单任务临时 token path (11.820208ms)
+  ▶ 发布即校验 — DESIGN §5
+    ✔ a token missing 推 and PR is refused with 422 and names both capabilities (4.513ms)
+    ✔ a token that can push but cannot open PRs is refused naming only PR (2.48775ms)
+    ✔ a 401 token is refused with the token-invalid message, not the 权限不足 one (1.98425ms)
+    ✔ a token with no access to the repo is refused with the token-invalid message (1.821875ms)
+    ✔ an unreachable forge is a DIFFERENT outcome: 502 with its own Chinese message (2.124375ms)
+    ✔ the profile path is validated too — an under-scoped profile token is refused (2.399417ms)
+  ✔ 发布即校验 — DESIGN §5 (15.437833ms)
+  ▶ 任务卡字段完整符合 §6 schema
+    ✔ a full request body round-trips every DESIGN §6 field (2.447084ms)
+    ✔ pr_convention is derived from the public id, per DESIGN §6 (1.923291ms)
+    ✔ a client-supplied pr_convention or id or status is ignored — the server owns them (1.68525ms)
+    ✔ an imported source round-trips issue_url; a native source carries only type (2.160125ms)
+    ✔ a minimal request body is completed with the documented defaults (1.75625ms)
+    ✔ created_at is ISO-8601 with offset and matches the stored unix seconds (4.298ms)
+    ✔ POST with no title returns 400 invalid_body (1.5685ms)
+    ✔ POST with an empty title returns 400 invalid_body (1.48025ms)
+    ✔ POST with no repo returns 400 invalid_body (1.739334ms)
+    ✔ POST with an unknown forge returns 400 invalid_body (1.723917ms)
+    ✔ POST with no repo.full_name returns 400 invalid_body (4.978542ms)
+    ✔ POST with an unknown priority returns 400 invalid_body (1.727292ms)
+    ✔ POST with an unknown source type returns 400 invalid_body (1.451208ms)
+    ✔ POST with an imported source without issue_url returns 400 invalid_body (1.466125ms)
+    ✔ POST with no credential returns 400 invalid_body (1.307709ms)
+    ✔ POST with an empty credential returns 400 invalid_body (1.417833ms)
+    ✔ POST with both credential forms at once returns 400 invalid_body (1.276292ms)
+    ✔ POST with a bare inline marker and no token returns 400 invalid_body (1.259833ms)
+    ✔ POST with an empty inline token returns 400 invalid_body (1.277166ms)
+  ✔ 任务卡字段完整符合 §6 schema (37.170708ms)
+  ▶ public_id — kt-YYYY-NNNN
+    ✔ public_id has the kt-YYYY-NNNN form and carries the current year (1.78875ms)
+    ✔ public ids are distinct and their sequence increases (2.280167ms)
+    ✔ public_id is UNIQUE in SQLite (5.262833ms)
+  ✔ public_id — kt-YYYY-NNNN (9.384083ms)
+  ▶ token secrecy — DESIGN §7
+    ✔ no create/list/get response carries the inline token in any field (2.463416ms)
+    ✔ no create/list/get response carries the profile token in any field (2.354084ms)
+  ✔ token secrecy — DESIGN §7 (4.857625ms)
+  ▶ GET /api/v1/tasks and GET /api/v1/tasks/:public_id
+    ✔ list returns every task under a tasks key, each a §6 brief (2.366ms)
+    ✔ get by public_id returns exactly the brief that create returned (1.829167ms)
+    ✔ an unknown public_id returns 404 not_found (1.710709ms)
+    ✔ a numeric-looking id returns 404 not_found — tasks are addressed by public_id only (2.199833ms)
+  ✔ GET /api/v1/tasks and GET /api/v1/tasks/:public_id (8.164291ms)
+  ▶ PATCH /api/v1/tasks/:public_id — 取消 / 重新开放
+    ✔ 待认领 → 已取消 by the poster returns the updated brief (2.381167ms)
+    ✔ 已退回 → 待认领 reopens the task (7.663542ms)
+    ✔ 已退回 → 已取消 by the poster (4.985416ms)
+    ✔ an illegal transition 待认领 → 已完成 returns 409 with a Chinese message (2.486667ms)
+    ✔ 待认领 → 进行中 is claim territory, not a poster edit: 409 illegal_transition (1.91625ms)
+    ✔ 已取消 is terminal — 已取消 → 待认领 returns 409 (2.654125ms)
+    ✔ an unknown status value returns 400 invalid_body (3.759541ms)
+    ✔ PATCH on an unknown public_id returns 404 not_found (5.487334ms)
+  ✔ PATCH /api/v1/tasks/:public_id — 取消 / 重新开放 (31.464ms)
+  ▶ audit — 状态迁移 events (DESIGN §10)
+    ✔ cancelling writes one 状态迁移 event naming the task, from, to and actor (5.154375ms)
+    ✔ reopening writes a 状态迁移 event from 已退回 to 待认领 (5.616ms)
+    ✔ a refused transition writes no 状态迁移 event (4.77825ms)
+  ✔ audit — 状态迁移 events (DESIGN §10) (15.627167ms)
+  ▶ tasks table invariants (DESIGN §10: credential_profile_id / inline_token_encrypted 二选一)
+    ✔ the profile path stores credential_profile_id and leaves inline_token_encrypted NULL (5.418916ms)
+    ✔ SQLite refuses a row with BOTH credential columns set (4.40725ms)
+    ✔ SQLite refuses a row with NEITHER credential column set (3.9085ms)
+  ✔ tasks table invariants (DESIGN §10: credential_profile_id / inline_token_encrypted 二选一) (13.794917ms)
+✔ issue #7 tasks HTTP surface (233.456583ms)
+▶ issue #5 credential vault
+  ▶ placeholder pin
+    ✔ GET / still returns 考拉任务服务占位 (38.193959ms)
+  ✔ placeholder pin (38.437292ms)
+  ▶ unauthenticated credential-profile routes
+    ✔ JSON GET/POST/DELETE without a session return 401 unauthorized (4.492875ms)
+    ✔ browser-like GET /api/v1/credential-profiles redirects to /login (2.48475ms)
+  ✔ unauthenticated credential-profile routes (7.05975ms)
+  ▶ credential profile CRUD (session, active full)
+    ✔ GitLab POST returns 201 public fields and GET lists them without secrets (11.31475ms)
+    ✔ Gitea active full member can POST a credential profile (3.439208ms)
+    ✔ duplicate (forge, base_url, repo_full_name) returns 409 conflict (4.384583ms)
+    ✔ DELETE returns forge-revoke copy; missing id is 404 not_found (3.895333ms)
+    ✔ any active full member lists and deletes team-shared profiles (3.511167ms)
+  ✔ credential profile CRUD (session, active full) (26.713041ms)
+  ▶ permission gate (profiles are active+full only)
+    ✔ pending GitHub user gets 403 forbidden on POST/GET/DELETE (3.468875ms)
+    ✔ approved GitHub claim_only still gets 403 forbidden on POST/GET/DELETE (7.447458ms)
+  ✔ permission gate (profiles are active+full only) (10.988875ms)
+  ▶ SQLite: no plaintext token; 变更 events
+    ✔ token_encrypted TEXT omits plaintext and create writes 变更 (6.417917ms)
+    ✔ DELETE writes 变更 action delete (6.141666ms)
+  ✔ SQLite: no plaintext token; 变更 events (12.622042ms)
+  ▶ vault_unconfigured
+    ✔ HTTP POST without VAULT_MASTER_KEY returns 500 vault_unconfigured (2.367042ms)
+  ✔ vault_unconfigured (2.400875ms)
+  ▶ encryptToken / decryptToken (dynamic import ./vault.ts)
+    ✔ round-trips a one-off token string and ciphertext omits plaintext (0.2375ms)
+    ✔ encryptToken throws when VAULT_MASTER_KEY is missing (0.16375ms)
+  ✔ encryptToken / decryptToken (dynamic import ./vault.ts) (0.424042ms)
+  ▶ revealCredentialProfile (dynamic import ./vault.ts)
+    ✔ returns plaintext, writes token 揭示 audit, and throws after DELETE (6.734708ms)
+  ✔ revealCredentialProfile (dynamic import ./vault.ts) (6.784916ms)
+✔ issue #5 credential vault (105.6765ms)
+✔ getForgeAdaptersHealth returns the pinned non-empty forge-adapters package health string (0.26125ms)
+▶ validateToken shared spec
+  ▶ github
+    ✔ all ok: GET user + push-capable repo → missing [] (same-repo, no /forks) (10.04775ms)
+    ✔ cannot read: repo/project GET 404 → missing includes 读 (0.276ms)
+    ✔ dead token: user GET 401 → missing includes 读, 推, and PR (0.124833ms)
+    ✔ read but cannot push (Reporter / push:false / access_level 20) → missing 推, not 读 (0.248541ms)
+    ✔ cannot open PR/MR while readable → missing includes PR (0.543583ms)
+    ✔ custom baseUrl: GitLab/Gitea keep subpath; GitHub always api.github.com (0.250625ms)
+  ✔ github (11.82975ms)
+  ▶ gitlab
+    ✔ all ok: GET user + push-capable repo → missing [] (same-repo, no /forks) (0.33925ms)
+    ✔ cannot read: repo/project GET 404 → missing includes 读 (0.107875ms)
+    ✔ dead token: user GET 401 → missing includes 读, 推, and PR (0.075ms)
+    ✔ read but cannot push (Reporter / push:false / access_level 20) → missing 推, not 读 (0.122708ms)
+    ✔ cannot open PR/MR while readable → missing includes PR (0.099375ms)
+    ✔ custom baseUrl: GitLab/Gitea keep subpath; GitHub always api.github.com (0.110333ms)
+  ✔ gitlab (0.9645ms)
+  ▶ gitea
+    ✔ all ok: GET user + push-capable repo → missing [] (same-repo, no /forks) (0.214959ms)
+    ✔ cannot read: repo/project GET 404 → missing includes 读 (0.071833ms)
+    ✔ dead token: user GET 401 → missing includes 读, 推, and PR (0.049958ms)
+    ✔ read but cannot push (Reporter / push:false / access_level 20) → missing 推, not 读 (0.100958ms)
+    ✔ cannot open PR/MR while readable → missing includes PR (0.080542ms)
+    ✔ custom baseUrl: GitLab/Gitea keep subpath; GitHub always api.github.com (0.072958ms)
+  ✔ gitea (0.647791ms)
+  ✔ github classic PAT without repo scope cannot push or open PR (0.139541ms)
+✔ validateToken shared spec (13.815375ms)
+✔ getSharedHealth returns the pinned non-empty shared package health string (0.294666ms)
+▶ parseTaskBrief
+  ✔ parseTaskBrief accepts the DESIGN.md §6 Task Brief example including Chinese ellipsis description (1.741084ms)
+  ✔ parseTaskBrief accepts a valid brief whose source is native with no issue_url (0.320792ms)
+  ✔ parseTaskBrief accepts status 待认领 (0.096ms)
+  ✔ parseTaskBrief accepts status 进行中 (0.072208ms)
+  ✔ parseTaskBrief accepts status 待验收 (0.074917ms)
+  ✔ parseTaskBrief accepts status 已完成 (0.061458ms)
+  ✔ parseTaskBrief accepts status 已退回 (0.07025ms)
+  ✔ parseTaskBrief accepts status 已取消 (0.085458ms)
+  ✔ parseTaskBrief accepts repo.forge github (0.112542ms)
+  ✔ parseTaskBrief accepts repo.forge gitlab (0.087917ms)
+  ✔ parseTaskBrief accepts repo.forge gitea (0.049833ms)
+  ✔ parseTaskBrief accepts priority P0 (0.05575ms)
+  ✔ parseTaskBrief accepts priority P1 (0.043959ms)
+  ✔ parseTaskBrief accepts priority P2 (0.036375ms)
+  ✔ parseTaskBrief accepts priority P3 (0.034041ms)
+  ✔ parseTaskBrief rejects a brief missing required field id (0.2845ms)
+  ✔ parseTaskBrief rejects a brief missing required field title (0.097167ms)
+  ✔ parseTaskBrief rejects a brief missing required field description_md (0.080417ms)
+  ✔ parseTaskBrief rejects a brief missing required field source (0.070833ms)
+  ✔ parseTaskBrief rejects a brief missing required field repo (0.055958ms)
+  ✔ parseTaskBrief rejects a brief missing required field acceptance_criteria (0.065ms)
+  ✔ parseTaskBrief rejects a brief missing required field test_command (0.058375ms)
+  ✔ parseTaskBrief rejects a brief missing required field constraints (0.052458ms)
+  ✔ parseTaskBrief rejects a brief missing required field pr_convention (0.082125ms)
+  ✔ parseTaskBrief rejects a brief missing required field credential (0.123583ms)
+  ✔ parseTaskBrief rejects a brief missing required field priority (0.070834ms)
+  ✔ parseTaskBrief rejects a brief missing required field tags (0.046292ms)
+  ✔ parseTaskBrief rejects a brief missing required field poster (0.052834ms)
+  ✔ parseTaskBrief rejects a brief missing required field status (0.044625ms)
+  ✔ parseTaskBrief rejects a brief missing required field created_at (0.038833ms)
+  ✔ parseTaskBrief rejects a brief missing repo.forge (0.069208ms)
+  ✔ parseTaskBrief rejects a brief missing repo.base_url (0.053333ms)
+  ✔ parseTaskBrief rejects a brief missing repo.full_name (0.040542ms)
+  ✔ parseTaskBrief rejects a brief missing repo.base_branch (0.039958ms)
+  ✔ parseTaskBrief rejects a brief missing repo.suggested_dir (0.042042ms)
+  ✔ parseTaskBrief rejects a brief missing constraints.allowed_paths (0.043292ms)
+  ✔ parseTaskBrief rejects a brief missing constraints.forbidden_paths (0.044917ms)
+  ✔ parseTaskBrief rejects a brief missing pr_convention.branch_prefix (0.039417ms)
+  ✔ parseTaskBrief rejects a brief missing pr_convention.title_prefix (0.037375ms)
+  ✔ parseTaskBrief rejects status that is not one of the six Chinese labels (0.044ms)
+  ✔ parseTaskBrief rejects repo.forge outside github | gitlab | gitea (0.048584ms)
+  ✔ parseTaskBrief rejects imported source without issue_url (0.047459ms)
+  ✔ parseTaskBrief rejects native source that includes issue_url (0.073209ms)
+  ✔ parseTaskBrief rejects priority outside P0|P1|P2|P3 (0.042792ms)
+  ✔ parseTaskBrief rejects a raw token field on the brief (0.056917ms)
+  ✔ parseTaskBrief rejects credential that has no profile_id (0.564125ms)
+  ✔ parseTaskBrief rejects a raw token field inside credential (0.0725ms)
+  ✔ parseTaskBrief rejects credential that includes both profile_id and a raw token (0.0495ms)
+✔ parseTaskBrief (5.994417ms)
+▶ parseTaskBrief credential union
+  ✔ parseTaskBrief accepts credential { profile_id } — the shared credential profile form (0.113375ms)
+  ✔ parseTaskBrief accepts credential { inline: true } — the single-task temporary token form (0.040041ms)
+  ✔ parseTaskBrief round-trips credential { inline: true } without adding or dropping keys (0.040958ms)
+  ✔ parseTaskBrief accepts the DESIGN.md §6 example when its credential row is the inline form (0.031709ms)
+  ✔ parseTaskBrief rejects credential { inline: false } — inline is a marker, only true is legal (0.04775ms)
+  ✔ parseTaskBrief rejects credential carrying both profile_id and inline (二选一, exactly one form) (0.040834ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type "yes" (0.052667ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type "true" (0.045875ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type 1 (0.034875ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type 0 (0.032166ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type null (0.030542ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type [] (0.029666ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type {} (0.028875ms)
+  ✔ parseTaskBrief rejects credential {} — neither form is present (0.037875ms)
+  ✔ parseTaskBrief rejects a credential shape that is neither profile_id nor inline (0.039542ms)
+  ✔ parseTaskBrief rejects an unknown extra key alongside profile_id (0.039583ms)
+  ✔ parseTaskBrief rejects an unknown extra key alongside inline: true (0.041792ms)
+  ✔ parseTaskBrief rejects a raw token alongside inline: true (0.039541ms)
+  ✔ parseTaskBrief rejects a ciphertext-bearing credential even in the inline form (0.050334ms)
+  ✔ parseTaskBrief rejects profile_id that is not a string (0.046958ms)
+  ✔ parseTaskBrief rejects credential that is not an object: "cp-gitea-orders" (0.03825ms)
+  ✔ parseTaskBrief rejects credential that is not an object: 42 (0.037709ms)
+  ✔ parseTaskBrief rejects credential that is not an object: true (0.034375ms)
+  ✔ parseTaskBrief rejects credential that is not an object: null (0.027667ms)
+  ✔ parseTaskBrief rejects credential that is not an object: [] (0.028375ms)
+✔ parseTaskBrief credential union (1.160917ms)
+▶ transitionTaskStatus
+  ✔ transitionTaskStatus rejects 待认领 → 待认领 (0.111875ms)
+  ✔ transitionTaskStatus allows 待认领 → 进行中 (0.023208ms)
+  ✔ transitionTaskStatus rejects 待认领 → 待验收 (0.026417ms)
+  ✔ transitionTaskStatus rejects 待认领 → 已完成 (0.018208ms)
+  ✔ transitionTaskStatus rejects 待认领 → 已退回 (0.024625ms)
+  ✔ transitionTaskStatus allows 待认领 → 已取消 (0.015583ms)
+  ✔ transitionTaskStatus allows 进行中 → 待认领 (0.015833ms)
+  ✔ transitionTaskStatus rejects 进行中 → 进行中 (0.023625ms)
+  ✔ transitionTaskStatus allows 进行中 → 待验收 (0.021875ms)
+  ✔ transitionTaskStatus rejects 进行中 → 已完成 (0.0175ms)
+  ✔ transitionTaskStatus rejects 进行中 → 已退回 (0.02ms)
+  ✔ transitionTaskStatus rejects 进行中 → 已取消 (0.02075ms)
+  ✔ transitionTaskStatus rejects 待验收 → 待认领 (0.019542ms)
+  ✔ transitionTaskStatus rejects 待验收 → 进行中 (0.019041ms)
+  ✔ transitionTaskStatus rejects 待验收 → 待验收 (0.01625ms)
+  ✔ transitionTaskStatus allows 待验收 → 已完成 (0.016166ms)
+  ✔ transitionTaskStatus allows 待验收 → 已退回 (0.017417ms)
+  ✔ transitionTaskStatus rejects 待验收 → 已取消 (0.017083ms)
+  ✔ transitionTaskStatus rejects 已完成 → 待认领 (0.01725ms)
+  ✔ transitionTaskStatus rejects 已完成 → 进行中 (0.017ms)
+  ✔ transitionTaskStatus rejects 已完成 → 待验收 (0.017958ms)
+  ✔ transitionTaskStatus rejects 已完成 → 已完成 (0.018375ms)
+  ✔ transitionTaskStatus rejects 已完成 → 已退回 (0.019417ms)
+  ✔ transitionTaskStatus rejects 已完成 → 已取消 (0.01725ms)
+  ✔ transitionTaskStatus allows 已退回 → 待认领 (0.023708ms)
+  ✔ transitionTaskStatus rejects 已退回 → 进行中 (0.03675ms)
+  ✔ transitionTaskStatus rejects 已退回 → 待验收 (0.021167ms)
+  ✔ transitionTaskStatus rejects 已退回 → 已完成 (0.019667ms)
+  ✔ transitionTaskStatus rejects 已退回 → 已退回 (0.025292ms)
+  ✔ transitionTaskStatus allows 已退回 → 已取消 (0.019375ms)
+  ✔ transitionTaskStatus rejects 已取消 → 待认领 (0.017708ms)
+  ✔ transitionTaskStatus rejects 已取消 → 进行中 (0.020375ms)
+  ✔ transitionTaskStatus rejects 已取消 → 待验收 (0.019959ms)
+  ✔ transitionTaskStatus rejects 已取消 → 已完成 (0.016958ms)
+  ✔ transitionTaskStatus rejects 已取消 → 已退回 (0.018ms)
+  ✔ transitionTaskStatus rejects 已取消 → 已取消 (0.023208ms)
+  ✔ transitionTaskStatus rejects an unknown from status (0.030375ms)
+  ✔ transitionTaskStatus rejects an unknown to status (0.025125ms)
+✔ transitionTaskStatus (1.071375ms)
+ℹ tests 233
+ℹ suites 39
+ℹ pass 233
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 511.404875
+$ vitest run
+
+ RUN  v4.1.11 /Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/web
+
+ ❯ src/App.form.test.ts (27 tests | 27 failed) 521ms
+     × 只对 active + full 成员可见，claim_only 与待批准用户都看不到 46ms
+     × 完整填写后提交，请求体精确匹配服务端的 snake_case 契约 23ms
+     × 平台自有字段 id / pr_convention / poster / status / created_at 不出现在请求体里 22ms
+     × 未填写的 base_branch 与 suggested_dir 被省略，而不是发送空字符串 23ms
+     × 四个 string[] 字段按行拆分：逐行去空白并丢弃空行 19ms
+     × 创建请求是 POST /api/v1/tasks，带 Content-Type: application/json 20ms
+     × 每一个 fetch 都带 credentials: include 与 Accept: application/json 18ms
+     × 默认走共享档案：渲染档案下拉，不渲染内联 token 输入框 20ms
+     × 切到单任务临时 token：渲染 token 输入框，不渲染档案下拉 18ms
+     × 档案路径发送 credential: { profile_id }，且不带任何 token 键 19ms
+     × 内联路径发送 credential: { token }，且不带 profile_id 17ms
+     × 档案下拉复用已加载的 profiles，不再发一次 GET /api/v1/credential-profiles 19ms
+     × 发布成功后清空内联 token 输入框 17ms
+     × 标题为空时不发请求；补上标题后才发 19ms
+     × 仓库 full_name 为空时不发请求 16ms
+     × 选择 imported 却没填 issue_url 时不发请求 18ms
+     × 档案模式下没选档案时不发请求 16ms
+     × 内联模式下 token 为空时不发请求 18ms
+     × 422 缺少 推 与 PR：凭证字段旁点名两项能力 16ms
+     × 422 只缺少 PR：文案只点名 PR，说明它不是写死的字符串 18ms
+     × 422 连 读 都缺失：显示 token 无效文案，而不是权限不足文案 16ms
+     × 502 forge 不可达是另一种结局：提交级消息，且不落在凭证字段旁 18ms
+     × 400 所选凭证档案不存在：原样显示服务端的中文消息 16ms
+     × 400 invalid_body 且没有 message：回落到通用中文提示 17ms
+     × 500 vault_unconfigured：沿用凭证档案那套文案 16ms
+     × 网络失败：给出提示，并且不把已填的 token 当成功清掉 19ms
+     × 201 之后提交级消息带上服务端生成的任务 id 17ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 27 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 可见性（DESIGN §11） > 只对 active + full 成员可见，claim_only 与待批准用户都看不到
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/App.form.test.ts:307:54
+    305|   it('只对 active + full 成员可见，claim_only 与待批准用户都看不到', async () => {
+    306|     const full = await mountApp(ME_FULL)
+    307|     expect(node(full.wrapper, 'task-form').exists()).toBe(true)
+       |                                                      ^
+    308|     expect(node(full.wrapper, 'task-submit').exists()).toBe(true)
+    309|     full.wrapper.unmount()
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 请求线格式 > 完整填写后提交，请求体精确匹配服务端的 snake_case 契约
+Error: no input/textarea under [data-testid="task-title"]
+ ❯ fieldElement src/App.form.test.ts:221:33
+    219|     `[data-testid="${testid}"] input, [data-testid="${testid}"] textar…
+    220|   )
+    221|   if (found.length === 0) throw new Error(`no input/textarea under [da…
+       |                                 ^
+    222|   return found[0]
+    223| }
+ ❯ setField src/App.form.test.ts:226:9
+ ❯ fillEverything src/App.form.test.ts:280:9
+ ❯ src/App.form.test.ts:327:11
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 请求线格式 > 平台自有字段 id / pr_convention / poster / status / created_at 不出现在请求体里
+Error: no input/textarea under [data-testid="task-title"]
+ ❯ fieldElement src/App.form.test.ts:221:33
+    219|     `[data-testid="${testid}"] input, [data-testid="${testid}"] textar…
+    220|   )
+    221|   if (found.length === 0) throw new Error(`no input/textarea under [da…
+       |                                 ^
+    222|   return found[0]
+    223| }
+ ❯ setField src/App.form.test.ts:226:9
+ ❯ fillEverything src/App.form.test.ts:280:9
+ ❯ src/App.form.test.ts:355:11
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 请求线格式 > 未填写的 base_branch 与 suggested_dir 被省略，而不是发送空字符串
+Error: no input/textarea under [data-testid="task-title"]
+ ❯ fieldElement src/App.form.test.ts:221:33
+    219|     `[data-testid="${testid}"] input, [data-testid="${testid}"] textar…
+    220|   )
+    221|   if (found.length === 0) throw new Error(`no input/textarea under [da…
+       |                                 ^
+    222|   return found[0]
+    223| }
+ ❯ setField src/App.form.test.ts:226:9
+ ❯ fillRequired src/App.form.test.ts:272:9
+ ❯ src/App.form.test.ts:367:11
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 请求线格式 > 四个 string[] 字段按行拆分：逐行去空白并丢弃空行
+Error: no input/textarea under [data-testid="task-title"]
+ ❯ fieldElement src/App.form.test.ts:221:33
+    219|     `[data-testid="${testid}"] input, [data-testid="${testid}"] textar…
+    220|   )
+    221|   if (found.length === 0) throw new Error(`no input/textarea under [da…
+       |                                 ^
+    222|   return found[0]
+    223| }
+ ❯ setField src/App.form.test.ts:226:9
+ ❯ fillRequired src/App.form.test.ts:272:9
+ ❯ src/App.form.test.ts:387:11
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 请求线格式 > 创建请求是 POST /api/v1/tasks，带 Content-Type: application/json
+Error: no input/textarea under [data-testid="task-title"]
+ ❯ fieldElement src/App.form.test.ts:221:33
+    219|     `[data-testid="${testid}"] input, [data-testid="${testid}"] textar…
+    220|   )
+    221|   if (found.length === 0) throw new Error(`no input/textarea under [da…
+       |                                 ^
+    222|   return found[0]
+    223| }
+ ❯ setField src/App.form.test.ts:226:9
+ ❯ fillRequired src/App.form.test.ts:272:9
+ ❯ src/App.form.test.ts:405:11
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 请求线格式 > 每一个 fetch 都带 credentials: include 与 Accept: application/json
+Error: no input/textarea under [data-testid="task-title"]
+ ❯ fieldElement src/App.form.test.ts:221:33
+    219|     `[data-testid="${testid}"] input, [data-testid="${testid}"] textar…
+    220|   )
+    221|   if (found.length === 0) throw new Error(`no input/textarea under [da…
+       |                                 ^
+    222|   return found[0]
+    223| }
+ ❯ setField src/App.form.test.ts:226:9
+ ❯ fillRequired src/App.form.test.ts:272:9
+ ❯ src/App.form.test.ts:417:11
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 两条凭证路径（{profile_id} XOR {token}） > 默认走共享档案：渲染档案下拉，不渲染内联 token 输入框
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/App.form.test.ts:438:63
+    436|   it('默认走共享档案：渲染档案下拉，不渲染内联 token 输入框', async () => {
+    437|     const { wrapper } = await mountApp()
+    438|     expect(node(wrapper, 'task-credential-profile').exists()).toBe(tru…
+       |                                                               ^
+    439|     expect(node(wrapper, 'task-credential-token').exists()).toBe(false)
+    440|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 两条凭证路径（{profile_id} XOR {token}） > 切到单任务临时 token：渲染 token 输入框，不渲染档案下拉
+Error: no n-select with data-testid="task-credential-mode"
+ ❯ selectOf src/App.form.test.ts:237:28
+    235|     .findAllComponents(NSelect)
+    236|     .find((candidate) => candidate.attributes('data-testid') === testi…
+    237|   if (found == null) throw new Error(`no n-select with data-testid="${…
+       |                            ^
+    238|   return found
+    239| }
+ ❯ setSelect src/App.form.test.ts:242:3
+ ❯ src/App.form.test.ts:444:11
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 两条凭证路径（{profile_id} XOR {token}） > 档案路径发送 credential: { profile_id }，且不带任何 token 键
+Error: no input/textarea under [data-testid="task-title"]
+ ❯ fieldElement src/App.form.test.ts:221:33
+    219|     `[data-testid="${testid}"] input, [data-testid="${testid}"] textar…
+    220|   )
+    221|   if (found.length === 0) throw new Error(`no input/textarea under [da…
+       |                                 ^
+    222|   return found[0]
+    223| }
+ ❯ setField src/App.form.test.ts:226:9
+ ❯ fillRequired src/App.form.test.ts:272:9
+ ❯ src/App.form.test.ts:452:11
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 两条凭证路径（{profile_id} XOR {token}） > 内联路径发送 credential: { token }，且不带 profile_id
+Error: no input/textarea under [data-testid="task-title"]
+ ❯ fieldElement src/App.form.test.ts:221:33
+    219|     `[data-testid="${testid}"] input, [data-testid="${testid}"] textar…
+    220|   )
+    221|   if (found.length === 0) throw new Error(`no input/textarea under [da…
+       |                                 ^
+    222|   return found[0]
+    223| }
+ ❯ setField src/App.form.test.ts:226:9
+ ❯ src/App.form.test.ts:461:11
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 两条凭证路径（{profile_id} XOR {token}） > 档案下拉复用已加载的 profiles，不再发一次 GET /api/v1/credential-profiles
+Error: no n-select with data-testid="task-credential-profile"
+ ❯ selectOf src/App.form.test.ts:237:28
+    235|     .findAllComponents(NSelect)
+    236|     .find((candidate) => candidate.attributes('data-testid') === testi…
+    237|   if (found == null) throw new Error(`no n-select with data-testid="${…
+       |                            ^
+    238|   return found
+    239| }
+ ❯ src/App.form.test.ts:474:21
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 两条凭证路径（{profile_id} XOR {token}） > 发布成功后清空内联 token 输入框
+Error: no input/textarea under [data-testid="task-title"]
+ ❯ fieldElement src/App.form.test.ts:221:33
+    219|     `[data-testid="${testid}"] input, [data-testid="${testid}"] textar…
+    220|   )
+    221|   if (found.length === 0) throw new Error(`no input/textarea under [da…
+       |                                 ^
+    222|   return found[0]
+    223| }
+ ❯ setField src/App.form.test.ts:226:9
+ ❯ src/App.form.test.ts:491:11
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 提交前校验 > 标题为空时不发请求；补上标题后才发
+Error: no input/textarea under [data-testid="task-title"]
+ ❯ fieldElement src/App.form.test.ts:221:33
+    219|     `[data-testid="${testid}"] input, [data-testid="${testid}"] textar…
+    220|   )
+    221|   if (found.length === 0) throw new Error(`no input/textarea under [da…
+       |                                 ^
+    222|   return found[0]
+    223| }
+ ❯ setField src/App.form.test.ts:226:9
+ ❯ fillRequired src/App.form.test.ts:272:9
+ ❯ src/App.form.test.ts:507:11
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 提交前校验 > 仓库 full_name 为空时不发请求
+Error: no input/textarea under [data-testid="task-title"]
+ ❯ fieldElement src/App.form.test.ts:221:33
+    219|     `[data-testid="${testid}"] input, [data-testid="${testid}"] textar…
+    220|   )
+    221|   if (found.length === 0) throw new Error(`no input/textarea under [da…
+       |                                 ^
+    222|   return found[0]
+    223| }
+ ❯ setField src/App.form.test.ts:226:9
+ ❯ fillRequired src/App.form.test.ts:272:9
+ ❯ src/App.form.test.ts:518:11
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[15/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 提交前校验 > 选择 imported 却没填 issue_url 时不发请求
+Error: no input/textarea under [data-testid="task-title"]
+ ❯ fieldElement src/App.form.test.ts:221:33
+    219|     `[data-testid="${testid}"] input, [data-testid="${testid}"] textar…
+    220|   )
+    221|   if (found.length === 0) throw new Error(`no input/textarea under [da…
+       |                                 ^
+    222|   return found[0]
+    223| }
+ ❯ setField src/App.form.test.ts:226:9
+ ❯ fillRequired src/App.form.test.ts:272:9
+ ❯ src/App.form.test.ts:525:11
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[16/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 提交前校验 > 档案模式下没选档案时不发请求
+Error: no input/textarea under [data-testid="task-title"]
+ ❯ fieldElement src/App.form.test.ts:221:33
+    219|     `[data-testid="${testid}"] input, [data-testid="${testid}"] textar…
+    220|   )
+    221|   if (found.length === 0) throw new Error(`no input/textarea under [da…
+       |                                 ^
+    222|   return found[0]
+    223| }
+ ❯ setField src/App.form.test.ts:226:9
+ ❯ src/App.form.test.ts:533:11
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[17/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 提交前校验 > 内联模式下 token 为空时不发请求
+Error: no input/textarea under [data-testid="task-title"]
+ ❯ fieldElement src/App.form.test.ts:221:33
+    219|     `[data-testid="${testid}"] input, [data-testid="${testid}"] textar…
+    220|   )
+    221|   if (found.length === 0) throw new Error(`no input/textarea under [da…
+       |                                 ^
+    222|   return found[0]
+    223| }
+ ❯ setField src/App.form.test.ts:226:9
+ ❯ src/App.form.test.ts:543:11
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[18/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 发布即校验的两种失败（DESIGN §5） > 422 缺少 推 与 PR：凭证字段旁点名两项能力
+Error: no input/textarea under [data-testid="task-title"]
+ ❯ fieldElement src/App.form.test.ts:221:33
+    219|     `[data-testid="${testid}"] input, [data-testid="${testid}"] textar…
+    220|   )
+    221|   if (found.length === 0) throw new Error(`no input/textarea under [da…
+       |                                 ^
+    222|   return found[0]
+    223| }
+ ❯ setField src/App.form.test.ts:226:9
+ ❯ fillRequired src/App.form.test.ts:272:9
+ ❯ submitAgainst src/App.form.test.ts:557:11
+ ❯ src/App.form.test.ts:564:25
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[19/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 发布即校验的两种失败（DESIGN §5） > 422 只缺少 PR：文案只点名 PR，说明它不是写死的字符串
+Error: no input/textarea under [data-testid="task-title"]
+ ❯ fieldElement src/App.form.test.ts:221:33
+    219|     `[data-testid="${testid}"] input, [data-testid="${testid}"] textar…
+    220|   )
+    221|   if (found.length === 0) throw new Error(`no input/textarea under [da…
+       |                                 ^
+    222|   return found[0]
+    223| }
+ ❯ setField src/App.form.test.ts:226:9
+ ❯ fillRequired src/App.form.test.ts:272:9
+ ❯ submitAgainst src/App.form.test.ts:557:11
+ ❯ src/App.form.test.ts:576:25
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[20/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 发布即校验的两种失败（DESIGN §5） > 422 连 读 都缺失：显示 token 无效文案，而不是权限不足文案
+Error: no input/textarea under [data-testid="task-title"]
+ ❯ fieldElement src/App.form.test.ts:221:33
+    219|     `[data-testid="${testid}"] input, [data-testid="${testid}"] textar…
+    220|   )
+    221|   if (found.length === 0) throw new Error(`no input/textarea under [da…
+       |                                 ^
+    222|   return found[0]
+    223| }
+ ❯ setField src/App.form.test.ts:226:9
+ ❯ fillRequired src/App.form.test.ts:272:9
+ ❯ submitAgainst src/App.form.test.ts:557:11
+ ❯ src/App.form.test.ts:587:25
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[21/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 发布即校验的两种失败（DESIGN §5） > 502 forge 不可达是另一种结局：提交级消息，且不落在凭证字段旁
+Error: no input/textarea under [data-testid="task-title"]
+ ❯ fieldElement src/App.form.test.ts:221:33
+    219|     `[data-testid="${testid}"] input, [data-testid="${testid}"] textar…
+    220|   )
+    221|   if (found.length === 0) throw new Error(`no input/textarea under [da…
+       |                                 ^
+    222|   return found[0]
+    223| }
+ ❯ setField src/App.form.test.ts:226:9
+ ❯ fillRequired src/App.form.test.ts:272:9
+ ❯ submitAgainst src/App.form.test.ts:557:11
+ ❯ src/App.form.test.ts:598:25
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[22/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 发布即校验的两种失败（DESIGN §5） > 400 所选凭证档案不存在：原样显示服务端的中文消息
+Error: no input/textarea under [data-testid="task-title"]
+ ❯ fieldElement src/App.form.test.ts:221:33
+    219|     `[data-testid="${testid}"] input, [data-testid="${testid}"] textar…
+    220|   )
+    221|   if (found.length === 0) throw new Error(`no input/textarea under [da…
+       |                                 ^
+    222|   return found[0]
+    223| }
+ ❯ setField src/App.form.test.ts:226:9
+ ❯ fillRequired src/App.form.test.ts:272:9
+ ❯ submitAgainst src/App.form.test.ts:557:11
+ ❯ src/App.form.test.ts:610:25
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[23/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 发布即校验的两种失败（DESIGN §5） > 400 invalid_body 且没有 message：回落到通用中文提示
+Error: no input/textarea under [data-testid="task-title"]
+ ❯ fieldElement src/App.form.test.ts:221:33
+    219|     `[data-testid="${testid}"] input, [data-testid="${testid}"] textar…
+    220|   )
+    221|   if (found.length === 0) throw new Error(`no input/textarea under [da…
+       |                                 ^
+    222|   return found[0]
+    223| }
+ ❯ setField src/App.form.test.ts:226:9
+ ❯ fillRequired src/App.form.test.ts:272:9
+ ❯ submitAgainst src/App.form.test.ts:557:11
+ ❯ src/App.form.test.ts:618:25
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[24/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 发布即校验的两种失败（DESIGN §5） > 500 vault_unconfigured：沿用凭证档案那套文案
+Error: no input/textarea under [data-testid="task-title"]
+ ❯ fieldElement src/App.form.test.ts:221:33
+    219|     `[data-testid="${testid}"] input, [data-testid="${testid}"] textar…
+    220|   )
+    221|   if (found.length === 0) throw new Error(`no input/textarea under [da…
+       |                                 ^
+    222|   return found[0]
+    223| }
+ ❯ setField src/App.form.test.ts:226:9
+ ❯ fillRequired src/App.form.test.ts:272:9
+ ❯ submitAgainst src/App.form.test.ts:557:11
+ ❯ src/App.form.test.ts:623:25
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[25/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 发布即校验的两种失败（DESIGN §5） > 网络失败：给出提示，并且不把已填的 token 当成功清掉
+Error: no input/textarea under [data-testid="task-title"]
+ ❯ fieldElement src/App.form.test.ts:221:33
+    219|     `[data-testid="${testid}"] input, [data-testid="${testid}"] textar…
+    220|   )
+    221|   if (found.length === 0) throw new Error(`no input/textarea under [da…
+       |                                 ^
+    222|   return found[0]
+    223| }
+ ❯ setField src/App.form.test.ts:226:9
+ ❯ src/App.form.test.ts:632:11
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[26/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 发布成功 > 201 之后提交级消息带上服务端生成的任务 id
+Error: no input/textarea under [data-testid="task-title"]
+ ❯ fieldElement src/App.form.test.ts:221:33
+    219|     `[data-testid="${testid}"] input, [data-testid="${testid}"] textar…
+    220|   )
+    221|   if (found.length === 0) throw new Error(`no input/textarea under [da…
+       |                                 ^
+    222|   return found[0]
+    223| }
+ ❯ setField src/App.form.test.ts:226:9
+ ❯ fillRequired src/App.form.test.ts:272:9
+ ❯ src/App.form.test.ts:648:11
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[27/27]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  27 failed (27)
+   Start at  08:21:54
+   Duration  945ms (transform 52ms, setup 0ms, import 300ms, tests 521ms, environment 73ms)
+
+/Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/web:
+[ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL] @kaola/web@0.0.0 test: `vitest run`
+Exit status 1
+[ELIFECYCLE] Test failed. See above for more details.

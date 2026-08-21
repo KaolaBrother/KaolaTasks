@@ -1,0 +1,1214 @@
+▶ issue #7 tasks HTTP surface
+  ▶ authentication and DESIGN §11 permissions
+    ✖ unauthenticated JSON GET/POST/PATCH return 401 unauthorized (33.320375ms)
+    ✖ browser-like GET /api/v1/tasks redirects to /login (2.737542ms)
+    ✖ 待批准 GitHub user may read the board (§11 查看任务板 ✓) but not post (9.081ms)
+    ✖ approved GitHub claim_only user may read the board but not post or patch (8.158417ms)
+    ✖ only the 发布者 may cancel — another active full member gets 403 (3.248958ms)
+  ✖ authentication and DESIGN §11 permissions (56.873458ms)
+  ▶ POST /api/v1/tasks — 凭证档案下拉选择 path
+    ✖ profile path creates a 待认领 task whose credential is { profile_id } (3.190875ms)
+    ✖ profile_id is accepted as a number and as a numeric string (2.750125ms)
+    ✖ an unknown profile_id is refused with 400 invalid_body and a Chinese message (2.046333ms)
+  ✖ POST /api/v1/tasks — 凭证档案下拉选择 path (8.098833ms)
+  ▶ POST /api/v1/tasks — 单任务临时 token path
+    ✖ inline token path creates a 待认领 task whose credential is { inline: true } (2.301167ms)
+    ✖ inline token is stored as ciphertext and recoverable through the vault (4.104ms)
+    ✖ both credential paths return 500 vault_unconfigured without VAULT_MASTER_KEY (2.323666ms)
+  ✖ POST /api/v1/tasks — 单任务临时 token path (8.818625ms)
+  ▶ 发布即校验 — DESIGN §5
+    ✖ a token missing 推 and PR is refused with 422 and names both capabilities (2.066334ms)
+    ✖ a token that can push but cannot open PRs is refused naming only PR (2.095541ms)
+    ✖ a 401 token is refused with the token-invalid message, not the 权限不足 one (1.794541ms)
+    ✖ a token with no access to the repo is refused with the token-invalid message (3.700292ms)
+    ✖ an unreachable forge is a DIFFERENT outcome: 502 with its own Chinese message (2.042917ms)
+    ✖ the profile path is validated too — an under-scoped profile token is refused (1.748667ms)
+  ✖ 发布即校验 — DESIGN §5 (13.5535ms)
+  ▶ 任务卡字段完整符合 §6 schema
+    ✖ a full request body round-trips every DESIGN §6 field (1.796917ms)
+    ✖ pr_convention is derived from the public id, per DESIGN §6 (1.449375ms)
+    ✖ a client-supplied pr_convention or id or status is ignored — the server owns them (1.476042ms)
+    ✖ an imported source round-trips issue_url; a native source carries only type (1.554833ms)
+    ✖ a minimal request body is completed with the documented defaults (1.46325ms)
+    ✖ created_at is ISO-8601 with offset and matches the stored unix seconds (3.620125ms)
+    ✖ POST with no title returns 400 invalid_body (1.73975ms)
+    ✖ POST with an empty title returns 400 invalid_body (1.602ms)
+    ✖ POST with no repo returns 400 invalid_body (1.463792ms)
+    ✖ POST with an unknown forge returns 400 invalid_body (1.364833ms)
+    ✖ POST with no repo.full_name returns 400 invalid_body (1.3915ms)
+    ✖ POST with an unknown priority returns 400 invalid_body (1.308959ms)
+    ✖ POST with an unknown source type returns 400 invalid_body (1.296125ms)
+    ✖ POST with an imported source without issue_url returns 400 invalid_body (1.534792ms)
+    ✖ POST with no credential returns 400 invalid_body (1.499667ms)
+    ✖ POST with an empty credential returns 400 invalid_body (1.527167ms)
+    ✖ POST with both credential forms at once returns 400 invalid_body (4.449791ms)
+    ✖ POST with a bare inline marker and no token returns 400 invalid_body (1.624334ms)
+    ✖ POST with an empty inline token returns 400 invalid_body (1.363459ms)
+  ✖ 任务卡字段完整符合 §6 schema (33.7725ms)
+  ▶ public_id — kt-YYYY-NNNN
+    ✖ public_id has the kt-YYYY-NNNN form and carries the current year (1.509708ms)
+    ✖ public ids are distinct and their sequence increases (1.352333ms)
+    ✖ public_id is UNIQUE in SQLite (3.102459ms)
+  ✖ public_id — kt-YYYY-NNNN (6.032083ms)
+  ▶ token secrecy — DESIGN §7
+    ✖ no create/list/get response carries the inline token in any field (1.561375ms)
+    ✖ no create/list/get response carries the profile token in any field (1.661208ms)
+  ✖ token secrecy — DESIGN §7 (3.275625ms)
+  ▶ GET /api/v1/tasks and GET /api/v1/tasks/:public_id
+    ✖ list returns every task under a tasks key, each a §6 brief (1.509833ms)
+    ✖ get by public_id returns exactly the brief that create returned (1.387208ms)
+    ✖ an unknown public_id returns 404 not_found (1.383125ms)
+    ✖ a numeric-looking id returns 404 not_found — tasks are addressed by public_id only (1.303291ms)
+  ✖ GET /api/v1/tasks and GET /api/v1/tasks/:public_id (5.657ms)
+  ▶ PATCH /api/v1/tasks/:public_id — 取消 / 重新开放
+    ✖ 待认领 → 已取消 by the poster returns the updated brief (1.486083ms)
+    ✖ 已退回 → 待认领 reopens the task (3.307584ms)
+    ✖ 已退回 → 已取消 by the poster (3.146958ms)
+    ✖ an illegal transition 待认领 → 已完成 returns 409 with a Chinese message (1.482375ms)
+    ✖ 待认领 → 进行中 is claim territory, not a poster edit: 409 illegal_transition (1.440834ms)
+    ✖ 已取消 is terminal — 已取消 → 待认领 returns 409 (1.640542ms)
+    ✖ an unknown status value returns 400 invalid_body (1.933125ms)
+    ✖ PATCH on an unknown public_id returns 404 not_found (1.541ms)
+  ✖ PATCH /api/v1/tasks/:public_id — 取消 / 重新开放 (16.117875ms)
+  ▶ audit — 状态迁移 events (DESIGN §10)
+    ✖ cancelling writes one 状态迁移 event naming the task, from, to and actor (3.274916ms)
+    ✖ reopening writes a 状态迁移 event from 已退回 to 待认领 (2.913ms)
+    ✖ a refused transition writes no 状态迁移 event (3.02475ms)
+  ✖ audit — 状态迁移 events (DESIGN §10) (9.291209ms)
+  ▶ tasks table invariants (DESIGN §10: credential_profile_id / inline_token_encrypted 二选一)
+    ✖ the profile path stores credential_profile_id and leaves inline_token_encrypted NULL (6.40075ms)
+    ✖ SQLite refuses a row with BOTH credential columns set (3.088375ms)
+    ✖ SQLite refuses a row with NEITHER credential column set (2.765958ms)
+  ✖ tasks table invariants (DESIGN §10: credential_profile_id / inline_token_encrypted 二选一) (12.333083ms)
+✖ issue #7 tasks HTTP surface (174.159792ms)
+ℹ tests 59
+ℹ suites 12
+ℹ pass 0
+ℹ fail 59
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 418.819667
+
+✖ failing tests:
+
+test at apps/server/src/tasks.test.ts:528:5
+✖ unauthenticated JSON GET/POST/PATCH return 401 unauthorized (33.320375ms)
+  AssertionError [ERR_ASSERTION]: GET list: 404 {"message":"Route GET:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 401
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:532:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 401,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:548:5
+✖ browser-like GET /api/v1/tasks redirects to /login (2.737542ms)
+  AssertionError [ERR_ASSERTION]: GET list as browser: 404 {"message":"Route GET:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 302
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:555:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 302,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:559:5
+✖ 待批准 GitHub user may read the board (§11 查看任务板 ✓) but not post (9.081ms)
+  AssertionError [ERR_ASSERTION]: pending GET list: 404 {"message":"Route GET:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 200
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:566:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:574:5
+✖ approved GitHub claim_only user may read the board but not post or patch (8.158417ms)
+  AssertionError [ERR_ASSERTION]: POST /api/v1/tasks: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at createTaskOk (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:431:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:592:25)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:607:5
+✖ only the 发布者 may cancel — another active full member gets 403 (3.248958ms)
+  AssertionError [ERR_ASSERTION]: POST /api/v1/tasks: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at createTaskOk (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:431:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:614:25)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:627:5
+✖ profile path creates a 待认领 task whose credential is { profile_id } (3.190875ms)
+  AssertionError [ERR_ASSERTION]: POST /api/v1/tasks: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at createTaskOk (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:431:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:634:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:646:5
+✖ profile_id is accepted as a number and as a numeric string (2.750125ms)
+  AssertionError [ERR_ASSERTION]: POST /api/v1/tasks: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at createTaskOk (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:431:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:653:24)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:668:5
+✖ an unknown profile_id is refused with 400 invalid_body and a Chinese message (2.046333ms)
+  AssertionError [ERR_ASSERTION]: POST: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 400
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:675:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 400,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:685:5
+✖ inline token path creates a 待认领 task whose credential is { inline: true } (2.301167ms)
+  AssertionError [ERR_ASSERTION]: POST /api/v1/tasks: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at createTaskOk (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:431:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:691:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:698:5
+✖ inline token is stored as ciphertext and recoverable through the vault (4.104ms)
+  AssertionError [ERR_ASSERTION]: POST /api/v1/tasks: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at createTaskOk (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:431:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:705:25)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:728:5
+✖ both credential paths return 500 vault_unconfigured without VAULT_MASTER_KEY (2.323666ms)
+  AssertionError [ERR_ASSERTION]: inline POST: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 500
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:743:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 500,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:757:5
+✖ a token missing 推 and PR is refused with 422 and names both capabilities (2.066334ms)
+  AssertionError [ERR_ASSERTION]: POST: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 422
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:764:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 422,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:776:5
+✖ a token that can push but cannot open PRs is refused naming only PR (2.095541ms)
+  AssertionError [ERR_ASSERTION]: POST: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 422
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:783:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 422,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:788:5
+✖ a 401 token is refused with the token-invalid message, not the 权限不足 one (1.794541ms)
+  AssertionError [ERR_ASSERTION]: POST: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 422
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:795:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 422,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:803:5
+✖ a token with no access to the repo is refused with the token-invalid message (3.700292ms)
+  AssertionError [ERR_ASSERTION]: POST: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 422
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:810:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 422,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:815:5
+✖ an unreachable forge is a DIFFERENT outcome: 502 with its own Chinese message (2.042917ms)
+  AssertionError [ERR_ASSERTION]: POST: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 502
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:822:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 502,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:834:5
+✖ the profile path is validated too — an under-scoped profile token is refused (1.748667ms)
+  AssertionError [ERR_ASSERTION]: POST: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 422
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:842:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 422,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:850:5
+✖ a full request body round-trips every DESIGN §6 field (1.796917ms)
+  AssertionError [ERR_ASSERTION]: POST /api/v1/tasks: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at createTaskOk (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:431:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:857:25)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:872:5
+✖ pr_convention is derived from the public id, per DESIGN §6 (1.449375ms)
+  AssertionError [ERR_ASSERTION]: POST /api/v1/tasks: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at createTaskOk (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:431:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:878:25)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:886:5
+✖ a client-supplied pr_convention or id or status is ignored — the server owns them (1.476042ms)
+  AssertionError [ERR_ASSERTION]: POST /api/v1/tasks: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at createTaskOk (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:431:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:892:25)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:911:5
+✖ an imported source round-trips issue_url; a native source carries only type (1.554833ms)
+  AssertionError [ERR_ASSERTION]: POST /api/v1/tasks: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at createTaskOk (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:431:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:918:24)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:930:5
+✖ a minimal request body is completed with the documented defaults (1.46325ms)
+  AssertionError [ERR_ASSERTION]: POST /api/v1/tasks: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at createTaskOk (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:431:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:936:25)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:955:5
+✖ created_at is ISO-8601 with offset and matches the stored unix seconds (3.620125ms)
+  AssertionError [ERR_ASSERTION]: POST /api/v1/tasks: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at createTaskOk (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:431:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:962:25)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:991:7
+✖ POST with no title returns 400 invalid_body (1.73975ms)
+  AssertionError [ERR_ASSERTION]: POST with no title: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 400
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:998:16)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 400,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:991:7
+✖ POST with an empty title returns 400 invalid_body (1.602ms)
+  AssertionError [ERR_ASSERTION]: POST with an empty title: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 400
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:998:16)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 400,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:991:7
+✖ POST with no repo returns 400 invalid_body (1.463792ms)
+  AssertionError [ERR_ASSERTION]: POST with no repo: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 400
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:998:16)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 400,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:991:7
+✖ POST with an unknown forge returns 400 invalid_body (1.364833ms)
+  AssertionError [ERR_ASSERTION]: POST with an unknown forge: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 400
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:998:16)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 400,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:991:7
+✖ POST with no repo.full_name returns 400 invalid_body (1.3915ms)
+  AssertionError [ERR_ASSERTION]: POST with no repo.full_name: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 400
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:998:16)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 400,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:991:7
+✖ POST with an unknown priority returns 400 invalid_body (1.308959ms)
+  AssertionError [ERR_ASSERTION]: POST with an unknown priority: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 400
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:998:16)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 400,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:991:7
+✖ POST with an unknown source type returns 400 invalid_body (1.296125ms)
+  AssertionError [ERR_ASSERTION]: POST with an unknown source type: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 400
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:998:16)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 400,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:991:7
+✖ POST with an imported source without issue_url returns 400 invalid_body (1.534792ms)
+  AssertionError [ERR_ASSERTION]: POST with an imported source without issue_url: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 400
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:998:16)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 400,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:991:7
+✖ POST with no credential returns 400 invalid_body (1.499667ms)
+  AssertionError [ERR_ASSERTION]: POST with no credential: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 400
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:998:16)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 400,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:991:7
+✖ POST with an empty credential returns 400 invalid_body (1.527167ms)
+  AssertionError [ERR_ASSERTION]: POST with an empty credential: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 400
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:998:16)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 400,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:991:7
+✖ POST with both credential forms at once returns 400 invalid_body (4.449791ms)
+  AssertionError [ERR_ASSERTION]: POST with both credential forms at once: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 400
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:998:16)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 400,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:991:7
+✖ POST with a bare inline marker and no token returns 400 invalid_body (1.624334ms)
+  AssertionError [ERR_ASSERTION]: POST with a bare inline marker and no token: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 400
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:998:16)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 400,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:991:7
+✖ POST with an empty inline token returns 400 invalid_body (1.363459ms)
+  AssertionError [ERR_ASSERTION]: POST with an empty inline token: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 400
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:998:16)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 400,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:1005:5
+✖ public_id has the kt-YYYY-NNNN form and carries the current year (1.509708ms)
+  AssertionError [ERR_ASSERTION]: POST /api/v1/tasks: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at createTaskOk (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:431:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:1011:25)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:1020:5
+✖ public ids are distinct and their sequence increases (1.352333ms)
+  AssertionError [ERR_ASSERTION]: POST /api/v1/tasks: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at createTaskOk (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:431:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:1026:21)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:1039:5
+✖ public_id is UNIQUE in SQLite (3.102459ms)
+  AssertionError [ERR_ASSERTION]: POST /api/v1/tasks: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at createTaskOk (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:431:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:1046:21)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:1062:5
+✖ no create/list/get response carries the inline token in any field (1.561375ms)
+  AssertionError [ERR_ASSERTION]: POST /api/v1/tasks: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at createTaskOk (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:431:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:1068:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:1080:5
+✖ no create/list/get response carries the profile token in any field (1.661208ms)
+  AssertionError [ERR_ASSERTION]: POST /api/v1/tasks: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at createTaskOk (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:431:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:1087:30)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:1103:5
+✖ list returns every task under a tasks key, each a §6 brief (1.509833ms)
+  AssertionError [ERR_ASSERTION]: POST /api/v1/tasks: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at createTaskOk (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:431:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:1109:21)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:1123:5
+✖ get by public_id returns exactly the brief that create returned (1.387208ms)
+  AssertionError [ERR_ASSERTION]: POST /api/v1/tasks: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at createTaskOk (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:431:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:1129:25)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:1136:5
+✖ an unknown public_id returns 404 not_found (1.383125ms)
+  AssertionError [ERR_ASSERTION]: POST /api/v1/tasks: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at createTaskOk (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:431:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:1141:7)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:1148:5
+✖ a numeric-looking id returns 404 not_found — tasks are addressed by public_id only (1.303291ms)
+  AssertionError [ERR_ASSERTION]: POST /api/v1/tasks: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at createTaskOk (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:431:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:1153:7)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:1164:5
+✖ 待认领 → 已取消 by the poster returns the updated brief (1.486083ms)
+  AssertionError [ERR_ASSERTION]: POST /api/v1/tasks: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at createTaskOk (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:431:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:1170:25)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:1183:5
+✖ 已退回 → 待认领 reopens the task (3.307584ms)
+  AssertionError [ERR_ASSERTION]: POST /api/v1/tasks: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at createTaskOk (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:431:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:1190:25)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:1199:5
+✖ 已退回 → 已取消 by the poster (3.146958ms)
+  AssertionError [ERR_ASSERTION]: POST /api/v1/tasks: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at createTaskOk (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:431:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:1206:25)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:1215:5
+✖ an illegal transition 待认领 → 已完成 returns 409 with a Chinese message (1.482375ms)
+  AssertionError [ERR_ASSERTION]: POST /api/v1/tasks: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at createTaskOk (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:431:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:1221:25)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:1233:5
+✖ 待认领 → 进行中 is claim territory, not a poster edit: 409 illegal_transition (1.440834ms)
+  AssertionError [ERR_ASSERTION]: POST /api/v1/tasks: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at createTaskOk (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:431:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:1239:25)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:1247:5
+✖ 已取消 is terminal — 已取消 → 待认领 returns 409 (1.640542ms)
+  AssertionError [ERR_ASSERTION]: POST /api/v1/tasks: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at createTaskOk (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:431:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:1253:25)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:1263:5
+✖ an unknown status value returns 400 invalid_body (1.933125ms)
+  AssertionError [ERR_ASSERTION]: POST /api/v1/tasks: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at createTaskOk (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:431:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:1269:25)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:1282:5
+✖ PATCH on an unknown public_id returns 404 not_found (1.541ms)
+  AssertionError [ERR_ASSERTION]: POST /api/v1/tasks: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at createTaskOk (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:431:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:1287:7)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:1296:5
+✖ cancelling writes one 状态迁移 event naming the task, from, to and actor (3.274916ms)
+  AssertionError [ERR_ASSERTION]: POST /api/v1/tasks: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at createTaskOk (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:431:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:1303:25)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:1322:5
+✖ reopening writes a 状态迁移 event from 已退回 to 待认领 (2.913ms)
+  AssertionError [ERR_ASSERTION]: POST /api/v1/tasks: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at createTaskOk (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:431:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:1329:25)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:1348:5
+✖ a refused transition writes no 状态迁移 event (3.02475ms)
+  AssertionError [ERR_ASSERTION]: POST /api/v1/tasks: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at createTaskOk (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:431:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:1355:25)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:1365:5
+✖ the profile path stores credential_profile_id and leaves inline_token_encrypted NULL (6.40075ms)
+  AssertionError [ERR_ASSERTION]: POST /api/v1/tasks: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at createTaskOk (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:431:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:1373:25)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:1386:5
+✖ SQLite refuses a row with BOTH credential columns set (3.088375ms)
+  AssertionError [ERR_ASSERTION]: POST /api/v1/tasks: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at createTaskOk (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:431:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:1393:25)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:1406:5
+✖ SQLite refuses a row with NEITHER credential column set (2.765958ms)
+  AssertionError [ERR_ASSERTION]: POST /api/v1/tasks: 404 {"message":"Route POST:/api/v1/tasks not found","error":"Not Found","statusCode":404}
+  
+  404 !== 201
+  
+      at createTaskOk (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:431:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:1413:25)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

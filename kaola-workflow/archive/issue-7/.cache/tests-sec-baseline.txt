@@ -1,0 +1,299 @@
+▶ issue #7 tasks HTTP surface
+  ▶ authentication and DESIGN §11 permissions
+    ✔ unauthenticated JSON GET/POST/PATCH return 401 unauthorized (33.675083ms)
+    ✔ browser-like GET /api/v1/tasks redirects to /login (2.695167ms)
+    ✔ 待批准 GitHub user may read the board (§11 查看任务板 ✓) but not post (10.08875ms)
+    ✔ approved GitHub claim_only user may read the board but not post or patch (9.951916ms)
+    ✔ only the 发布者 may cancel — another active full member gets 403 (4.350542ms)
+  ✔ authentication and DESIGN §11 permissions (61.080916ms)
+  ▶ POST /api/v1/tasks — 凭证档案下拉选择 path
+    ✔ profile path creates a 待认领 task whose credential is { profile_id } (3.624583ms)
+    ✔ profile_id is accepted as a number and as a numeric string (3.121709ms)
+    ✔ an unknown profile_id is refused with 400 invalid_body and a Chinese message (2.257459ms)
+  ✔ POST /api/v1/tasks — 凭证档案下拉选择 path (9.087708ms)
+  ▶ POST /api/v1/tasks — 单任务临时 token path
+    ✔ inline token path creates a 待认领 task whose credential is { inline: true } (3.096584ms)
+    ✔ inline token is stored as ciphertext and recoverable through the vault (7.555459ms)
+    ✔ both credential paths return 500 vault_unconfigured without VAULT_MASTER_KEY (2.857667ms)
+  ✔ POST /api/v1/tasks — 单任务临时 token path (13.583084ms)
+  ▶ 发布即校验 — DESIGN §5
+    ✔ a token missing 推 and PR is refused with 422 and names both capabilities (2.344709ms)
+    ✔ a token that can push but cannot open PRs is refused naming only PR (1.792333ms)
+    ✔ a 401 token is refused with the token-invalid message, not the 权限不足 one (1.666667ms)
+    ✔ a token with no access to the repo is refused with the token-invalid message (1.634292ms)
+    ✔ an unreachable forge is a DIFFERENT outcome: 502 with its own Chinese message (1.776125ms)
+    ✔ the profile path is validated too — an under-scoped profile token is refused (1.925125ms)
+  ✔ 发布即校验 — DESIGN §5 (11.223417ms)
+  ▶ 任务卡字段完整符合 §6 schema
+    ✔ a full request body round-trips every DESIGN §6 field (2.360792ms)
+    ✔ pr_convention is derived from the public id, per DESIGN §6 (2.065042ms)
+    ✔ a client-supplied pr_convention or id or status is ignored — the server owns them (1.820375ms)
+    ✔ an imported source round-trips issue_url; a native source carries only type (2.255042ms)
+    ✔ a minimal request body is completed with the documented defaults (1.876541ms)
+    ✔ created_at is ISO-8601 with offset and matches the stored unix seconds (4.700125ms)
+    ✔ POST with no title returns 400 invalid_body (1.952417ms)
+    ✔ POST with an empty title returns 400 invalid_body (4.71225ms)
+    ✔ POST with no repo returns 400 invalid_body (2.163875ms)
+    ✔ POST with an unknown forge returns 400 invalid_body (2.217916ms)
+    ✔ POST with no repo.full_name returns 400 invalid_body (4.497709ms)
+    ✔ POST with an unknown priority returns 400 invalid_body (1.928166ms)
+    ✔ POST with an unknown source type returns 400 invalid_body (1.551541ms)
+    ✔ POST with an imported source without issue_url returns 400 invalid_body (1.475542ms)
+    ✔ POST with no credential returns 400 invalid_body (1.365083ms)
+    ✔ POST with an empty credential returns 400 invalid_body (1.339375ms)
+    ✔ POST with both credential forms at once returns 400 invalid_body (1.373959ms)
+    ✔ POST with a bare inline marker and no token returns 400 invalid_body (1.3625ms)
+    ✔ POST with an empty inline token returns 400 invalid_body (1.312959ms)
+  ✔ 任务卡字段完整符合 §6 schema (42.586708ms)
+  ▶ public_id — kt-YYYY-NNNN
+    ✔ public_id has the kt-YYYY-NNNN form and carries the current year (1.8935ms)
+    ✔ public ids are distinct and their sequence increases (2.430042ms)
+    ✔ public_id is UNIQUE in SQLite (4.958625ms)
+  ✔ public_id — kt-YYYY-NNNN (9.331084ms)
+  ▶ token secrecy — DESIGN §7
+    ✔ no create/list/get response carries the inline token in any field (2.338875ms)
+    ✔ no create/list/get response carries the profile token in any field (2.404958ms)
+  ✔ token secrecy — DESIGN §7 (4.781ms)
+  ▶ GET /api/v1/tasks and GET /api/v1/tasks/:public_id
+    ✔ list returns every task under a tasks key, each a §6 brief (2.422583ms)
+    ✔ get by public_id returns exactly the brief that create returned (1.842167ms)
+    ✔ an unknown public_id returns 404 not_found (1.773791ms)
+    ✔ a numeric-looking id returns 404 not_found — tasks are addressed by public_id only (2.345667ms)
+  ✔ GET /api/v1/tasks and GET /api/v1/tasks/:public_id (8.439958ms)
+  ▶ PATCH /api/v1/tasks/:public_id — 取消 / 重新开放
+    ✔ 待认领 → 已取消 by the poster returns the updated brief (2.505458ms)
+    ✔ 已退回 → 待认领 reopens the task (5.319834ms)
+    ✔ 已退回 → 已取消 by the poster (5.416042ms)
+    ✔ an illegal transition 待认领 → 已完成 returns 409 with a Chinese message (2.472708ms)
+    ✔ 待认领 → 进行中 is claim territory, not a poster edit: 409 illegal_transition (4.008667ms)
+    ✔ 已取消 is terminal — 已取消 → 待认领 returns 409 (2.36575ms)
+    ✔ an unknown status value returns 400 invalid_body (2.706084ms)
+    ✔ PATCH on an unknown public_id returns 404 not_found (1.80025ms)
+  ✔ PATCH /api/v1/tasks/:public_id — 取消 / 重新开放 (26.699333ms)
+  ▶ audit — 状态迁移 events (DESIGN §10)
+    ✔ cancelling writes one 状态迁移 event naming the task, from, to and actor (5.487208ms)
+    ✔ reopening writes a 状态迁移 event from 已退回 to 待认领 (4.812375ms)
+    ✔ a refused transition writes no 状态迁移 event (4.307666ms)
+  ✔ audit — 状态迁移 events (DESIGN §10) (14.670417ms)
+  ▶ tasks table invariants (DESIGN §10: credential_profile_id / inline_token_encrypted 二选一)
+    ✔ the profile path stores credential_profile_id and leaves inline_token_encrypted NULL (6.516459ms)
+    ✔ SQLite refuses a row with BOTH credential columns set (4.82175ms)
+    ✔ SQLite refuses a row with NEITHER credential column set (4.059083ms)
+  ✔ tasks table invariants (DESIGN §10: credential_profile_id / inline_token_encrypted 二选一) (15.4475ms)
+  ▶ POST /api/v1/tasks — security-review repair (profile binding / base_url / audit)
+    ▶ F1 — profile-to-repo binding (exact forge + base_url + full_name)
+      ✖ gitlab profile + gitea request is 400 before decrypt and never sends the plaintext token (4.844667ms)
+      ✖ matching forge and full_name with an attacker base_url is 400 before decrypt (5.4565ms)
+      ✖ matching forge and base_url with a different full_name is 400 before decrypt (4.413ms)
+    ✖ F1 — profile-to-repo binding (exact forge + base_url + full_name) (14.825333ms)
+    ▶ F2 — repo.base_url must be http(s) with a non-empty host
+      ✖ POST with repo.base_url a file: URL returns 400 invalid_body before any forge fetch (2.180833ms)
+      ✖ POST with repo.base_url a javascript: URL returns 400 invalid_body before any forge fetch (1.894333ms)
+      ✖ POST with repo.base_url a missing scheme returns 400 invalid_body before any forge fetch (2.020709ms)
+      ✖ POST with repo.base_url an empty host returns 400 invalid_body before any forge fetch (1.80025ms)
+    ✖ F2 — repo.base_url must be http(s) with a non-empty host (7.992917ms)
+    ▶ F3 — decrypting a stored profile for 发布即校验 writes token 揭示
+      ✖ a matching profile 201 writes token 揭示 with pinned details; an inline token does not (8.068083ms)
+      ✖ a profile-path 422 still writes token 揭示 (plaintext already left the process) (4.364292ms)
+      ✖ a profile-path 502 still writes token 揭示 (plaintext already left the process) (3.969792ms)
+    ✖ F3 — decrypting a stored profile for 发布即校验 writes token 揭示 (16.481708ms)
+  ✖ POST /api/v1/tasks — security-review repair (profile binding / base_url / audit) (39.371ms)
+✖ issue #7 tasks HTTP surface (256.60225ms)
+ℹ tests 69
+ℹ suites 16
+ℹ pass 59
+ℹ fail 10
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 470.195708
+
+✖ failing tests:
+
+test at apps/server/src/tasks.test.ts:1486:7
+✖ gitlab profile + gitea request is 400 before decrypt and never sends the plaintext token (4.844667ms)
+  AssertionError [ERR_ASSERTION]: POST: 201 {"id":"kt-2026-0001","title":"harvest","description_md":"……（Markdown 详述）","source":{"type":"native"},"repo":{"forge":"gitea","base_url":"http://attacker.example","full_name":"anything/at-all","base_branch":"main","suggested_dir":"at-all"},"acceptance_criteria":["GET /api/orders/export 支持 page/page_size 参数","新增单元测试覆盖分页边界"],"test_command":"pnpm test","constraints":{"allowed_paths":["src/api/**","tests/**"],"forbidden_paths":["migrations/**"]},"pr_convention":{"branch_prefix":"kaola/kt-2026-0001-","title_prefix":"[kt-2026-0001] "},"credential":{"profile_id":"1"},"priority":"P1","tags":["backend","api"],"poster":"gt-f1-forge-mismatch","status":"待认领","created_at":"2026-08-21T02:34:13.000Z"}
+  
+  201 !== 400
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:1514:16)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 201,
+    expected: 400,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:1533:7
+✖ matching forge and full_name with an attacker base_url is 400 before decrypt (5.4565ms)
+  AssertionError [ERR_ASSERTION]: POST: 201 {"id":"kt-2026-0001","title":"为订单导出接口增加分页","description_md":"……（Markdown 详述）","source":{"type":"native"},"repo":{"forge":"gitea","base_url":"http://attacker.example","full_name":"team/orders","base_branch":"main","suggested_dir":"orders"},"acceptance_criteria":["GET /api/orders/export 支持 page/page_size 参数","新增单元测试覆盖分页边界"],"test_command":"pnpm test","constraints":{"allowed_paths":["src/api/**","tests/**"],"forbidden_paths":["migrations/**"]},"pr_convention":{"branch_prefix":"kaola/kt-2026-0001-","title_prefix":"[kt-2026-0001] "},"credential":{"profile_id":"1"},"priority":"P1","tags":["backend","api"],"poster":"gt-f1-base-url-mismatch","status":"待认领","created_at":"2026-08-21T02:34:13.000Z"}
+  
+  201 !== 400
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:1555:16)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 201,
+    expected: 400,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:1569:7
+✖ matching forge and base_url with a different full_name is 400 before decrypt (4.413ms)
+  AssertionError [ERR_ASSERTION]: POST: 201 {"id":"kt-2026-0001","title":"为订单导出接口增加分页","description_md":"……（Markdown 详述）","source":{"type":"native"},"repo":{"forge":"gitea","base_url":"https://gitea.forge.example.test","full_name":"anything/at-all","base_branch":"main","suggested_dir":"at-all"},"acceptance_criteria":["GET /api/orders/export 支持 page/page_size 参数","新增单元测试覆盖分页边界"],"test_command":"pnpm test","constraints":{"allowed_paths":["src/api/**","tests/**"],"forbidden_paths":["migrations/**"]},"pr_convention":{"branch_prefix":"kaola/kt-2026-0001-","title_prefix":"[kt-2026-0001] "},"credential":{"profile_id":"1"},"priority":"P1","tags":["backend","api"],"poster":"gt-f1-full-name-mismatch","status":"待认领","created_at":"2026-08-21T02:34:13.000Z"}
+  
+  201 !== 400
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:1591:16)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 201,
+    expected: 400,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:1613:9
+✖ POST with repo.base_url a file: URL returns 400 invalid_body before any forge fetch (2.180833ms)
+  AssertionError [ERR_ASSERTION]: POST with a file: URL (file://example.com/tmp): 201 {"id":"kt-2026-0001","title":"为订单导出接口增加分页","description_md":"……（Markdown 详述）","source":{"type":"native"},"repo":{"forge":"gitea","base_url":"file://example.com/tmp","full_name":"team/orders","base_branch":"main","suggested_dir":"orders"},"acceptance_criteria":["GET /api/orders/export 支持 page/page_size 参数","新增单元测试覆盖分页边界"],"test_command":"pnpm test","constraints":{"allowed_paths":["src/api/**","tests/**"],"forbidden_paths":["migrations/**"]},"pr_convention":{"branch_prefix":"kaola/kt-2026-0001-","title_prefix":"[kt-2026-0001] "},"credential":{"inline":true},"priority":"P1","tags":["backend","api"],"poster":"gt-f2-base-url","status":"待认领","created_at":"2026-08-21T02:34:13.000Z"}
+  
+  201 !== 400
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:1629:18)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 201,
+    expected: 400,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:1613:9
+✖ POST with repo.base_url a javascript: URL returns 400 invalid_body before any forge fetch (1.894333ms)
+  AssertionError [ERR_ASSERTION]: POST with a javascript: URL (javascript:alert(1)): 201 {"id":"kt-2026-0001","title":"为订单导出接口增加分页","description_md":"……（Markdown 详述）","source":{"type":"native"},"repo":{"forge":"gitea","base_url":"javascript:alert(1)","full_name":"team/orders","base_branch":"main","suggested_dir":"orders"},"acceptance_criteria":["GET /api/orders/export 支持 page/page_size 参数","新增单元测试覆盖分页边界"],"test_command":"pnpm test","constraints":{"allowed_paths":["src/api/**","tests/**"],"forbidden_paths":["migrations/**"]},"pr_convention":{"branch_prefix":"kaola/kt-2026-0001-","title_prefix":"[kt-2026-0001] "},"credential":{"inline":true},"priority":"P1","tags":["backend","api"],"poster":"gt-f2-base-url","status":"待认领","created_at":"2026-08-21T02:34:13.000Z"}
+  
+  201 !== 400
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:1629:18)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 201,
+    expected: 400,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:1613:9
+✖ POST with repo.base_url a missing scheme returns 400 invalid_body before any forge fetch (2.020709ms)
+  AssertionError [ERR_ASSERTION]: POST with a missing scheme (gitea.example): 201 {"id":"kt-2026-0001","title":"为订单导出接口增加分页","description_md":"……（Markdown 详述）","source":{"type":"native"},"repo":{"forge":"gitea","base_url":"gitea.example","full_name":"team/orders","base_branch":"main","suggested_dir":"orders"},"acceptance_criteria":["GET /api/orders/export 支持 page/page_size 参数","新增单元测试覆盖分页边界"],"test_command":"pnpm test","constraints":{"allowed_paths":["src/api/**","tests/**"],"forbidden_paths":["migrations/**"]},"pr_convention":{"branch_prefix":"kaola/kt-2026-0001-","title_prefix":"[kt-2026-0001] "},"credential":{"inline":true},"priority":"P1","tags":["backend","api"],"poster":"gt-f2-base-url","status":"待认领","created_at":"2026-08-21T02:34:13.000Z"}
+  
+  201 !== 400
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:1629:18)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 201,
+    expected: 400,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:1613:9
+✖ POST with repo.base_url an empty host returns 400 invalid_body before any forge fetch (1.80025ms)
+  AssertionError [ERR_ASSERTION]: POST with an empty host (https:///): 201 {"id":"kt-2026-0001","title":"为订单导出接口增加分页","description_md":"……（Markdown 详述）","source":{"type":"native"},"repo":{"forge":"gitea","base_url":"https:///","full_name":"team/orders","base_branch":"main","suggested_dir":"orders"},"acceptance_criteria":["GET /api/orders/export 支持 page/page_size 参数","新增单元测试覆盖分页边界"],"test_command":"pnpm test","constraints":{"allowed_paths":["src/api/**","tests/**"],"forbidden_paths":["migrations/**"]},"pr_convention":{"branch_prefix":"kaola/kt-2026-0001-","title_prefix":"[kt-2026-0001] "},"credential":{"inline":true},"priority":"P1","tags":["backend","api"],"poster":"gt-f2-base-url","status":"待认领","created_at":"2026-08-21T02:34:13.000Z"}
+  
+  201 !== 400
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:1629:18)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 201,
+    expected: 400,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:1653:7
+✖ a matching profile 201 writes token 揭示 with pinned details; an inline token does not (8.068083ms)
+  AssertionError [ERR_ASSERTION]: expected one token 揭示 after profile publish, got [{"type":"变更","actor_user_id":1,"created_at":1787279653,"details":"{\"action\":\"create\",\"profile_id\":1}"}]
+  
+  0 !== 1
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:1671:16)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:1710:7
+✖ a profile-path 422 still writes token 揭示 (plaintext already left the process) (4.364292ms)
+  AssertionError [ERR_ASSERTION]: expected one token 揭示 after 422, got [{"type":"变更","actor_user_id":1,"created_at":1787279653,"details":"{\"action\":\"create\",\"profile_id\":1}"}]
+  
+  0 !== 1
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:1729:16)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/tasks.test.ts:1751:7
+✖ a profile-path 502 still writes token 揭示 (plaintext already left the process) (3.969792ms)
+  AssertionError [ERR_ASSERTION]: expected one token 揭示 after 502, got [{"type":"变更","actor_user_id":1,"created_at":1787279653,"details":"{\"action\":\"create\",\"profile_id\":1}"}]
+  
+  0 !== 1
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-7/apps/server/src/tasks.test.ts:1770:16)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
