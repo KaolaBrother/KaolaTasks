@@ -1,0 +1,300 @@
+▶ issue #17 single-port 31415 hosting
+  ✖ omitted hosting options keep GET / as 考拉任务服务占位 with text/plain; webDist serves index.html at / (45.812459ms)
+  ✖ webDist SPA-fallbacks unmatched GET, serves assets, and does not swallow /api or /login (3.159709ms)
+  ✖ when webDist and viteDevTarget are both set, webDist wins (2.677375ms)
+  ✖ index.ts PORT default is 31415 (source pin; does not import index.ts) (0.477167ms)
+  ✖ auth.ts PUBLIC_URL default is http://localhost:31415 (source pin) (0.194708ms)
+  ✖ vite.config.ts proxies /api and /login to http://127.0.0.1:31415 (0.117125ms)
+  ✖ docker-compose maps 31415:31415 and sets PORT 31415 (0.08475ms)
+  ✖ Dockerfile EXPOSE 31415, ENV PORT=31415, and image build includes web dist (0.119666ms)
+  ✖ root package.json has a non-empty dev script (0.118167ms)
+✖ issue #17 single-port 31415 hosting (53.158667ms)
+ℹ tests 9
+ℹ suites 1
+ℹ pass 0
+ℹ fail 9
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 285.32225
+
+✖ failing tests:
+
+test at apps/server/src/hosting.test.ts:76:3
+✖ omitted hosting options keep GET / as 考拉任务服务占位 with text/plain; webDist serves index.html at / (45.812459ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + '考拉任务服务占位'
+  - '<!doctype html>\n' +
+  -   '<html>\n' +
+  -   '  <head><title>kaola-hosting-spa-marker</title></head>\n' +
+  -   '  <body><div id="app">hosted-spa-from-webDist</div></body>\n' +
+  -   '</html>\n'
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-8-17/apps/server/src/hosting.test.ts:96:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '考拉任务服务占位',
+    expected: '<!doctype html>\n<html>\n  <head><title>kaola-hosting-spa-marker</title></head>\n  <body><div id="app">hosted-spa-from-webDist</div></body>\n</html>\n',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/hosting.test.ts:102:3
+✖ webDist SPA-fallbacks unmatched GET, serves assets, and does not swallow /api or /login (3.159709ms)
+  AssertionError [ERR_ASSERTION]: GET /assets/app.js: 404 {"message":"Route GET:/assets/app.js not found","error":"Not Found","statusCode":404}
+  
+  404 !== 200
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-8-17/apps/server/src/hosting.test.ts:107:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/hosting.test.ts:138:3
+✖ when webDist and viteDevTarget are both set, webDist wins (2.677375ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + '考拉任务服务占位'
+  - '<!doctype html>\n' +
+  -   '<html>\n' +
+  -   '  <head><title>kaola-hosting-spa-marker</title></head>\n' +
+  -   '  <body><div id="app">hosted-spa-from-webDist</div></body>\n' +
+  -   '</html>\n'
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-8-17/apps/server/src/hosting.test.ts:143:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '考拉任务服务占位',
+    expected: '<!doctype html>\n<html>\n  <head><title>kaola-hosting-spa-marker</title></head>\n  <body><div id="app">hosted-spa-from-webDist</div></body>\n</html>\n',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/hosting.test.ts:148:3
+✖ index.ts PORT default is 31415 (source pin; does not import index.ts) (0.477167ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    [
+  +   "process.env.PORT ?? '3000'"
+  -   "process.env.PORT ?? '31415'"
+    ]
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-8-17/apps/server/src/hosting.test.ts:151:12)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [ "process.env.PORT ?? '3000'" ],
+    expected: [ "process.env.PORT ?? '31415'" ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/hosting.test.ts:154:3
+✖ auth.ts PUBLIC_URL default is http://localhost:31415 (source pin) (0.194708ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    [
+  +   "process.env.PUBLIC_URL ?? 'http://localhost:3000'"
+  -   "process.env.PUBLIC_URL ?? 'http://localhost:31415'"
+    ]
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-8-17/apps/server/src/hosting.test.ts:157:12)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [ "process.env.PUBLIC_URL ?? 'http://localhost:3000'" ],
+    expected: [ "process.env.PUBLIC_URL ?? 'http://localhost:31415'" ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/hosting.test.ts:160:3
+✖ vite.config.ts proxies /api and /login to http://127.0.0.1:31415 (0.117125ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /['"]\/api['"]:\s*['"]http:\/\/127\.0\.0\.1:31415['"]/. Input:
+  
+  "import vue from '@vitejs/plugin-vue'\n" +
+    "import { defineConfig } from 'vitest/config'\n" +
+    '\n' +
+    'export default defineConfig({\n' +
+    '  plugins: [vue()],\n' +
+    '  server: {\n' +
+    '    proxy: {\n' +
+    "      '/api': 'http://127.0.0.1:3000',\n" +
+    "      '/login': 'http://127.0.0.1:3000',\n" +
+    '    },\n' +
+    '  },\n' +
+    '  test: {\n' +
+    "    environment: 'happy-dom',\n" +
+    "    include: ['src/**/*.test.ts'],\n" +
+    '  },\n' +
+    '})\n'
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-8-17/apps/server/src/hosting.test.ts:162:12)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: "import vue from '@vitejs/plugin-vue'\nimport { defineConfig } from 'vitest/config'\n\nexport default defineConfig({\n  plugins: [vue()],\n  server: {\n    proxy: {\n      '/api': 'http://127.0.0.1:3000',\n      '/login': 'http://127.0.0.1:3000',\n    },\n  },\n  test: {\n    environment: 'happy-dom',\n    include: ['src/**/*.test.ts'],\n  },\n})\n",
+    expected: /['"]\/api['"]:\s*['"]http:\/\/127\.0\.0\.1:31415['"]/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at apps/server/src/hosting.test.ts:167:3
+✖ docker-compose maps 31415:31415 and sets PORT 31415 (0.08475ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /['"]31415:31415['"]/. Input:
+  
+  'services:\n' +
+    '  server:\n' +
+    '    build:\n' +
+    '      context: .\n' +
+    '      dockerfile: apps/server/Dockerfile\n' +
+    '    ports:\n' +
+    '      - "3000:3000"\n' +
+    '    environment:\n' +
+    '      PORT: "3000"\n' +
+    '      HOST: "0.0.0.0"\n' +
+    '    volumes:\n' +
+    '      - kaola-data:/data\n' +
+    '\n' +
+    'volumes:\n' +
+    '  kaola-data:\n'
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-8-17/apps/server/src/hosting.test.ts:169:12)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'services:\n  server:\n    build:\n      context: .\n      dockerfile: apps/server/Dockerfile\n    ports:\n      - "3000:3000"\n    environment:\n      PORT: "3000"\n      HOST: "0.0.0.0"\n    volumes:\n      - kaola-data:/data\n\nvolumes:\n  kaola-data:\n',
+    expected: /['"]31415:31415['"]/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at apps/server/src/hosting.test.ts:175:3
+✖ Dockerfile EXPOSE 31415, ENV PORT=31415, and image build includes web dist (0.119666ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /EXPOSE\s+31415/. Input:
+  
+  'FROM node:22-bookworm-slim\n' +
+    '\n' +
+    'RUN apt-get update \\\n' +
+    '  && apt-get install -y --no-install-recommends python3 make g++ \\\n' +
+    '  && rm -rf /var/lib/apt/lists/*\n' +
+    '\n' +
+    'RUN corepack enable\n' +
+    '\n' +
+    'WORKDIR /app\n' +
+    '\n' +
+    'COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./\n' +
+    'COPY apps/server/package.json apps/server/package.json\n' +
+    'COPY apps/web/package.json apps/web/package.json\n' +
+    'COPY packages/shared/package.json packages/shared/package.json\n' +
+    'COPY packages/forge-adapters/package.json packages/forge-adapters/package.json\n' +
+    '\n' +
+    'RUN pnpm install --frozen-lockfile\n' +
+    '\n' +
+    'COPY . .\n' +
+    '\n' +
+    'ENV PORT=3000\n' +
+    'ENV HOST=0.0.0.0\n' +
+    'EXPOSE 3000\n' +
+    '\n' +
+    'CMD ["pnpm", "--filter", "@kaola/server", "start"]\n'
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-8-17/apps/server/src/hosting.test.ts:178:12)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'FROM node:22-bookworm-slim\n\nRUN apt-get update \\\n  && apt-get install -y --no-install-recommends python3 make g++ \\\n  && rm -rf /var/lib/apt/lists/*\n\nRUN corepack enable\n\nWORKDIR /app\n\nCOPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./\nCOPY apps/server/package.json apps/server/package.json\nCOPY apps/web/package.json apps/web/package.json\nCOPY packages/shared/package.json packages/shared/package.json\nCOPY packages/forge-adapters/package.json packages/forge-adapters/package.json\n\nRUN pnpm install --frozen-lockfile\n\nCOPY . .\n\nENV PORT=3000\nENV HOST=0.0.0.0\nEXPOSE 3000\n\nCMD ["pnpm", "--filter", "@kaola/server", "start"]\n',
+    expected: /EXPOSE\s+31415/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at apps/server/src/hosting.test.ts:189:3
+✖ root package.json has a non-empty dev script (0.118167ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 'undefined'
+  - 'string'
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-8-17/apps/server/src/hosting.test.ts:191:12)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'string',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+
+===== append: CI=true pnpm test (worktree) =====
+node --test list now includes apps/server/src/hosting.test.ts
+ℹ tests 252
+ℹ pass 243
+ℹ fail 9
+All 9 failures are apps/server/src/hosting.test.ts.
+Web suite did not run (script short-circuits on node --test failure).
+Separate: CI=true pnpm --filter @kaola/web test → Test Files 1 passed; Tests 27 passed.
+
+===== append: existing inject suites still green =====
+CI=true node --experimental-strip-types --test apps/server/src/placeholder.test.ts apps/server/src/vault.test.ts apps/server/src/agent-keys.test.ts
+ℹ tests 26
+ℹ pass 26
+ℹ fail 0

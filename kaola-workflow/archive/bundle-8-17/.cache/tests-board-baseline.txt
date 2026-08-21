@@ -1,0 +1,80 @@
+$ vitest run
+
+ RUN  v4.1.11 /Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-8-17/apps/web
+
+ ❯ src/App.board.test.ts (17 tests | 17 failed) 18320ms
+     × full 与 claim_only 看得到看板；待批准与未登录看不到 1103ms
+     × 成员工作台拉取列表：URL 无 query，credentials 与 Accept 承重 1067ms
+     × 筛选与打开详情都不改 list URL，也不发 GET /api/v1/tasks/:id 1062ms
+     × 看板默认六列按枚举顺序，空列保留，卡片落在对应 status 1104ms
+     × 空列表仍渲染六个空列，并给出暂无任务。 1083ms
+     × 点「列表」只见列表，点「看板」只见看板；列表仍展示各标题 1096ms
+     × 状态筛「待认领」藏起已取消；恢复「全部」后回来 1092ms
+     × 标签筛是 tags 数组成员资格，不是整列相等 1091ms
+     × forge 筛只留下 repo.forge 匹配的卡片 1092ms
+     × 状态与标签是 AND；列表视图共用同一套过滤 1053ms
+     × 点击卡片打开详情，关闭后详情消失 1090ms
+     × 时间线恰好一条「发布」，文案带 poster 与 created_at；不发明心跳或 token 揭示 1053ms
+     × native 不渲染 issue 链接；imported 的 http(s) issue_url 是 a[href] 1096ms
+     × 详情只显示共享档案或单任务临时 token，不出现密文键名 1026ms
+     × description_md 与危险标题按文本渲染，不长出 script / img 节点 1093ms
+     × javascript: issue_url 显示为文本，不变成 href 1090ms
+     × 界面文案是中文：任务看板 / 列表 / 看板 / 全部 / 关闭，不含 Kanban 或 Timeline 1027ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 17 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/App.board.test.ts > 任务看板 — 可见性（view === member） > full 与 claim_only 看得到看板；待批准与未登录看不到
+ FAIL  src/App.board.test.ts > 任务看板 — GET /api/v1/tasks > 筛选与打开详情都不改 list URL，也不发 GET /api/v1/tasks/:id
+ FAIL  src/App.board.test.ts > 任务看板 — 六个状态列 > 看板默认六列按枚举顺序，空列保留，卡片落在对应 status
+ FAIL  src/App.board.test.ts > 任务看板 — 六个状态列 > 空列表仍渲染六个空列，并给出暂无任务。
+ FAIL  src/App.board.test.ts > 任务看板 — 列表 / 看板切换 > 点「列表」只见列表，点「看板」只见看板；列表仍展示各标题
+ FAIL  src/App.board.test.ts > 任务看板 — 客户端筛选 > 状态筛「待认领」藏起已取消；恢复「全部」后回来
+ FAIL  src/App.board.test.ts > 任务看板 — 客户端筛选 > 标签筛是 tags 数组成员资格，不是整列相等
+ FAIL  src/App.board.test.ts > 任务看板 — 客户端筛选 > forge 筛只留下 repo.forge 匹配的卡片
+ FAIL  src/App.board.test.ts > 任务看板 — 客户端筛选 > 状态与标签是 AND；列表视图共用同一套过滤
+ FAIL  src/App.board.test.ts > 任务看板 — 详情与发布时间线 > 点击卡片打开详情，关闭后详情消失
+ FAIL  src/App.board.test.ts > 任务看板 — 详情与发布时间线 > 时间线恰好一条「发布」，文案带 poster 与 created_at；不发明心跳或 token 揭示
+ FAIL  src/App.board.test.ts > 任务看板 — 详情与发布时间线 > native 不渲染 issue 链接；imported 的 http(s) issue_url 是 a[href]
+ FAIL  src/App.board.test.ts > 任务看板 — 凭证不泄露 > 详情只显示共享档案或单任务临时 token，不出现密文键名
+ FAIL  src/App.board.test.ts > 任务看板 — XSS > description_md 与危险标题按文本渲染，不长出 script / img 节点
+ FAIL  src/App.board.test.ts > 任务看板 — XSS > javascript: issue_url 显示为文本，不变成 href
+ FAIL  src/App.board.test.ts > 任务看板 — 中文文案 > 界面文案是中文：任务看板 / 列表 / 看板 / 全部 / 关闭，不含 Kanban 或 Timeline
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/App.board.test.ts:284:53
+    282|   const mounted = await mountApp(me, tasks)
+    283|   await vi.waitFor(() => {
+    284|     expect(node(mounted.wrapper, 'board').exists()).toBe(true)
+       |                                                     ^
+    285|   })
+    286|   return mounted
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/17]⎯
+
+ FAIL  src/App.board.test.ts > 任务看板 — GET /api/v1/tasks > 成员工作台拉取列表：URL 无 query，credentials 与 Accept 承重
+AssertionError: expected 0 to be greater than 0
+ ❯ src/App.board.test.ts:419:38
+    417|     const { calls } = await mountApp()
+    418|     await vi.waitFor(() => {
+    419|       expect(listGets(calls).length).toBeGreaterThan(0)
+       |                                      ^
+    420|     })
+    421|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/17]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  17 failed | 27 passed (44)
+   Start at  11:56:29
+   Duration  18.87s (transform 112ms, setup 0ms, import 783ms, tests 20.39s, environment 196ms)
+
+/Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-8-17/apps/web:
+[ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL] @kaola/web@0.0.0 test: `vitest run`
+Exit status 1
