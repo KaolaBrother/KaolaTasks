@@ -3,6 +3,13 @@ import type { TaskStatus } from '@kaola/shared'
 import { eq } from 'drizzle-orm'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { addAgentBearerHook, sendBearerUnauthorized } from './agent-bearer.ts'
+import {
+  consumeApprovedConfirmation,
+  findClaimConfirmations,
+  insertPendingConfirmation,
+  pendingConfirmationBody,
+  recordPendingConfirmEvent,
+} from './claim-confirmations.ts'
 import type { AppDb } from './db.ts'
 import {
   LEASE_TTL_SECONDS,
@@ -52,6 +59,13 @@ function readOptionalString(body: unknown, key: string): string | undefined {
   return typeof value === 'string' ? value : undefined
 }
 
+// Missing/invalid/empty body = instructed (today's clients send no body at all).
+function readAutonomous(body: unknown): boolean | undefined {
+  if (body == null || typeof body !== 'object') return undefined
+  const value = (body as Record<string, unknown>).autonomous
+  return typeof value === 'boolean' ? value : undefined
+}
+
 function requireAgentAuth(request: FastifyRequest, reply: FastifyReply) {
   const auth = request.agentAuth
   if (auth == null) {
@@ -65,16 +79,21 @@ function sendAgentResult<T>(reply: FastifyReply, result: AgentServiceResult<T>) 
   return reply.code(result.httpStatus).send(result.body)
 }
 
-export async function claimTask(
-  db: AppDb,
-  auth: AgentPrincipal,
-  publicId: string,
-): Promise<AgentServiceResult<{
+type ClaimSuccessBody = {
   task: ReturnType<typeof taskBrief>
   token: string
   lease: ReturnType<typeof leaseEnvelope>
   clone: { suggested_dir: string; token_usage: string }
-}>> {
+}
+
+type ClaimPendingBody = { error: 'confirmation_required'; message: string; pending: true }
+
+export async function claimTask(
+  db: AppDb,
+  auth: AgentPrincipal,
+  publicId: string,
+  autonomous?: boolean,
+): Promise<AgentServiceResult<ClaimSuccessBody | ClaimPendingBody>> {
   if (auth.user.status === '待批准') {
     return { ok: false, httpStatus: 403, body: { error: 'forbidden', message: PENDING_CLAIM_MESSAGE } }
   }
@@ -95,6 +114,23 @@ export async function claimTask(
       ok: false,
       httpStatus: 409,
       body: { error: 'illegal_transition', message: illegalTransitionMessage(from, '进行中') },
+    }
+  }
+
+  // Issue #16: autonomous claims from a not-yet-trusted user need a per-claim confirmation.
+  // Instructed claims (autonomous not true) skip this entirely, ignoring any leftover row.
+  if (autonomous === true && !auth.user.trustedAutomation) {
+    const lookup = findClaimConfirmations(db, row.task.id, auth.user.id, auth.key.id)
+    if (lookup.pending != null) {
+      return { ok: true, httpStatus: 202, body: pendingConfirmationBody() }
+    }
+    if (lookup.approved != null) {
+      // Consume now so a later release + re-claim cannot ride the same approval a second time.
+      consumeApprovedConfirmation(db, lookup.approved.id)
+    } else {
+      insertPendingConfirmation(db, { taskId: row.task.id, userId: auth.user.id, agentKeyId: auth.key.id })
+      recordPendingConfirmEvent(db, { actorUserId: auth.user.id, publicId, agentKeyId: auth.key.id })
+      return { ok: true, httpStatus: 202, body: pendingConfirmationBody() }
     }
   }
 
@@ -372,7 +408,7 @@ export function registerClaim(app: FastifyInstance, db: AppDb) {
       if (auth == null) return
 
       const publicId = (request.params as { publicId: string }).publicId
-      return sendAgentResult(reply, await claimTask(db, auth, publicId))
+      return sendAgentResult(reply, await claimTask(db, auth, publicId, readAutonomous(request.body)))
     })
 
     child.post('/api/v1/tasks/:publicId/progress', async (request, reply) => {

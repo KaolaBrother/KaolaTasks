@@ -12,7 +12,8 @@ browser  →  advertised origin localhost:31415 (@kaola/server Fastify)
                 GET /                            placeholder when naked buildApp();
                                                  SPA when webDist; Vite proxy when only viteDevTarget
                 /login*                          OAuth + HTML login
-                /api/v1/me                       session user
+                /api/v1/me                       session user (+ trusted_automation, #16)
+                /api/v1/me/settings              session PUT { trusted_automation } (#16)
                 /api/v1/users/:id/approve
                 /api/v1/agent-keys               session generate/list/revoke
                 /api/v1/agent/whoami             Bearer (`addAgentBearerHook` in agent-bearer.ts)
@@ -21,10 +22,16 @@ browser  →  advertised origin localhost:31415 (@kaola/server Fastify)
                                                  (no persist, no validateToken, no token);
                                                  :publicId get/patch
                                                  GET list/one call sweepExpiredLeases then re-read
-                /api/v1/tasks/:publicId/claim    Bearer POST (201 clone, lease, task, token)
+                /api/v1/tasks/:publicId/claim    Bearer POST { autonomous? } (201 token, or 202
+                                                 confirmation_required when autonomous + untrusted, #16)
                 /api/v1/tasks/:publicId/progress Bearer POST (200 task, lease; no token)
                 /api/v1/tasks/:publicId/release  Bearer POST (200 task; no token)
-                POST /api/mcp                    Bearer Streamable HTTP (six MCP tools)
+                /api/v1/claim-confirmations      session GET list / POST :id/approve|reject (#16;
+                                                 approve/reject never insert a lease or reveal a token)
+                /api/v1/events                   session GET newest-first (#15; 待批准 is 401, stricter than tasks)
+                /api/v1/stats                    session GET { completed_count, completed_by_username } (#15)
+                POST /api/mcp                    Bearer Streamable HTTP (six MCP tools; claim_task
+                                                 gained optional autonomous, #16)
                 GET/DELETE /api/mcp              405 JSON-RPC -32000 Method not allowed
                 POST /api/v1/webhooks/:publicId  no session, no Bearer — forge signature is the sole auth
                                                  (registerWebhooks; :publicId is a forgeInstances[] id, not a task)
@@ -34,16 +41,19 @@ browser  →  advertised origin localhost:31415 (@kaola/server Fastify)
                 attemptWriteback / retryPendingWritebacks  not a route; writeback.ts (#14)
                                                  posts a commentOnIssue status comment for imported tasks
                                                  on 认领 / 提交PR / 完成(merged only); never blocks its caller
-                SQLite users, agent_keys, credential_profiles, tasks, events, leases, submissions (createDb)
+                SQLite users, agent_keys, credential_profiles, tasks, events, leases, submissions,
+                       claim_confirmations (createDb; claim_confirmations and users.trusted_automation new in #16)
                 unique index leases_one_active_per_task on leases(task_id) WHERE state = 'active'
                 vault.ts encryptToken / decryptToken / revealCredentialProfile / insertAuditEvent
                   (forge token: REST claim 201 top-level token and MCP claim_task success token;
-                   POST /api/v1/tasks/import 200 never contains it;
+                   POST /api/v1/tasks/import 200 never contains it; claim 202 pending never contains it;
                    poller and write-back decrypt to call the forge but never return it over HTTP;
                    a merged webhook delivery now decrypts too, via write-back's 完成 comment (#14);
                    closed/已退回 deliveries still never decrypt)
 @kaola/web              Vue 3 + Naive UI; vite.config proxy /api and /login → 127.0.0.1:31415
-                        任务看板; 导入内容 label on imported detail; one synthetic 发布; no claim UI; no events HTTP
+                        任务看板; 导入内容 label on imported detail; one synthetic 发布; no claim UI
+                        审计日志 + 团队统计 over GET /api/v1/events + /stats (#15, client-side filters)
+                        受信自动化 toggle + 待确认认领 list over PUT /me/settings + /claim-confirmations (#16)
                         no webhook / forge-instance UI; no /tasks/:id route (no vue-router)
 @kaola/shared           Task Brief zod + transitionTaskStatus
 @kaola/forge-adapters   createForgeAdapter (validateToken + getPullRequest + importIssue + registerWebhook +
@@ -56,6 +66,10 @@ poller + webhook        pollPendingReviews and registerWebhooks share applyPrTer
 writeback (#14)         attemptWriteback (claimTask/submitPr/applyPrTerminalTransition-merged) +
                         retryPendingWritebacks (re-exported from poller.ts, run each app.ts poll tick);
                         imported tasks only; events.type 回写; never a 4th/5th token-reveal channel
+events (#15)            registerEvents; GET /events (EventRow[], newest-first) + GET /stats
+                        ({ completed_count, completed_by_username }); read-only over existing events rows
+claim-confirm (#16)     registerClaimConfirmations (session GET/approve/reject over claim_confirmations)
+                        + claimTask's autonomous gate (claim.ts) + trusted_automation (auth.ts/schema.ts)
 ```
 
 ## Server
@@ -78,11 +92,21 @@ Auth stack: `@fastify/cookie@^11.1.2`, `@fastify/session@^11.1.2`, `@fastify/oau
 
 `apps/server/src/writeback.ts` exports `attemptWriteback(db, task, transition: '认领' | '提交PR' | '完成', actorUserId, prUrl?): Promise<void>` (#14) — a no-op for a native task. For an imported task it decrypts the task's own credential (`decryptTaskToken`, moved here from `poller.ts`; the poller still uses it for `getPullRequest`) and calls `adapter.commentOnIssue({ token }, { issue_url: task.sourceIssueUrl }, body)`; every fault is caught inside `attemptWriteback` so the caller's own transition always still succeeds. Three call sites, each after their own transition already committed: `claimTask` (`认领`, `claim.ts`, now `async`), `submitPr` (`提交PR`, `claim.ts`, now `async`), and `applyPrTerminalTransition` (`完成`, `poller.ts`, only when `terminal === 'merged'` — never on `closed`/已退回). A success writes `events.type` `回写`, `details` `{ task_id, transition, ok: true, issue_url }`; a failure writes no event. `retryPendingWritebacks(db): Promise<void>` (exported from `writeback.ts`, re-exported from `poller.ts`, never rejects) re-attempts any imported task's transition that occurred but has no successful `回写` yet; `app.ts`'s poller `setInterval` calls it every tick, right after `pollPendingReviews`, under the same in-flight guard. Because `applyPrTerminalTransition` is shared by both the poller and `registerWebhooks`, a **merged** webhook delivery now also reaches this decrypt-and-comment path (new as of #14 — the webhook route previously never decrypted anything); the merge/close verdict is still decided purely from the signed payload, and a `closed` delivery still never decrypts. The token from that decrypt is used only as an outbound `Authorization`/`PRIVATE-TOKEN` header to the operator-configured `forgeInstances` `baseUrl`; it never appears in a response, log, or `events.details`.
 
+`apps/server/src/events.ts` exports `registerEvents(app, db)` (#15) — session-only `GET /api/v1/events` and `GET /api/v1/stats`, wired in `app.ts` after `registerClaimConfirmations`. Gate `canReadEvents` (`user.status !== '待批准'`) is stricter than the task board's own gate, so a pending user is `401` on both even though it can list tasks. `GET /api/v1/events` selects every `events` row with a `leftJoin` on `users` for `actor_username`, ordered `desc(events.id)`, and JSON-parses `details` server-side (parse failure degrades to `{}`). `GET /api/v1/stats` re-scans `events` where `type === '状态迁移'` and counts, in process, the ones whose parsed `details.to === '已完成'` — grouping by `actor_username` with a `null` actor bucketed under the literal string `'系统'`. Neither route is a new token-reveal channel; both only ever echo what earlier writers already put in `events.details`.
+
+`apps/server/src/claim-confirmations.ts` exports `registerClaimConfirmations(app, db)` (#16) — session-only `GET /api/v1/claim-confirmations` plus `POST …/:id/approve` and `POST …/:id/reject`, wired in `app.ts` after `registerClaim`. Same gate helper pattern as `PUT /api/v1/me/settings` (`requireActiveSessionUser`: no session or `待批准` → `401`/`302`). List is scoped to the caller's own `claim_confirmations.user_id`; approve/reject on someone else's row (or a nonexistent id) is `404`, never revealing whether the row exists for another user. Approve deletes on consumption elsewhere (see below), not here — this route only flips `state` to `'approved'`/`'rejected'` and, on approve, writes `events.type` `认领已确认`.
+
+`apps/server/src/claim.ts`'s `claimTask` gained a 4th parameter `autonomous?: boolean` (#16; REST body `{ autonomous?: boolean }`, MCP `claim_task` input gained the matching optional field). An instructed claim (`autonomous` not `true`) is byte-for-byte the pre-#16 behavior — still 认领即授权, still a `201` with `token` on the first `待认领`→`进行中`. An autonomous claim (`autonomous === true`) from a user whose `users.trusted_automation` (`apps/server/src/schema.ts`/`db.ts`, boolean, default `false`) is not `true` is intercepted, *after* the existing `待批准` `403` check and *before* any lease/decrypt work: an existing `'approved'` `claim_confirmations` row for that `(task, user, agent_key)` triple is deleted (one-time consumption) and the claim falls through to the normal `201` path; otherwise a `'pending'` row is inserted or reused, `events.type` `认领待确认` is written, and the response is `202` `{ error: 'confirmation_required', message, pending: true }` — no token, no lease, task stays `待认领`. `trusted_automation === true` (set via `PUT /api/v1/me/settings`) skips this gate entirely.
+
 ## Web
 
-`apps/web/src/App.vue`: Naive UI, `zhCN` / `dateZhCN`. Views: login buttons, pending card (`status` `待批准`, title 账号待批准 — no board), member workbench (`view === 'member'`) with 任务看板 (列表 / 看板; client-side filters 状态 / 标签 / Forge; detail + one synthetic 发布 from `created_at`+`poster`; imported detail shows 导入内容 plus existing `board-detail-issue-url` link; `GET /api/v1/tasks` exactly, no query; no events HTTP; no claim UI). `claim_only` sees the board, not the posting form. Approve-by-id, credential-profile widget, and 发布任务 form when `status === 'active'` and `permission_level === 'full'` (`canApprove`). Agent Key widget when `status === 'active'`. Form reuses loaded `profiles` for the credential dropdown; two request-side paths `{ profile_id }` XOR `{ token }`; create (`POST /api/v1/tasks`) plus, when 来源 is `imported`, 导入 (`POST /api/v1/tasks/import`) with 导入内容 label. Fetches `GET /api/v1/me` with `Accept: application/json` and `credentials: 'include'`. No vue-router (`apps/web/package.json` has `vue` `^3.5.0`, `naive-ui` `^2.45.0` only). Description stays text interpolation (no `v-html`).
+`apps/web/src/App.vue`: Naive UI, `zhCN` / `dateZhCN`. Views: login buttons, pending card (`status` `待批准`, title 账号待批准 — no board), member workbench (`view === 'member'`) with 任务看板 (列表 / 看板; client-side filters 状态 / 标签 / Forge; detail + one synthetic 发布 from `created_at`+`poster`; imported detail shows 导入内容 plus existing `board-detail-issue-url` link; `GET /api/v1/tasks` exactly, no query; no claim UI). `claim_only` sees the board, not the posting form. Approve-by-id, credential-profile widget, and 发布任务 form when `status === 'active'` and `permission_level === 'full'` (`canApprove`). Agent Key widget when `status === 'active'`. Form reuses loaded `profiles` for the credential dropdown; two request-side paths `{ profile_id }` XOR `{ token }`; create (`POST /api/v1/tasks`) plus, when 来源 is `imported`, 导入 (`POST /api/v1/tasks/import`) with 导入内容 label. Fetches `GET /api/v1/me` with `Accept: application/json` and `credentials: 'include'`. No vue-router (`apps/web/package.json` has `vue` `^3.5.0`, `naive-ui` `^2.45.0` only). Description stays text interpolation (no `v-html`).
 
-`apps/web/package.json` `"test": "vitest run"`; devDeps `@vue/test-utils` `^2.4.11`, `happy-dom` `^20.11.6`, `vitest` `^4.1.11`. Tests: `apps/web/src/App.board.test.ts` and `App.form.test.ts`. `vite.config.ts` proxy: `/api` and `/login` → `http://127.0.0.1:31415`. Vitest: `environment` `happy-dom`, `include` `src/**/*.test.ts`. Root `pnpm dev` is `node scripts/dev.mjs`.
+审计日志 + 团队统计 (#15, `data-testid="audit-section"` / `"stats-section"`), visible to the same population as the board (any logged-in non-`待批准` user, `canReadEvents`-equivalent client gate): loads `GET /api/v1/events` and `GET /api/v1/stats` (both exactly, no query string) once on mount when `view === 'member'`. 审计日志 renders every `EventRow` with four client-side AND-combined filters (类型 select seeded from a hardcoded `LIVE_EVENT_TYPES` vocabulary kept in sync with every server writer; 人 select from observed `actor_username` plus the literal `系统` for a `null` actor; 任务 text input matching `details.task_id`; 起始/结束时间 ISO string range on `created_at`) — none of the four filters triggers a re-fetch. 团队统计 renders `completed_count` and one line per `completed_by_username` entry (including `系统`).
+
+受信自动化 toggle + 待确认认领 list (#16, `data-testid="trusted-automation-toggle"` / `"claim-confirmation-list"`), gated like the Agent Key widget (any `status === 'active'` user, full or claim_only — not pending, not logged out). Toggling the `n-switch` `PUT`s `/api/v1/me/settings` `{ trusted_automation }` and re-renders from the server's echoed value (not an optimistic local flip). The list loads `GET /api/v1/claim-confirmations` on mount and renders one row per pending confirmation with 批准/拒绝 buttons that `POST` the matching `…/:id/approve` or `…/:id/reject` route and then reload the list. `GET /api/v1/me`'s `trusted_automation` is read defensively (`=== true`; a legacy response omitting the key defaults the switch to off, not to a crash).
+
+`apps/web/package.json` `"test": "vitest run"`; devDeps `@vue/test-utils` `^2.4.11`, `happy-dom` `^20.11.6`, `vitest` `^4.1.11`. Tests: `apps/web/src/App.board.test.ts`, `App.form.test.ts`, `App.audit.test.ts` (#15), `App.settings.test.ts` (#16). `vite.config.ts` proxy: `/api` and `/login` → `http://127.0.0.1:31415`. Vitest: `environment` `happy-dom`, `include` `src/**/*.test.ts`. Root `pnpm dev` is `node scripts/dev.mjs`.
 
 ## Packages
 

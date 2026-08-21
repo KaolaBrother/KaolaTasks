@@ -75,6 +75,7 @@ function publicUser(user: User) {
     display_name: string
     status: User['status']
     permission_level: User['permissionLevel']
+    trusted_automation: boolean
     message?: string
   } = {
     id: user.id,
@@ -84,11 +85,18 @@ function publicUser(user: User) {
     display_name: user.displayName,
     status: user.status,
     permission_level: user.permissionLevel,
+    trusted_automation: user.trustedAutomation,
   }
   if (user.status === PENDING_STATUS) {
     body.message = PENDING_CLAIM_MESSAGE
   }
   return body
+}
+
+function readTrustedAutomation(body: unknown): boolean | undefined {
+  if (body == null || typeof body !== 'object') return undefined
+  const value = (body as { trusted_automation?: unknown }).trusted_automation
+  return typeof value === 'boolean' ? value : undefined
 }
 
 function userinfoUrl(provider: UserProvider, gitlabBaseUrl: string, giteaBaseUrl: string): string {
@@ -323,6 +331,22 @@ export function registerAuth(app: FastifyInstance, db: AppDb) {
       return reply.redirect('/login')
     }
     return reply.send(publicUser(user))
+  })
+
+  // Issue #16: 待批准 sessions get the same 401 as no session — they never see the toggle.
+  app.put('/api/v1/me/settings', async (request, reply) => {
+    const user = getSessionUser(db, request)
+    if (user == null || user.status === PENDING_STATUS) {
+      return sendUnauthorized(request, reply)
+    }
+
+    const trustedAutomation = readTrustedAutomation(request.body)
+    if (trustedAutomation === undefined) {
+      return reply.code(400).send({ error: 'invalid_body' })
+    }
+
+    db.update(users).set({ trustedAutomation }).where(eq(users.id, user.id)).run()
+    return reply.send({ trusted_automation: trustedAutomation })
   })
 
   app.post('/api/v1/users/:id/approve', async (request, reply) => {

@@ -11,6 +11,9 @@ export const users = sqliteTable(
     displayName: text('display_name').notNull(),
     status: text('status', { enum: ['active', '待批准'] }).notNull(),
     permissionLevel: text('permission_level', { enum: ['full', 'claim_only'] }).notNull(),
+    // Issue #16: default off — autonomous claims from this user need a per-claim confirmation
+    // until the user opts in via PUT /api/v1/me/settings.
+    trustedAutomation: integer('trusted_automation', { mode: 'boolean' }).notNull().default(false),
   },
   (t) => [unique('users_provider_remote_id').on(t.provider, t.remoteId)],
 )
@@ -110,6 +113,17 @@ export const submissions = sqliteTable('submissions', {
   prState: text('pr_state').notNull(),
 })
 
+// Issue #16: parks an autonomous claim (task.id PK, not public_id) awaiting the claiming user's
+// approval or rejection. One row is reused per (task_id, user_id, agent_key_id) while pending.
+export const claimConfirmations = sqliteTable('claim_confirmations', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  taskId: integer('task_id').notNull(),
+  userId: integer('user_id').notNull(),
+  agentKeyId: integer('agent_key_id').notNull(),
+  state: text('state', { enum: ['pending', 'approved', 'rejected'] }).notNull(),
+  createdAt: integer('created_at').notNull(),
+})
+
 export type User = typeof users.$inferSelect
 export type UserProvider = User['provider']
 export type AgentKey = typeof agentKeys.$inferSelect
@@ -119,3 +133,4 @@ export type NewTask = typeof tasks.$inferInsert
 export type AuditEvent = typeof events.$inferSelect
 export type Lease = typeof leases.$inferSelect
 export type Submission = typeof submissions.$inferSelect
+export type ClaimConfirmation = typeof claimConfirmations.$inferSelect

@@ -4,11 +4,11 @@ Document public APIs, endpoints, schemas, events, and integration contracts.
 
 Product contracts that are not yet in source remain in [DESIGN.md](DESIGN.md) §6 (任务卡 Schema), §8 (ForgeAdapter), §9 (MCP 工具面 / REST). This file records what is implemented.
 
-MCP tools (`list_tasks`, `get_task_brief`, `claim_task`, `report_progress`, `submit_pr`, `release_task`) are implemented (`registerMcp` in `apps/server/src/mcp.ts`): Bearer `POST /api/mcp` Streamable HTTP. Claim HTTP is also implemented (`registerClaim` in `apps/server/src/claim.ts`): Bearer `POST /api/v1/tasks/:publicId/claim`, `…/progress`, `…/release` (no REST `submit_pr`). Forge token reveal channels: successful `POST …/claim` `201` top-level `token` **and** MCP `claim_task` success `token`. Session `GET /api/v1/tasks` and `GET /api/v1/tasks/:publicId` never contain it. `POST /api/v1/tasks/import` `200` never contains a forge token. Task CRUD HTTP is implemented (`registerTasks` in `apps/server/src/tasks.ts`), including the pre-publish draft `POST /api/v1/tasks/import`. `revealCredentialProfile` is a module export from `apps/server/src/vault.ts` (not itself HTTP). Two mechanisms drive `待验收` → `已完成`/`已退回` (#13): PR polling (`pollPendingReviews` in `apps/server/src/poller.ts`, still **not** an HTTP route — either called directly (tests) or driven by an internal `setInterval` registered by `buildApp({ pollIntervalMs })`) and the webhook receiver (`registerWebhooks` in `apps/server/src/webhook.ts`, `POST /api/v1/webhooks/:publicId`, no session, no Bearer — the forge signature is the sole auth). Both share the same terminal-transition write path (`applyPrTerminalTransition`, extracted in `poller.ts`). `buildApp({ forgeInstances? })` lets a `syncMode: 'webhook'` instance opt its repo out of polling (`pollPendingReviews` skips it); a poll-mode or unlisted instance is unaffected. `commentOnIssue` / status write-back to the source Issue is implemented (#14): `attemptWriteback` (`apps/server/src/writeback.ts`, not itself HTTP) posts a status comment for **imported** tasks on 认领 (inside `claimTask`), 提交PR (inside `submitPr`), and 完成 (inside `applyPrTerminalTransition`, only on a `merged` terminal) — see the "Status write-back" section below. It never changes any response shape and never introduces a third token-reveal channel.
+MCP tools (`list_tasks`, `get_task_brief`, `claim_task`, `report_progress`, `submit_pr`, `release_task`) are implemented (`registerMcp` in `apps/server/src/mcp.ts`): Bearer `POST /api/mcp` Streamable HTTP. Claim HTTP is also implemented (`registerClaim` in `apps/server/src/claim.ts`): Bearer `POST /api/v1/tasks/:publicId/claim`, `…/progress`, `…/release` (no REST `submit_pr`). Forge token reveal channels: successful `POST …/claim` `201` top-level `token` **and** MCP `claim_task` success `token`. Session `GET /api/v1/tasks` and `GET /api/v1/tasks/:publicId` never contain it. `POST /api/v1/tasks/import` `200` never contains a forge token. Task CRUD HTTP is implemented (`registerTasks` in `apps/server/src/tasks.ts`), including the pre-publish draft `POST /api/v1/tasks/import`. `revealCredentialProfile` is a module export from `apps/server/src/vault.ts` (not itself HTTP). Two mechanisms drive `待验收` → `已完成`/`已退回` (#13): PR polling (`pollPendingReviews` in `apps/server/src/poller.ts`, still **not** an HTTP route — either called directly (tests) or driven by an internal `setInterval` registered by `buildApp({ pollIntervalMs })`) and the webhook receiver (`registerWebhooks` in `apps/server/src/webhook.ts`, `POST /api/v1/webhooks/:publicId`, no session, no Bearer — the forge signature is the sole auth). Both share the same terminal-transition write path (`applyPrTerminalTransition`, extracted in `poller.ts`). `buildApp({ forgeInstances? })` lets a `syncMode: 'webhook'` instance opt its repo out of polling (`pollPendingReviews` skips it); a poll-mode or unlisted instance is unaffected. `commentOnIssue` / status write-back to the source Issue is implemented (#14): `attemptWriteback` (`apps/server/src/writeback.ts`, not itself HTTP) posts a status comment for **imported** tasks on 认领 (inside `claimTask`), 提交PR (inside `submitPr`), and 完成 (inside `applyPrTerminalTransition`, only on a `merged` terminal) — see the "Status write-back" section below. It never changes any response shape and never introduces a third token-reveal channel. Audit log + team stats (#15) are implemented (`registerEvents` in `apps/server/src/events.ts`): session `GET /api/v1/events` and `GET /api/v1/stats`, gated stricter than the task board (a `待批准` session is `401` on both). Claim confirmation for autonomous agents (#16) is implemented: REST `POST …/claim` and MCP `claim_task` both accept an optional `autonomous: boolean`; when `true` and the claiming user's `trusted_automation` is not `true`, the claim parks as `202` `{ error: 'confirmation_required', pending: true }` instead of revealing a token, until a session user approves it via `registerClaimConfirmations` (`apps/server/src/claim-confirmations.ts`, `GET/POST /api/v1/claim-confirmations*`). `GET /api/v1/me` gains additive `trusted_automation`; new session `PUT /api/v1/me/settings` toggles it. None of `GET /api/v1/events`, `GET /api/v1/stats`, `GET/POST /api/v1/claim-confirmations*`, `GET /api/v1/me`, `PUT /api/v1/me/settings`, or a claim `202` ever contains a forge token — the two reveal channels above are unchanged.
 
 ## HTTP (`@kaola/server`)
 
-Sources: `apps/server/src/app.ts`, `auth.ts`, `agent-keys.ts`, `agent-bearer.ts`, `credential-profiles.ts`, `vault.ts`, `tasks.ts`, `claim.ts`, `leases.ts`, `mcp.ts`, `poller.ts`, `webhook.ts`, `writeback.ts`, `schema.ts`, `db.ts`, `placeholder.ts`, `index.ts`.
+Sources: `apps/server/src/app.ts`, `auth.ts`, `agent-keys.ts`, `agent-bearer.ts`, `credential-profiles.ts`, `vault.ts`, `tasks.ts`, `claim.ts`, `claim-confirmations.ts`, `leases.ts`, `mcp.ts`, `poller.ts`, `webhook.ts`, `writeback.ts`, `events.ts`, `schema.ts`, `db.ts`, `placeholder.ts`, `index.ts`.
 
 `buildApp({ sqlitePath?, webDist?, viteDevTarget?, pollIntervalMs?, forgeInstances? })` creates its own SQLite via `createDb`. Process `index.ts` uses `SQLITE_PATH ?? ':memory:'`, and passes `WEB_DIST` / `VITE_DEV_TARGET` / `pollIntervalMs` / `forgeInstances` into `buildApp`. Empty string is treated as omitted for `webDist`/`viteDevTarget`. `forgeInstances` (from `FORGE_INSTANCES`, a JSON array; unset/`''` → `[]`; invalid JSON throws, failing boot) has no dedicated table — it is process config, threaded into both the poller (§ PR polling below) and the webhook receiver (§ webhook below).
 
@@ -43,9 +43,15 @@ OAuth token hosts / paths in `registerAuth`: GitHub uses `@fastify/oauth2` `GITH
 
 ### `GET /api/v1/me`
 
-Session user JSON. Fields: `id`, `provider`, `remote_id`, `username`, `display_name`, `status`, `permission_level`. When `status` is `待批准`, also `message` `你的账号待正式成员批准后方可认领任务。`.
+Session user JSON. Fields: `id`, `provider`, `remote_id`, `username`, `display_name`, `status`, `permission_level`, `trusted_automation` (#16, additive boolean; `users.trusted_automation`, default `false`). When `status` is `待批准`, also `message` `你的账号待正式成员批准后方可认领任务。`.
 
 Unauthenticated: `Accept` containing `application/json` → `401` `{ error: 'unauthorized' }`; otherwise `302` `/login`.
+
+### `PUT /api/v1/me/settings` (#16)
+
+Session cookie. Same gate as `sendUnauthorized`: no session → `401`/`302`; `status === '待批准'` → `401` `{ error: 'unauthorized' }` (a pending session never sees the toggle, same oracle, not the `403` used elsewhere for pending).
+
+Body `{ trusted_automation: boolean }`; non-boolean or missing key → `400` `{ error: 'invalid_body' }`. Sets `users.trusted_automation`. `200` `{ trusted_automation }` (echoes the stored value). Persists across a new `buildApp()` on the same `SQLITE_PATH`. Never returns a forge token.
 
 ### `POST /api/v1/users/:id/approve`
 
@@ -163,6 +169,15 @@ Poster-only edges in source: `待认领` → `已取消`; `已退回` → `已�
 
 Bearer only (`addAgentBearerHook` from `agent-bearer.ts`, registered in the `claim.ts` child plugin; session cookie does not authorize). `:publicId` is `kt-YYYY-NNNN`. Auth runs before resource lookup.
 
+Body `{ autonomous?: boolean }` (#16). Missing body, non-object body, or a non-boolean `autonomous` key is treated as **instructed** (`autonomous` `undefined`) — the pre-#16 behavior below is unchanged in every way for an instructed claim (still 认领即授权, still `201` on the first `待认领`→`进行中` transition). `autonomous: false` is also instructed.
+
+When `autonomous === true` **and** the claiming Agent's user has `trusted_automation !== true` — checked *after* the `待批准` `403` gate below, *before* the resource/lease logic that produces `201` — the claim does not reveal a token:
+
+- An existing `claim_confirmations` row in state `'approved'` for this exact `(task, user, agent_key)` triple is consumed (row deleted — one-time use, so a later `release` + re-claim cannot ride the same approval again) and the claim proceeds to the normal `201` flow below.
+- Otherwise: a `'pending'` row for that triple is inserted (or, if one already exists, reused as-is — a repeated pending request is idempotent and does not duplicate the row or the event), `events.type` `认领待确认` is written (`details` `{ task_id, agent_key_id }`, `actor_user_id` the claiming user), and the response is `202` `{ error: 'confirmation_required', message: '该任务的自动认领需要你先在网页端确认，请到「待确认认领」列表批准或拒绝。', pending: true }`. No `token`, no `token 揭示` event, no lease inserted, task status stays `待认领`.
+
+`autonomous: true` from a user with `trusted_automation === true` skips the confirmation gate entirely and always reaches the normal `201` flow (same as an instructed claim). `trusted_automation` defaults `false` — every user needs an explicit `PUT /api/v1/me/settings` before an autonomous claim can go straight through.
+
 `201` exact keys `clone`, `lease`, `task`, `token`:
 
 - `task` — existing 15-key Task Brief (`parseTaskBrief`); `status` `进行中`; `credential` remains `{ profile_id }` or `{ inline: true }` (no token inside `task`)
@@ -172,13 +187,25 @@ Bearer only (`addAgentBearerHook` from `agent-bearer.ts`, registered in the `cla
 
 Do not put forge plaintext inside `task` / `lease` / `clone`. Nested objects must not contain keys `token` / `token_encrypted` / `inline_token_encrypted` / `access_token`.
 
-Pending `users.status === '待批准'` → `403` `{ error: 'forbidden', message: '你的账号待正式成员批准后方可认领任务。' }` (no forge token; no `token 揭示`). Unknown `publicId` or numeric PK with a valid Bearer → `404` `{ error: 'not_found' }`. Second claim while `进行中` → `409` `{ error: 'conflict', message: '任务已被认领。' }`. Claim when status is not `待认领` (and not the `进行中` conflict above) → `409` `{ error: 'illegal_transition', message: '任务状态不允许从「${from}」变更为「进行中」。' }`. Missing/invalid `VAULT_MASTER_KEY` on decrypt → `500` `{ error: 'vault_unconfigured' }`. Unauthenticated / wrong / non-Bearer / session-cookie-only → `401` `{ error: 'unauthorized' }` + `WWW-Authenticate: Bearer`.
+Pending `users.status === '待批准'` → `403` `{ error: 'forbidden', message: '你的账号待正式成员批准后方可认领任务。' }` (no forge token; no `token 揭示`) — checked before the #16 autonomous/confirmation gate above, so a pending user gets `403` even with `autonomous: true`. Unknown `publicId` or numeric PK with a valid Bearer → `404` `{ error: 'not_found' }`. Second claim while `进行中` → `409` `{ error: 'conflict', message: '任务已被认领。' }`. Claim when status is not `待认领` (and not the `进行中` conflict above) → `409` `{ error: 'illegal_transition', message: '任务状态不允许从「${from}」变更为「进行中」。' }`. Missing/invalid `VAULT_MASTER_KEY` on decrypt → `500` `{ error: 'vault_unconfigured' }`. Unauthenticated / wrong / non-Bearer / session-cookie-only → `401` `{ error: 'unauthorized' }` + `WWW-Authenticate: Bearer`.
 
 Holder identity for later progress/release is `leases.claimer_user_id` compared to the Agent user id (`claim.ts`).
 
-Writes (successful claim): `events.type` `token 揭示` then `状态迁移`. See Events below. Inserts one `leases` row `state` `'active'` keyed by integer `tasks.id`. Calls `sweepExpiredLeases` first (check-on-write). Does not call `validateToken`. `claimTask` (`apps/server/src/claim.ts`) is `async`, and after the `状态迁移` write it `await`s `attemptWriteback(db, updated, '认领', auth.user.id)` (#14, no-op for a native task; see "Status write-back" below) — the `201` response shape and its `token` are unaffected by that call's outcome.
+Writes (successful `201` claim): `events.type` `token 揭示` then `状态迁移`. See Events below. Inserts one `leases` row `state` `'active'` keyed by integer `tasks.id`. Calls `sweepExpiredLeases` first (check-on-write). Does not call `validateToken`. `claimTask` (`apps/server/src/claim.ts`) is `async`, and after the `状态迁移` write it `await`s `attemptWriteback(db, updated, '认领', auth.user.id)` (#14, no-op for a native task; see "Status write-back" below) — the `201` response shape and its `token` are unaffected by that call's outcome. A parked `202` (#16) writes only `认领待确认` and touches neither `leases` nor `attemptWriteback`.
 
 `registerClaim(app, db)` is wired in `app.ts` after `registerTasks`.
+
+### `GET /api/v1/claim-confirmations`, `POST /api/v1/claim-confirmations/:id/approve`, `POST /api/v1/claim-confirmations/:id/reject` (#16, `registerClaimConfirmations` in `apps/server/src/claim-confirmations.ts`)
+
+Session cookie only (`requireActiveSessionUser`: no session or `status === '待批准'` → `sendUnauthorized`, same `401`/`302` oracle as `GET /api/v1/me` — **not** the claim route's `403`). A Bearer Agent Key alone does not authorize these three routes.
+
+`GET` → `200` `{ confirmations: [{ id, task_id, state, created_at }] }` (`task_id` is the task's `public_id` via a join; `state` `'pending'` | `'approved'` | `'rejected'`), scoped to `claim_confirmations.user_id === ` the session user's id — one user never sees another user's rows.
+
+`POST …/approve` → sets that row's `state` to `'approved'`, writes `events.type` `认领已确认` (`details` `{ task_id, agent_key_id }`, `actor_user_id` the approving session user), `200` `{ ok: true }`. Does **not** itself insert a lease, flip the task's status, or decrypt/reveal a forge token — it only flips the row an autonomous re-claim will later consume (see the claim section above). A non-integer id, a missing row, or a row owned by a different user → `404` `{ error: 'not_found' }` (no distinction between "doesn't exist" and "not yours").
+
+`POST …/reject` → sets `state` to `'rejected'`, `200` `{ ok: true }`, no event write. Same `404` rule as approve. A rejected row is left in place (not deleted); a subsequent autonomous claim attempt on the same `(task, user, agent_key)` triple ignores it and inserts a fresh `'pending'` row (rejection is not remembered as a standing denial).
+
+None of the three responses ever contains a forge token, `token_encrypted`, `inline_token_encrypted`, or `access_token`.
 
 ### `POST /api/v1/tasks/:publicId/progress`
 
@@ -212,7 +239,7 @@ Six `registerTool` names:
 |------|--------|------------------------------|
 | `list_tasks` | `status?` `tags?` `forge?` (optional strings) | `{ tasks: [<brief>, ...] }` ordered by integer PK `id`. Filters: `status` exact, `tags` membership of one tag (`brief.tags.includes`), `forge` exact `repo.forge`. Never a token. |
 | `get_task_brief` | `task_id` | top-level brief (not wrapped). Missing or numeric PK such as `"1"` → `isError` `{ error: 'not_found' }`. Never a token. Description in source: never includes a forge token. |
-| `claim_task` | `task_id` | same envelope as REST claim `201`: keys `clone`, `lease`, `task`, `token`. Tool description includes `CLONE_TOKEN_USAGE` (`token 请通过环境变量或 git -c http.extraHeader 按次传递，不要写入 remote URL（会落盘到 .git/config）。`). |
+| `claim_task` | `task_id`, `autonomous?` (boolean, #16) | Success: same envelope as REST claim `201` — keys `clone`, `lease`, `task`, `token`. Tool description includes `CLONE_TOKEN_USAGE` (`token 请通过环境变量或 git -c http.extraHeader 按次传递，不要写入 remote URL（会落盘到 .git/config）。`) and explains `autonomous`. `autonomous: true` from a non-`trusted_automation` user is **not** an error result — `isError` is `false`/absent and `structuredContent` is `{ error: 'confirmation_required', message, pending: true }` (same body as REST `202`; no `token`). |
 | `report_progress` | `task_id`, `note?` | `{ task, lease }` (no `token`). Omit `note` → event `note` `''`. |
 | `release_task` | `task_id`, `reason?` | `{ task }` with `status` `待认领` (no `token`, no `lease`). Omit `reason` → event details have no `reason` key. |
 | `submit_pr` | `task_id`, `pr_url`, `summary` | `{ task, pr_url, summary }` with `task.status` `待验收` (no `token`). Inserts `submissions` (`pr_state` `'open'`), marks the live lease `'released'`. `submitPr` (`claim.ts`) is `async` and, after its `状态迁移` write, `await`s `attemptWriteback(db, updated, '提交PR', auth.user.id, prUrl)` (#14; no-op for a native task) before returning — the response shape is unaffected. |
@@ -220,6 +247,14 @@ Six `registerTool` names:
 `list_tasks` / `get_task_brief` / mutating tools call `sweepExpiredLeases` first. Claim/progress/release/submit wrap `claimTask` / `reportProgress` / `releaseTask` / `submitPr` (same REST error bodies: pending claim `forbidden` + `你的账号待正式成员批准后方可认领任务。`; second claim `conflict` + `任务已被认领。`; non-holder `forbidden` without `message`; no live lease `conflict` + `任务未被认领。`; `submit_pr` when status is not `进行中` → `illegal_transition` to `待验收`).
 
 `registerMcp(app, db)` is wired in `app.ts` after `registerClaim`.
+
+### `GET /api/v1/events`, `GET /api/v1/stats` (#15, `registerEvents` in `apps/server/src/events.ts`)
+
+Session cookie only. Gate `canReadEvents`: `user.status !== '待批准'` — stricter than `GET /api/v1/tasks` (which a `待批准` user may read); no session or a pending session → `401` `{ error: 'unauthorized' }` (same `sendUnauthorized` oracle as `GET /api/v1/me`, so a non-JSON `Accept` gets `302 /login` instead). Any other logged-in user — `active`+`full` or `active`+`claim_only` — may read both. No query string on either route; every filter is client-side in `@kaola/web`.
+
+`GET /api/v1/events` → `200` `{ events: [<EventRow>] }`, newest-first (`orderBy(desc(events.id))`). `EventRow` keys exactly `id`, `type`, `actor_user_id`, `actor_username`, `created_at`, `details`: `id`/`type`/`created_at` (ISO-8601, from stored unix seconds) as stored; `actor_user_id` is `events.actor_user_id` (`null` for a system-driven row); `actor_username` is resolved via a `leftJoin` on `users` (`null` when `actor_user_id` is `null`, since no login is ever deleted); `details` is `JSON.parse`d (a parse failure or non-object/array value degrades to `{}`, never throws). Never contains a forge token — this route only ever surfaces what the writers below already put in `events.details` (never plaintext).
+
+`GET /api/v1/stats` → `200` exactly `{ completed_count, completed_by_username }`. Selects `events` where `type === '状态迁移'`, then in-process counts rows whose parsed `details.to === '已完成'`: `completed_count` is that count; `completed_by_username` groups the same rows by `actor_username` (`leftJoin` on `users`), with a `null` actor (system-driven completion, i.e. every existing `applyPrTerminalTransition` merge) grouped under the literal key `'系统'` — not under `null` and not omitted. A task whose `tasks.status` is `已完成` but that has no matching `状态迁移`→`已完成` event (e.g. a row forced by direct SQL, or a future writer that forgets to write the event) is **not** counted — this endpoint counts events, not `tasks` rows. Empty DB → `{ completed_count: 0, completed_by_username: {} }`.
 
 ### PR polling (`pollPendingReviews`, not an HTTP route)
 
@@ -283,11 +318,17 @@ Web has no vue-router and no `/tasks/:id` route, so the comment body never conta
 
 ### `users` table
 
-SQL from `createDb` (`CREATE TABLE IF NOT EXISTS users`): `id`, `provider`, `remote_id`, `username`, `display_name`, `status`, `permission_level`; UNIQUE `(provider, remote_id)`.
+SQL from `createDb` (`CREATE TABLE IF NOT EXISTS users`): `id`, `provider`, `remote_id`, `username`, `display_name`, `status`, `permission_level`, `trusted_automation INTEGER NOT NULL DEFAULT 0` (#16); UNIQUE `(provider, remote_id)`. On an existing sqlite file predating #16 (where `CREATE TABLE IF NOT EXISTS` is a no-op), `createDb` also runs `ALTER TABLE users ADD COLUMN trusted_automation INTEGER NOT NULL DEFAULT 0` and swallows the resulting "duplicate column name" error on a file that already has it (idempotent either way).
 
-Drizzle enums in `apps/server/src/schema.ts`: `provider` `github` | `gitlab` | `gitea`; `status` `active` | `待批准`; `permission_level` `full` | `claim_only`.
+Drizzle enums in `apps/server/src/schema.ts`: `provider` `github` | `gitlab` | `gitea`; `status` `active` | `待批准`; `permission_level` `full` | `claim_only`. `trusted_automation` is `integer(..., { mode: 'boolean' })`, default `false`.
 
-First insert (`mapProfile`): GitHub → `status` `待批准`, `permission_level` `claim_only`; GitLab / Gitea → `active` + `full`. Subsequent login updates `username` and `display_name` only.
+First insert (`mapProfile`): GitHub → `status` `待批准`, `permission_level` `claim_only`; GitLab / Gitea → `active` + `full`. `trusted_automation` always starts `false` regardless of provider. Subsequent login updates `username` and `display_name` only (not `trusted_automation`).
+
+### `claim_confirmations` table (#16)
+
+SQL from `createDb` (`CREATE TABLE IF NOT EXISTS claim_confirmations`): `id INTEGER PRIMARY KEY AUTOINCREMENT`, `task_id INTEGER NOT NULL` (integer `tasks.id`, not `public_id`), `user_id INTEGER NOT NULL`, `agent_key_id INTEGER NOT NULL`, `state TEXT NOT NULL`, `created_at INTEGER NOT NULL`. No unique constraint — `claimTask` and `registerClaimConfirmations` both enforce "at most one live (`'pending'`) row per `(task_id, user_id, agent_key_id)`" in application code (`findClaimConfirmations`), not in the schema.
+
+Drizzle enum in `schema.ts`: `state` `'pending' | 'approved' | 'rejected'`. A `'pending'` row for the same triple is reused (never duplicated) by a repeated autonomous claim. An `'approved'` row is deleted (not transitioned to some other state) the moment a claim consumes it, so it can never grant a second free claim. A `'rejected'` row is left in place and simply ignored by both an instructed claim and a fresh autonomous claim attempt (which inserts a new `'pending'` row alongside it).
 
 ### `agent_keys` table
 
@@ -323,14 +364,16 @@ SQL from `createDb` (`CREATE TABLE IF NOT EXISTS submissions`): `id INTEGER PRIM
 
 SQL from `createDb` (`CREATE TABLE IF NOT EXISTS events`): `id INTEGER PRIMARY KEY AUTOINCREMENT`, `type TEXT NOT NULL`, `actor_user_id INTEGER`, `created_at INTEGER NOT NULL`, `details TEXT NOT NULL`.
 
-No events HTTP. Rows written in source:
+`GET /api/v1/events` / `GET /api/v1/stats` (#15, above) are read-only surfaces over this table — nothing here changes what gets written. Rows written in source:
 
 - profile create/delete: `type` `变更`, `details` JSON `{ "action": "create" | "delete", "profile_id": <n> }`
 - `revealCredentialProfile`: `type` `token 揭示`, `details` JSON `{ "agent_key_id": <n>, "profile_id": <n> }`
 - POST `/api/v1/tasks` profile path (after decrypt, including 422 / 502): `type` `token 揭示`, `details` JSON `{ "profile_id": <n>, "forge": <forge>, "base_url": <string>, "full_name": <string>, "outcome": "ok" | "token_check_failed" | "forge_unreachable" }` (no token; no `agent_key_id`; inline path does not write this)
 - POST `/api/v1/tasks/import` profile path (after decrypt, including 404 / 422 / 502): `type` `token 揭示`, `details` JSON `{ "profile_id": <n>, "forge": <forge>, "base_url": <string>, "full_name": <string>, "outcome": "ok" | "issue_not_found" | "token_check_failed" | "forge_unreachable" }` (no token; no `agent_key_id`; inline path does not write this)
 - PATCH `/api/v1/tasks/:publicId` success: `type` `状态迁移`, `details` JSON `{ "task_id": <public_id>, "from": <status>, "to": <status> }`
-- POST `/api/v1/tasks/:publicId/claim` success: `type` `token 揭示`, `details` JSON `{ "task_id": <public_id>, "agent_key_id": <n>, "credential": "inline" | "profile", "profile_id"? }` (`profile_id` only when `credential === 'profile'`, integer profile PK; no plaintext, no ciphertext) then `type` `状态迁移`, `details` JSON `{ "task_id": <public_id>, "from": <status>, "to": <status> }` (claimer `actor_user_id`)
+- POST `/api/v1/tasks/:publicId/claim` `201` success: `type` `token 揭示`, `details` JSON `{ "task_id": <public_id>, "agent_key_id": <n>, "credential": "inline" | "profile", "profile_id"? }` (`profile_id` only when `credential === 'profile'`, integer profile PK; no plaintext, no ciphertext) then `type` `状态迁移`, `details` JSON `{ "task_id": <public_id>, "from": <status>, "to": <status> }` (claimer `actor_user_id`)
+- POST `/api/v1/tasks/:publicId/claim` `202` pending (#16, `autonomous: true` + not `trusted_automation`, no existing `'approved'` row): `type` `认领待确认`, `details` JSON `{ "task_id": <public_id>, "agent_key_id": <n> }` (claimer `actor_user_id`; no `token 揭示`, no `状态迁移` — the task never leaves `待认领`)
+- POST `/api/v1/claim-confirmations/:id/approve` success (#16): `type` `认领已确认`, `details` JSON `{ "task_id": <public_id>, "agent_key_id": <n> }` (approving session user `actor_user_id`); reject writes no event
 - POST `/api/v1/tasks/:publicId/progress` success: `type` `心跳`, `details` JSON `{ "task_id": <public_id>, "note": <string> }` (`note` is `''` when omitted)
 - POST `/api/v1/tasks/:publicId/release` success: `type` `状态迁移`, `details` JSON `{ "task_id": <public_id>, "from": <status>, "to": <status>, "reason"? }` (`reason` only when body had string `reason`)
 - MCP `submit_pr` success (`submitPr` in `claim.ts`): `type` `状态迁移`, `details` JSON `{ "task_id": <public_id>, "from": "进行中", "to": "待验收", "pr_url": <string>, "summary": <string> }` (claimer `actor_user_id`)

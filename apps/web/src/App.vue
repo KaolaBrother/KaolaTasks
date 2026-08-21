@@ -118,12 +118,109 @@
               </n-space>
             </div>
 
+            <n-divider>审计日志</n-divider>
+            <div data-testid="audit-section">
+              <n-space vertical>
+                <n-text strong>审计日志</n-text>
+                <n-space align="center">
+                  <n-text>类型</n-text>
+                  <n-select
+                    data-testid="audit-filter-type"
+                    v-model:value="auditFilterType"
+                    :options="auditTypeFilterOptions"
+                    style="width: 160px"
+                  />
+                  <n-text>人</n-text>
+                  <n-select
+                    data-testid="audit-filter-actor"
+                    v-model:value="auditFilterActor"
+                    :options="auditActorFilterOptions"
+                    style="width: 160px"
+                  />
+                  <n-text>任务</n-text>
+                  <n-input
+                    data-testid="audit-filter-task"
+                    v-model:value="auditFilterTask"
+                    placeholder="任务编号"
+                    style="width: 160px"
+                  />
+                  <n-text>时间</n-text>
+                  <n-input
+                    data-testid="audit-filter-from"
+                    v-model:value="auditFilterFrom"
+                    placeholder="起始时间（ISO-8601）"
+                    style="width: 200px"
+                  />
+                  <n-input
+                    data-testid="audit-filter-to"
+                    v-model:value="auditFilterTo"
+                    placeholder="结束时间（ISO-8601）"
+                    style="width: 200px"
+                  />
+                </n-space>
+                <n-text v-if="filteredAuditEvents.length === 0">暂无审计记录。</n-text>
+                <div v-for="row in filteredAuditEvents" :key="row.id" data-testid="audit-row">
+                  <n-text>
+                    #{{ row.id }} {{ row.type }} · {{ row.actor_username ?? SYSTEM_ACTOR_LABEL }} ·
+                    {{ row.created_at }} · {{ auditRowDetailsText(row) }}
+                  </n-text>
+                </div>
+              </n-space>
+            </div>
+
+            <n-divider>团队统计</n-divider>
+            <div data-testid="stats-section">
+              <n-space vertical>
+                <n-text strong>团队统计</n-text>
+                <n-text data-testid="stats-completed-count">
+                  完成数：{{ stats?.completed_count ?? 0 }}
+                </n-text>
+                <n-text v-if="statsByUsername.length === 0">暂无完成记录。</n-text>
+                <n-text v-for="entry in statsByUsername" :key="entry.username">
+                  {{ entry.username }}：{{ entry.count }}
+                </n-text>
+              </n-space>
+            </div>
+
             <n-divider v-if="canApprove">批准 GitHub 用户</n-divider>
             <n-space v-if="canApprove" align="center">
               <n-input v-model:value="approveId" placeholder="待批准用户 ID" />
               <n-button type="primary" :loading="approving" @click="approveUser">批准</n-button>
             </n-space>
             <n-text v-if="approveResult" :type="approveOk ? 'success' : 'error'">{{ approveResult }}</n-text>
+
+            <n-divider v-if="canManageKeys">受信自动化</n-divider>
+            <n-space v-if="canManageKeys" vertical>
+              <n-text>
+                开启后，你的 Agent 自主发起（autonomous）的认领将直接生效；关闭时，每次自主认领都需要你在下方待确认认领列表中批准。
+              </n-text>
+              <n-space align="center">
+                <n-text>受信自动化</n-text>
+                <n-switch
+                  data-testid="trusted-automation-toggle"
+                  :value="trustedAutomation"
+                  @update:value="setTrustedAutomation"
+                />
+              </n-space>
+              <n-text strong>待确认认领</n-text>
+              <div data-testid="claim-confirmation-list">
+                <n-text v-if="claimConfirmations.length === 0">暂无待确认认领。</n-text>
+                <n-space v-for="row in claimConfirmations" :key="row.id" align="center">
+                  <n-text>#{{ row.id }} 任务 {{ row.task_id }} · {{ row.created_at }}</n-text>
+                  <n-button
+                    data-testid="claim-confirmation-approve"
+                    size="small"
+                    type="primary"
+                    @click="approveClaimConfirmation(row.id)"
+                  >批准</n-button>
+                  <n-button
+                    data-testid="claim-confirmation-reject"
+                    size="small"
+                    @click="rejectClaimConfirmation(row.id)"
+                  >拒绝</n-button>
+                </n-space>
+              </div>
+            </n-space>
 
             <n-divider v-if="canManageKeys">Agent Key</n-divider>
             <n-space v-if="canManageKeys" vertical>
@@ -319,6 +416,7 @@ type Me = {
   display_name: string
   status: string
   permission_level: string
+  trusted_automation?: boolean
   message?: string
 }
 
@@ -350,7 +448,32 @@ type BoardTask = {
   credential: { profile_id: string } | { inline: true }
 }
 
+type EventRow = {
+  id: number
+  type: string
+  actor_user_id: number | null
+  actor_username: string | null
+  created_at: string
+  details: Record<string, unknown>
+}
+
+type StatsBody = {
+  completed_count: number
+  completed_by_username: Record<string, number>
+}
+
+type ClaimConfirmationRow = {
+  id: number
+  task_id: string
+  state: string
+  created_at: string
+}
+
 const FORGE_REVOKE_MESSAGE = '请同时到 forge 侧撤销该 token。'
+const SYSTEM_ACTOR_LABEL = '系统'
+// Shared audit event vocabulary — kept in sync with server writers (tasks.ts/claim.ts/poller.ts/
+// webhook.ts) so the 类型 filter never silently drops a live event type.
+const LIVE_EVENT_TYPES = ['token 揭示', '状态迁移', '心跳', '变更', '回写', '认领待确认', '认领已确认']
 
 const me = ref<Me | null>(null)
 const loaded = ref(false)
@@ -405,6 +528,17 @@ const boardFilterStatus = ref('')
 const boardFilterTag = ref('')
 const boardFilterForge = ref('')
 const selectedTaskId = ref<string | null>(null)
+
+const auditEvents = ref<EventRow[]>([])
+const auditFilterType = ref('')
+const auditFilterActor = ref('')
+const auditFilterTask = ref('')
+const auditFilterFrom = ref('')
+const auditFilterTo = ref('')
+const stats = ref<StatsBody | null>(null)
+
+const trustedAutomation = ref(false)
+const claimConfirmations = ref<ClaimConfirmationRow[]>([])
 
 const forgeOptions = [
   { label: 'GitHub', value: 'github' },
@@ -487,6 +621,65 @@ const selectedTask = computed(() => {
   return boardTasks.value.find((task) => task.id === selectedTaskId.value) ?? null
 })
 
+const auditTypeFilterOptions = computed(() => [
+  { label: '全部', value: '' },
+  ...LIVE_EVENT_TYPES.map((type) => ({ label: type, value: type })),
+])
+
+const auditActorFilterOptions = computed(() => {
+  const seen = new Set<string>()
+  const fromEvents: { label: string; value: string }[] = []
+  for (const row of auditEvents.value) {
+    if (row.actor_username != null && !seen.has(row.actor_username)) {
+      seen.add(row.actor_username)
+      fromEvents.push({ label: row.actor_username, value: row.actor_username })
+    }
+  }
+  return [
+    { label: '全部', value: '' },
+    { label: SYSTEM_ACTOR_LABEL, value: SYSTEM_ACTOR_LABEL },
+    ...fromEvents,
+  ]
+})
+
+function auditRowTaskId(row: EventRow): string | undefined {
+  const taskId = row.details?.task_id
+  return typeof taskId === 'string' ? taskId : undefined
+}
+
+function auditRowDetailsText(row: EventRow): string {
+  try {
+    return JSON.stringify(row.details ?? {})
+  } catch {
+    return ''
+  }
+}
+
+const filteredAuditEvents = computed(() =>
+  auditEvents.value.filter((row) => {
+    if (auditFilterType.value !== '' && row.type !== auditFilterType.value) return false
+    if (auditFilterActor.value !== '') {
+      if (auditFilterActor.value === SYSTEM_ACTOR_LABEL) {
+        if (row.actor_user_id != null) return false
+      } else if (row.actor_username !== auditFilterActor.value) {
+        return false
+      }
+    }
+    const taskFilter = auditFilterTask.value.trim()
+    if (taskFilter !== '' && auditRowTaskId(row) !== taskFilter) return false
+    const from = auditFilterFrom.value.trim()
+    if (from !== '' && row.created_at < from) return false
+    const to = auditFilterTo.value.trim()
+    if (to !== '' && row.created_at > to) return false
+    return true
+  }),
+)
+
+const statsByUsername = computed(() => {
+  const map = stats.value?.completed_by_username ?? {}
+  return Object.entries(map).map(([username, count]) => ({ username, count }))
+})
+
 function formatLastUsed(value: number | null): string {
   if (value == null) return '从未使用'
   return `最近使用 ${new Date(value * 1000).toLocaleString('zh-CN')}`
@@ -543,6 +736,7 @@ onMounted(async () => {
     })
     if (res.ok) {
       me.value = (await res.json()) as Me
+      trustedAutomation.value = me.value?.trusted_automation === true
     } else {
       me.value = null
     }
@@ -553,14 +747,77 @@ onMounted(async () => {
   }
   if (view.value === 'member') {
     await loadTasks()
+    await loadEvents()
+    await loadStats()
   }
   if (canManageKeys.value) {
     await loadAgentKeys()
+    await loadClaimConfirmations()
   }
   if (canApprove.value) {
     await loadProfiles()
   }
 })
+
+async function setTrustedAutomation(value: boolean) {
+  try {
+    const res = await fetch('/api/v1/me/settings', {
+      method: 'PUT',
+      credentials: 'include',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ trusted_automation: value }),
+    })
+    if (!res.ok) return
+    const body = await readJson(res)
+    if (typeof body?.trusted_automation === 'boolean') {
+      trustedAutomation.value = body.trusted_automation
+    }
+  } catch {
+    // keep whatever value was already shown
+  }
+}
+
+async function loadClaimConfirmations() {
+  try {
+    const res = await fetch('/api/v1/claim-confirmations', {
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+    })
+    if (!res.ok) return
+    const body = await readJson(res)
+    claimConfirmations.value = Array.isArray(body?.confirmations)
+      ? (body.confirmations as ClaimConfirmationRow[])
+      : []
+  } catch {
+    claimConfirmations.value = []
+  }
+}
+
+async function approveClaimConfirmation(id: number) {
+  try {
+    const res = await fetch(`/api/v1/claim-confirmations/${id}/approve`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+    })
+    if (res.ok) await loadClaimConfirmations()
+  } catch {
+    // ignore
+  }
+}
+
+async function rejectClaimConfirmation(id: number) {
+  try {
+    const res = await fetch(`/api/v1/claim-confirmations/${id}/reject`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+    })
+    if (res.ok) await loadClaimConfirmations()
+  } catch {
+    // ignore
+  }
+}
 
 async function approveUser() {
   const id = approveId.value.trim()
@@ -674,6 +931,41 @@ async function loadTasks() {
     boardTasks.value = Array.isArray(body?.tasks) ? (body.tasks as BoardTask[]) : []
   } catch {
     boardTasks.value = []
+  }
+}
+
+async function loadEvents() {
+  try {
+    const res = await fetch('/api/v1/events', {
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+    })
+    if (!res.ok) return
+    const body = await readJson(res)
+    auditEvents.value = Array.isArray(body?.events) ? (body.events as EventRow[]) : []
+  } catch {
+    auditEvents.value = []
+  }
+}
+
+async function loadStats() {
+  try {
+    const res = await fetch('/api/v1/stats', {
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+    })
+    if (!res.ok) return
+    const body = await readJson(res)
+    if (
+      body != null &&
+      typeof body.completed_count === 'number' &&
+      body.completed_by_username != null &&
+      typeof body.completed_by_username === 'object'
+    ) {
+      stats.value = body as unknown as StatsBody
+    }
+  } catch {
+    // keep whatever stats were already loaded
   }
 }
 

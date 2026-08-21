@@ -5,8 +5,10 @@ import Fastify from 'fastify'
 import { registerAgentKeys } from './agent-keys.ts'
 import { registerAuth } from './auth.ts'
 import { registerClaim } from './claim.ts'
+import { registerClaimConfirmations } from './claim-confirmations.ts'
 import { registerCredentialProfiles } from './credential-profiles.ts'
 import { createDb } from './db.ts'
+import { registerEvents } from './events.ts'
 import { registerMcp } from './mcp.ts'
 import { getPlaceholderBody } from './placeholder.ts'
 import { pollPendingReviews, retryPendingWritebacks } from './poller.ts'
@@ -88,6 +90,8 @@ export function buildApp(options?: {
   registerCredentialProfiles(app, db)
   registerTasks(app, db)
   registerClaim(app, db)
+  registerClaimConfirmations(app, db)
+  registerEvents(app, db)
   registerMcp(app, db)
   registerWebhooks(app, db, forgeInstances)
 

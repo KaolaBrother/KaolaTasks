@@ -1,6 +1,15 @@
 import Database from 'better-sqlite3'
 import { drizzle } from 'drizzle-orm/better-sqlite3'
-import { agentKeys, credentialProfiles, events, leases, submissions, tasks, users } from './schema.ts'
+import {
+  agentKeys,
+  claimConfirmations,
+  credentialProfiles,
+  events,
+  leases,
+  submissions,
+  tasks,
+  users,
+} from './schema.ts'
 
 const USERS_DDL = `
 CREATE TABLE IF NOT EXISTS users (
@@ -11,9 +20,26 @@ CREATE TABLE IF NOT EXISTS users (
   display_name TEXT NOT NULL,
   status TEXT NOT NULL,
   permission_level TEXT NOT NULL,
+  trusted_automation INTEGER NOT NULL DEFAULT 0,
   UNIQUE (provider, remote_id)
 )
 `
+
+// Issue #16: a sqlite file created before this issue has a `users` table without this column.
+// `CREATE TABLE IF NOT EXISTS` above is a no-op against that existing table, so the column is
+// added out-of-band and duplicate-column errors (already-migrated file) are swallowed.
+const USERS_ADD_TRUSTED_AUTOMATION_DDL = `
+ALTER TABLE users ADD COLUMN trusted_automation INTEGER NOT NULL DEFAULT 0
+`
+
+function isDuplicateColumnError(err: unknown): boolean {
+  return (
+    err != null &&
+    typeof err === 'object' &&
+    'message' in err &&
+    /duplicate column name/i.test(String((err as { message: unknown }).message))
+  )
+}
 
 const AGENT_KEYS_DDL = `
 CREATE TABLE IF NOT EXISTS agent_keys (
@@ -106,9 +132,25 @@ CREATE TABLE IF NOT EXISTS submissions (
 )
 `
 
+const CLAIM_CONFIRMATIONS_DDL = `
+CREATE TABLE IF NOT EXISTS claim_confirmations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id INTEGER NOT NULL,
+  user_id INTEGER NOT NULL,
+  agent_key_id INTEGER NOT NULL,
+  state TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+)
+`
+
 export function createDb(path = ':memory:') {
   const sqlite = new Database(path)
   sqlite.exec(USERS_DDL)
+  try {
+    sqlite.exec(USERS_ADD_TRUSTED_AUTOMATION_DDL)
+  } catch (err) {
+    if (!isDuplicateColumnError(err)) throw err
+  }
   sqlite.exec(AGENT_KEYS_DDL)
   sqlite.exec(CREDENTIAL_PROFILES_DDL)
   sqlite.exec(TASKS_DDL)
@@ -116,8 +158,18 @@ export function createDb(path = ':memory:') {
   sqlite.exec(LEASES_DDL)
   sqlite.exec(LEASES_ONE_ACTIVE_INDEX_DDL)
   sqlite.exec(SUBMISSIONS_DDL)
+  sqlite.exec(CLAIM_CONFIRMATIONS_DDL)
   return drizzle(sqlite, {
-    schema: { users, agentKeys, credentialProfiles, tasks, events, leases, submissions },
+    schema: {
+      users,
+      agentKeys,
+      credentialProfiles,
+      tasks,
+      events,
+      leases,
+      submissions,
+      claimConfirmations,
+    },
   })
 }
 
