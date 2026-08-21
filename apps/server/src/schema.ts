@@ -100,6 +100,16 @@ export const leases = sqliteTable('leases', {
   state: text('state', { enum: ['active', 'released', 'expired'] }).notNull(),
 })
 
+// DESIGN.md §10: submissions persist a submitted PR against the lease that held the task.
+export const submissions = sqliteTable('submissions', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  taskId: integer('task_id').notNull(),
+  leaseId: integer('lease_id').notNull(),
+  prUrl: text('pr_url').notNull(),
+  summary: text('summary').notNull(),
+  prState: text('pr_state').notNull(),
+})
+
 export type User = typeof users.$inferSelect
 export type UserProvider = User['provider']
 export type AgentKey = typeof agentKeys.$inferSelect
@@ -108,3 +118,4 @@ export type Task = typeof tasks.$inferSelect
 export type NewTask = typeof tasks.$inferInsert
 export type AuditEvent = typeof events.$inferSelect
 export type Lease = typeof leases.$inferSelect
+export type Submission = typeof submissions.$inferSelect

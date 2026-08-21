@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3'
 import { drizzle } from 'drizzle-orm/better-sqlite3'
-import { agentKeys, credentialProfiles, events, leases, tasks, users } from './schema.ts'
+import { agentKeys, credentialProfiles, events, leases, submissions, tasks, users } from './schema.ts'
 
 const USERS_DDL = `
 CREATE TABLE IF NOT EXISTS users (
@@ -95,6 +95,17 @@ CREATE UNIQUE INDEX IF NOT EXISTS leases_one_active_per_task
   ON leases(task_id) WHERE state = 'active'
 `
 
+const SUBMISSIONS_DDL = `
+CREATE TABLE IF NOT EXISTS submissions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id INTEGER NOT NULL,
+  lease_id INTEGER NOT NULL,
+  pr_url TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  pr_state TEXT NOT NULL
+)
+`
+
 export function createDb(path = ':memory:') {
   const sqlite = new Database(path)
   sqlite.exec(USERS_DDL)
@@ -104,8 +115,9 @@ export function createDb(path = ':memory:') {
   sqlite.exec(EVENTS_DDL)
   sqlite.exec(LEASES_DDL)
   sqlite.exec(LEASES_ONE_ACTIVE_INDEX_DDL)
+  sqlite.exec(SUBMISSIONS_DDL)
   return drizzle(sqlite, {
-    schema: { users, agentKeys, credentialProfiles, tasks, events, leases },
+    schema: { users, agentKeys, credentialProfiles, tasks, events, leases, submissions },
   })
 }
 

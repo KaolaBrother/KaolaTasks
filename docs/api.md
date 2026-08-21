@@ -4,11 +4,11 @@ Document public APIs, endpoints, schemas, events, and integration contracts.
 
 Product contracts that are not yet in source remain in [DESIGN.md](DESIGN.md) §6 (任务卡 Schema), §8 (ForgeAdapter), §9 (MCP 工具面 / REST). This file records what is implemented.
 
-MCP tools (`list_tasks`, `get_task_brief`, `claim_task`, `report_progress`, `submit_pr`, `release_task`) are not implemented. Claim HTTP is implemented (`registerClaim` in `apps/server/src/claim.ts`): Bearer `POST /api/v1/tasks/:publicId/claim`, `…/progress`, `…/release`. Successful `POST …/claim` `201` top-level `token` is the only HTTP that returns a forge token. Session `GET /api/v1/tasks` and `GET /api/v1/tasks/:publicId` never contain it. Task CRUD HTTP is implemented (`registerTasks` in `apps/server/src/tasks.ts`). `revealCredentialProfile` is a module export from `apps/server/src/vault.ts` (not itself HTTP).
+MCP tools (`list_tasks`, `get_task_brief`, `claim_task`, `report_progress`, `submit_pr`, `release_task`) are implemented (`registerMcp` in `apps/server/src/mcp.ts`): Bearer `POST /api/mcp` Streamable HTTP. Claim HTTP is also implemented (`registerClaim` in `apps/server/src/claim.ts`): Bearer `POST /api/v1/tasks/:publicId/claim`, `…/progress`, `…/release` (no REST `submit_pr`). Forge token reveal channels: successful `POST …/claim` `201` top-level `token` **and** MCP `claim_task` success `token`. Session `GET /api/v1/tasks` and `GET /api/v1/tasks/:publicId` never contain it. Task CRUD HTTP is implemented (`registerTasks` in `apps/server/src/tasks.ts`). `revealCredentialProfile` is a module export from `apps/server/src/vault.ts` (not itself HTTP).
 
 ## HTTP (`@kaola/server`)
 
-Sources: `apps/server/src/app.ts`, `auth.ts`, `agent-keys.ts`, `agent-bearer.ts`, `credential-profiles.ts`, `vault.ts`, `tasks.ts`, `claim.ts`, `leases.ts`, `schema.ts`, `db.ts`, `placeholder.ts`, `index.ts`.
+Sources: `apps/server/src/app.ts`, `auth.ts`, `agent-keys.ts`, `agent-bearer.ts`, `credential-profiles.ts`, `vault.ts`, `tasks.ts`, `claim.ts`, `leases.ts`, `mcp.ts`, `schema.ts`, `db.ts`, `placeholder.ts`, `index.ts`.
 
 `buildApp({ sqlitePath?, webDist?, viteDevTarget? })` creates its own SQLite via `createDb`. Process `index.ts` uses `SQLITE_PATH ?? ':memory:'`, and passes `WEB_DIST` / `VITE_DEV_TARGET` into `buildApp`. Empty string is treated as omitted.
 
@@ -77,7 +77,7 @@ Session cookie. Requires `status === 'active'`. Pending → `403` `{ error: 'for
 
 ### `GET /api/v1/agent/whoami`
 
-Bearer only. Child Fastify `onRequest` via `addAgentBearerHook` in `agent-bearer.ts` (used by the whoami plugin in `agent-keys.ts` and the claim plugin in `claim.ts`). Encapsulated hook, not `@fastify/bearer-auth`. Header `authorization` must match `/^Bearer\s+(\S+)/i`; remainder is the plaintext key. Lookup is by sha256 hex `key_hash`. Successful auth updates `last_used_at` to unix seconds (`Math.floor(Date.now() / 1000)`). Failed / missing / revoked key does not tick `last_used_at`.
+Bearer only. Child Fastify `onRequest` via `addAgentBearerHook` in `agent-bearer.ts` (used by the whoami plugin in `agent-keys.ts`, the claim plugin in `claim.ts`, and the MCP plugin in `mcp.ts`). Encapsulated hook, not `@fastify/bearer-auth`. Header `authorization` must match `/^Bearer\s+(\S+)/i`; remainder is the plaintext key. Lookup is by sha256 hex `key_hash`. Successful auth updates `last_used_at` to unix seconds (`Math.floor(Date.now() / 1000)`). Failed / missing / revoked key does not tick `last_used_at`.
 
 `200` `{ id, key_id, label, status, permission_level }` (`id` is the user id). `401` `{ error: 'unauthorized' }` with `WWW-Authenticate: Bearer`. Session `GET /api/v1/me` is unchanged (no `WWW-Authenticate`; Bearer is not accepted there).
 
@@ -148,7 +148,7 @@ Bearer only (`addAgentBearerHook` from `agent-bearer.ts`, registered in the `cla
 `201` exact keys `clone`, `lease`, `task`, `token`:
 
 - `task` — existing 15-key Task Brief (`parseTaskBrief`); `status` `进行中`; `credential` remains `{ profile_id }` or `{ inline: true }` (no token inside `task`)
-- `token` — forge plaintext (the only HTTP that returns a forge token)
+- `token` — forge plaintext (one of two reveal channels; the other is MCP `claim_task` success `token`)
 - `lease` — `{ expires_at, ttl_seconds }` with `ttl_seconds` the number `86400` (`LEASE_TTL_SECONDS`). `expires_at` is ISO-8601 from unix `(now + 86400) * 1000`
 - `clone` — `{ suggested_dir, token_usage }` where `suggested_dir` equals `task.repo.suggested_dir` and `token_usage` is exactly `token 请通过环境变量或 git -c http.extraHeader 按次传递，不要写入 remote URL（会落盘到 .git/config）。`
 
@@ -177,6 +177,31 @@ Bearer only. Body `{ reason?: string }` (omit body OK). Non-string `reason` is t
 `200` exact keys `task`. `task.status` `待认领`. **No** `token`. **No** `lease` on the wire. Marks the lease `state` `'released'`. Writes `events.type` `状态迁移`, `details` `{ task_id, from, to }` plus `reason` only when the body had a string `reason`.
 
 Same 401 / 404 / non-holder 403 / no-live-lease 409 as progress. Calls `sweepExpiredLeases` first (check-on-write).
+
+There is no REST `POST /api/v1/tasks/:publicId/submit_pr`. `submit_pr` is MCP-only (`submitPr` in `claim.ts`).
+
+### `POST /api/mcp`
+
+Bearer only (`addAgentBearerHook` from `agent-bearer.ts`, registered in the `mcp.ts` child plugin; session cookie does not authorize). Streamable HTTP via `@modelcontextprotocol/sdk` `1.30.0` `StreamableHTTPServerTransport` (`enableJsonResponse: true`; session header `mcp-session-id`). Tests initialize with `protocolVersion` `2025-11-25`. `McpServer` `{ name: 'kaola-tasks', version: '0.0.0' }`.
+
+Unauthenticated / wrong / non-Bearer / session-cookie-only → `401` `{ error: 'unauthorized' }` + `WWW-Authenticate: Bearer` (before JSON-RPC). `GET /api/mcp` and `DELETE /api/mcp` → `405` JSON-RPC `{ jsonrpc: '2.0', error: { code: -32000, message: 'Method not allowed.' }, id: null }`. Non-initialize POST without a session → `400` JSON-RPC `-32000` `Bad Request: No valid session ID provided`. Unknown `mcp-session-id` → `404` JSON-RPC `-32001` `Session not found`.
+
+Authenticated `tools/call` HTTP status is `200`. Business failures are a JSON-RPC **result** with `isError: true` and REST `{ error, message? }` in `structuredContent` (and JSON text `content`).
+
+Six `registerTool` names:
+
+| Tool | Input | Success `structuredContent` |
+|------|--------|------------------------------|
+| `list_tasks` | `status?` `tags?` `forge?` (optional strings) | `{ tasks: [<brief>, ...] }` ordered by integer PK `id`. Filters: `status` exact, `tags` membership of one tag (`brief.tags.includes`), `forge` exact `repo.forge`. Never a token. |
+| `get_task_brief` | `task_id` | top-level brief (not wrapped). Missing or numeric PK such as `"1"` → `isError` `{ error: 'not_found' }`. Never a token. Description in source: never includes a forge token. |
+| `claim_task` | `task_id` | same envelope as REST claim `201`: keys `clone`, `lease`, `task`, `token`. Tool description includes `CLONE_TOKEN_USAGE` (`token 请通过环境变量或 git -c http.extraHeader 按次传递，不要写入 remote URL（会落盘到 .git/config）。`). |
+| `report_progress` | `task_id`, `note?` | `{ task, lease }` (no `token`). Omit `note` → event `note` `''`. |
+| `release_task` | `task_id`, `reason?` | `{ task }` with `status` `待认领` (no `token`, no `lease`). Omit `reason` → event details have no `reason` key. |
+| `submit_pr` | `task_id`, `pr_url`, `summary` | `{ task, pr_url, summary }` with `task.status` `待验收` (no `token`). Inserts `submissions` (`pr_state` `'open'`), marks the live lease `'released'`. |
+
+`list_tasks` / `get_task_brief` / mutating tools call `sweepExpiredLeases` first. Claim/progress/release/submit wrap `claimTask` / `reportProgress` / `releaseTask` / `submitPr` (same REST error bodies: pending claim `forbidden` + `你的账号待正式成员批准后方可认领任务。`; second claim `conflict` + `任务已被认领。`; non-holder `forbidden` without `message`; no live lease `conflict` + `任务未被认领。`; `submit_pr` when status is not `进行中` → `illegal_transition` to `待验收`).
+
+`registerMcp(app, db)` is wired in `app.ts` after `registerClaim`. No PR polling.
 
 ### `users` table
 
@@ -210,6 +235,12 @@ Unique index `leases_one_active_per_task` on `leases(task_id) WHERE state = 'act
 
 `task_id` is the integer `tasks.id` PK, not `public_id`. Drizzle enum in `schema.ts`: `state` `'active' | 'released' | 'expired'`. Lease times are unix seconds. TTL is `LEASE_TTL_SECONDS` `86400` in `leases.ts` (no per-task TTL column). Expiry uses `expires_at <= now` via `sweepExpiredLeases` (sets `state` `'expired'`, transitions the task `进行中` → `待认领` when the task is still `进行中`). No cron.
 
+### `submissions` table
+
+SQL from `createDb` (`CREATE TABLE IF NOT EXISTS submissions`): `id INTEGER PRIMARY KEY AUTOINCREMENT`, `task_id INTEGER NOT NULL`, `lease_id INTEGER NOT NULL`, `pr_url TEXT NOT NULL`, `summary TEXT NOT NULL`, `pr_state TEXT NOT NULL`.
+
+`task_id` is the integer `tasks.id` PK, not `public_id`. Drizzle in `schema.ts` maps `taskId`/`leaseId`/`prUrl`/`summary`/`prState` with no enum on `pr_state`. MCP `submit_pr` success inserts `pr_state` `'open'`.
+
 ### `events` table
 
 SQL from `createDb` (`CREATE TABLE IF NOT EXISTS events`): `id INTEGER PRIMARY KEY AUTOINCREMENT`, `type TEXT NOT NULL`, `actor_user_id INTEGER`, `created_at INTEGER NOT NULL`, `details TEXT NOT NULL`.
@@ -223,6 +254,7 @@ No events HTTP. Rows written in source:
 - POST `/api/v1/tasks/:publicId/claim` success: `type` `token 揭示`, `details` JSON `{ "task_id": <public_id>, "agent_key_id": <n>, "credential": "inline" | "profile", "profile_id"? }` (`profile_id` only when `credential === 'profile'`, integer profile PK; no plaintext, no ciphertext) then `type` `状态迁移`, `details` JSON `{ "task_id": <public_id>, "from": <status>, "to": <status> }` (claimer `actor_user_id`)
 - POST `/api/v1/tasks/:publicId/progress` success: `type` `心跳`, `details` JSON `{ "task_id": <public_id>, "note": <string> }` (`note` is `''` when omitted)
 - POST `/api/v1/tasks/:publicId/release` success: `type` `状态迁移`, `details` JSON `{ "task_id": <public_id>, "from": <status>, "to": <status>, "reason"? }` (`reason` only when body had string `reason`)
+- MCP `submit_pr` success (`submitPr` in `claim.ts`): `type` `状态迁移`, `details` JSON `{ "task_id": <public_id>, "from": "进行中", "to": "待验收", "pr_url": <string>, "summary": <string> }` (claimer `actor_user_id`)
 - lease expiry in `sweepExpiredLeases`: `type` `状态迁移`, `details` JSON `{ "task_id": <public_id>, "from": "进行中", "to": "待认领" }`, `actor_user_id` null
 
 `created_at` is unix seconds.
@@ -233,7 +265,7 @@ No events HTTP. Rows written in source:
 
 `insertAuditEvent(db, { type, actorUserId, details })` with `actorUserId: number | null` (expiry writes SQL NULL).
 
-`revealCredentialProfile(db, { profileId, actorUserId, agentKeyId })` decrypts the profile row and returns the plaintext string. Missing row throws `Error('credential profile not found')`. Writes a `token 揭示` event. Does not log the token. Not an HTTP handler. The HTTP that returns a forge token is successful Bearer `POST /api/v1/tasks/:publicId/claim` `201` top-level `token`.
+`revealCredentialProfile(db, { profileId, actorUserId, agentKeyId })` decrypts the profile row and returns the plaintext string. Missing row throws `Error('credential profile not found')`. Writes a `token 揭示` event. Does not log the token. Not an HTTP handler. Forge token reveal channels: successful Bearer `POST /api/v1/tasks/:publicId/claim` `201` top-level `token` and MCP `claim_task` success `token`.
 
 ### Env (`registerAuth`)
 
@@ -247,11 +279,11 @@ Callback URIs: `${publicUrl}/login/{github|gitlab|gitea}/callback` (`publicUrl` 
 
 Read by `encryptToken` / `decryptToken` in `vault.ts` when encrypting or decrypting. Not required at `buildApp()` or `registerAuth` boot.
 
-Must match `/^[0-9a-fA-F]{64}$/` and decode to 32 bytes. Missing, empty, or invalid → `VaultUnconfiguredError` (`code` `vault_unconfigured`). Create-profile HTTP, `POST /api/v1/tasks`, and `POST /api/v1/tasks/:publicId/claim` map that to `500` `{ error: 'vault_unconfigured' }`. Not `SESSION_SECRET`.
+Must match `/^[0-9a-fA-F]{64}$/` and decode to 32 bytes. Missing, empty, or invalid → `VaultUnconfiguredError` (`code` `vault_unconfigured`). Create-profile HTTP, `POST /api/v1/tasks`, `POST /api/v1/tasks/:publicId/claim`, and MCP `claim_task` (same `claimTask` decrypt) map that to `500` `{ error: 'vault_unconfigured' }` (MCP: `isError` + that body, HTTP 200). Not `SESSION_SECRET`.
 
 There is no `.env.example` in the repository.
 
-Server dependencies: `@fastify/oauth2@^8.3.0`, `@fastify/cookie@^11.1.2`, `@fastify/session@^11.1.2`, `@fastify/static@^10.1.3`, `@fastify/http-proxy@^11.6.0`, `"@kaola/shared": "workspace:*"`, `"@kaola/forge-adapters": "workspace:*"` (plus existing `fastify`, `drizzle-orm`, `better-sqlite3`). Vault and agent-key hashing use `node:crypto` (no extra npm package). No MCP SDK in `apps/server/package.json`. Agent Bearer is the encapsulated hook in `agent-bearer.ts`, not `@fastify/bearer-auth`.
+Server dependencies: `@fastify/oauth2@^8.3.0`, `@fastify/cookie@^11.1.2`, `@fastify/session@^11.1.2`, `@fastify/static@^10.1.3`, `@fastify/http-proxy@^11.6.0`, `"@kaola/shared": "workspace:*"`, `"@kaola/forge-adapters": "workspace:*"`, `"@modelcontextprotocol/sdk": "1.30.0"`, `"zod": "^4.4.3"` (plus existing `fastify`, `drizzle-orm`, `better-sqlite3`). Vault and agent-key hashing use `node:crypto` (no extra npm package). Agent Bearer is the encapsulated hook in `agent-bearer.ts`, not `@fastify/bearer-auth`.
 
 ## `@kaola/forge-adapters`
 

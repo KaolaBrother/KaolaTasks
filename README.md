@@ -2,7 +2,7 @@
 
 > 团队内部任务协作平台：人发任务，Agent 接单，PR 交付。
 >
-> **状态**：M0 脚手架已落地；M1 切片 #3（多源 OAuth + `users`）、#4（Agent API Key）、#5（凭证档案 / vault）、#6（`ForgeAdapter` + `validateToken`）、#7（任务 CRUD / 发布即校验）、#8（任务看板 UI）、#9（REST 租约认领）、#17（单端口 31415）已落地。MCP 尚未实现。设计文档 [v0.2](docs/DESIGN.md)。Backlog 见 [Issues](https://github.com/KaolaBrother/KaolaTasks/issues)。
+> **状态**：M0 脚手架已落地；M1 切片 #3（多源 OAuth + `users`）、#4（Agent API Key）、#5（凭证档案 / vault）、#6（`ForgeAdapter` + `validateToken`）、#7（任务 CRUD / 发布即校验）、#8（任务看板 UI）、#9（REST 租约认领）、#10（MCP Server）、#17（单端口 31415）已落地。PR 轮询 / webhook 自动闭环尚未实现。设计文档 [v0.2](docs/DESIGN.md)。Backlog 见 [Issues](https://github.com/KaolaBrother/KaolaTasks/issues)。
 
 ## 这是什么
 
@@ -12,22 +12,22 @@
 
 ## 核心特性
 
-以下为产品设计（见 [设计文档](docs/DESIGN.md)）。当前已落地的是登录、Agent Key、凭证档案 / vault、token 校验库、任务 CRUD（发布即校验）、任务看板与 REST 租约认领，不是完整 M1。
+以下为产品设计（见 [设计文档](docs/DESIGN.md)）。当前已落地的是登录、Agent Key、凭证档案 / vault、token 校验库、任务 CRUD（发布即校验）、任务看板、REST 租约认领与 MCP Server，不是完整 M1。
 
-**已落地（#3 / #4 / #5 / #6 / #7 / #8 / #9 / #17）：**
+**已落地（#3 / #4 / #5 / #6 / #7 / #8 / #9 / #10 / #17）：**
 
 - **多源 OAuth 登录**：GitHub / GitLab / Gitea；会话用户见 `GET /api/v1/me`；正式成员可 `POST /api/v1/users/:id/approve`
 - **Agent API Key**：`status === 'active'` 的成员可自助 `POST/GET /api/v1/agent-keys`、`DELETE /api/v1/agent-keys/:id`；明文 `token` 仅创建时返回一次（前缀 `ktk_`）；Bearer `GET /api/v1/agent/whoami`
-- **凭证档案 / vault**：`active` + `full` 可 `GET/POST /api/v1/credential-profiles`、`DELETE /api/v1/credential-profiles/:id`；forge token AES-256-GCM 加密存储；列表/创建响应不含 token。模块导出 `revealCredentialProfile`（本身不是 HTTP）。返回 forge token 的 HTTP 只有成功的 Bearer `POST /api/v1/tasks/:publicId/claim` `201` 顶层 `token`。删除响应用中文提示到 forge 侧撤销
+- **凭证档案 / vault**：`active` + `full` 可 `GET/POST /api/v1/credential-profiles`、`DELETE /api/v1/credential-profiles/:id`；forge token AES-256-GCM 加密存储；列表/创建响应不含 token。模块导出 `revealCredentialProfile`（本身不是 HTTP）。揭示 forge token 的通道：成功的 Bearer `POST /api/v1/tasks/:publicId/claim` `201` 顶层 `token`，以及 MCP `claim_task` 成功信封的 `token`。删除响应用中文提示到 forge 侧撤销
 - **三 forge `validateToken`**：`createForgeAdapter(kind)` 对 GitHub / GitLab / Gitea 实测可读 / 可推 / 可开 PR（缺失项为 `读` | `推` | `PR`）；Push/PR 为 REST 权限代理，不实际 git push / POST PR。创建档案时**不**调用 `validateToken`；任务发布时作为适配器方法调用
 - **任务 CRUD / 发布即校验**：`GET/POST /api/v1/tasks`、`GET/PATCH /api/v1/tasks/:publicId`；`tasks` 表；发布即校验（`422` `token_check_failed` / `502` `forge_unreachable`）。中文「发布任务」表单（`active`+`full`）
 - **任务看板（#8）**：成员工作台中文「任务看板」，列表 / 看板双视图，客户端筛选（状态 / 标签 / Forge），详情含一条由 `created_at`+`poster` 合成的「发布」时间线。拉取 `GET /api/v1/tasks`（无 query）。无事件 HTTP。无 vue-router。无认领 UI。待批准用户仍看「账号待批准」卡（无看板）。`claim_only` 可见看板，不可见发布表单
-- **REST 租约认领（#9）**：Bearer `Authorization: Bearer ktk_…`；`POST /api/v1/tasks/:publicId/claim` `201` 键 `clone`、`lease`、`task`、`token`（`token` 为 forge 明文；`lease.ttl_seconds` 为数字 `86400`）；`POST …/progress` `200` `{ task, lease }` 无 token；`POST …/release` `200` `{ task }` 状态 `待认领` 无 token。会话 `GET` 列表/单条仍不含 token。过期靠 `sweepExpiredLeases`（读/写时检查），无 cron。MCP `claim_task` 未实现
+- **REST 租约认领（#9）**：Bearer `Authorization: Bearer ktk_…`；`POST /api/v1/tasks/:publicId/claim` `201` 键 `clone`、`lease`、`task`、`token`（`token` 为 forge 明文；`lease.ttl_seconds` 为数字 `86400`）；`POST …/progress` `200` `{ task, lease }` 无 token；`POST …/release` `200` `{ task }` 状态 `待认领` 无 token。会话 `GET` 列表/单条仍不含 token。过期靠 `sweepExpiredLeases`（读/写时检查），无 cron。无 REST `POST …/submit_pr`
+- **MCP Server（#10）**：Agent 将 Bearer API Key 配到 `POST {origin}/api/mcp`（Streamable HTTP；测试里 `initialize` 的 `protocolVersion` 为 `2025-11-25`；有状态 `mcp-session-id`）。未鉴权 → HTTP `401` `{ error: 'unauthorized' }` + `WWW-Authenticate: Bearer`（在 JSON-RPC 之前）。`GET`/`DELETE /api/mcp` 为 `405`。六个工具：`list_tasks` `{ tasks }`、`get_task_brief` 顶层 brief、`claim_task` 信封 `clone`/`lease`/`task`/`token`、`report_progress` `{ task, lease }`、`release_task` `{ task }`、`submit_pr` `{ task, pr_url, summary }` 且状态 `待验收`。业务错误为 JSON-RPC result `isError` + REST `{ error, message? }`（HTTP 200）。依赖 `@modelcontextprotocol/sdk` `1.30.0`、`zod` `^4.4.3`
 - **单端口托管（#17）**：`PORT` 默认 `31415`；`PUBLIC_URL` 默认 `http://localhost:31415`。裸 `buildApp()` 的 `GET /` 仍是占位正文 `考拉任务服务占位`；设置 `webDist` 时 Fastify 托管 SPA；仅 `viteDevTarget` 时反代 Vite。对外原点是 `localhost:31415`。根目录 `pnpm dev`
 
 **设计中、尚未实现：**
 
-- **MCP 优先**：Agent 配置一次 MCP 端点，一句"去考拉接单"走完认领 → 实现 → 交付。MCP 工具面（含 `claim_task` / `submit_pr`）未实现；当前 Agent 路径是 Bearer REST 认领（#9）
 - **自动闭环**：PR 合并 → 任务自动完成（webhook，轮询兜底），状态回写源 Issue
 
 ## 工作原理
@@ -48,7 +48,7 @@ sequenceDiagram
     K->>K: 任务自动完成，回写源 Issue
 ```
 
-认领者**不需要**在目标 forge 上有账号——任务所附 token 即访问权（详见设计文档 §7）。上图为设计目标（MCP `claim_task` / `submit_pr` 尚未实现）。当前 Agent 路径是 Bearer REST：`POST /api/v1/tasks/:publicId/claim`（成功 `201` 返回任务卡 + 顶层 `token` + 租约）。OAuth 登录、Agent Key、凭证档案 / vault、`validateToken`、任务 CRUD、任务看板与 REST 认领已实现（见下）。
+认领者**不需要**在目标 forge 上有账号——任务所附 token 即访问权（详见设计文档 §7）。MCP `claim_task` / `submit_pr` 已落地：Agent 将 Bearer API Key 配到 `POST {origin}/api/mcp`。Bearer REST 认领（`POST /api/v1/tasks/:publicId/claim` 等）仍可用。图中 webhook / 轮询自动完成仍是设计目标、尚未实现。OAuth 登录、Agent Key、凭证档案 / vault、`validateToken`、任务 CRUD、任务看板、REST 认领与 MCP 已实现（见下）。
 
 ## 快速开始
 
@@ -115,7 +115,7 @@ docker compose up -d --build
 
 Agent Key（`apps/web/src/App.vue` 在 `status === 'active'` 时显示）：自助生成 / 列表 / 吊销；明文仅创建时显示一次。凭证档案（`active` 且 `permission_level === 'full'` 时显示）：按 forge + `base_url` + `repo_full_name` 保存加密 token；删除后界面展示 `请同时到 forge 侧撤销该 token。`。GitHub `claim_only` 可管理自己的 Agent Key，不能管理凭证档案。
 
-发布任务与看板已实现：`active` 且 `permission_level === 'full'` 时显示中文「发布任务」表单，`POST /api/v1/tasks`（发布即校验）。成员工作台（含 `claim_only`）显示「任务看板」（无认领按钮；详情仍只有一条合成「发布」时间线）。REST 认领已实现（Bearer `POST /api/v1/tasks/:publicId/claim` 等，见上）。MCP 端点尚未实现。目标流程见 [设计文档](docs/DESIGN.md) §3、§7、§9。
+发布任务与看板已实现：`active` 且 `permission_level === 'full'` 时显示中文「发布任务」表单，`POST /api/v1/tasks`（发布即校验）。成员工作台（含 `claim_only`）显示「任务看板」（无认领按钮；详情仍只有一条合成「发布」时间线）。REST 认领已实现（Bearer `POST /api/v1/tasks/:publicId/claim` 等，见上）。Agent 将 Bearer API Key 配到 `POST {origin}/api/mcp`（六个 MCP 工具，见上）。目标流程见 [设计文档](docs/DESIGN.md) §3、§7、§9。
 
 ## 项目结构
 
@@ -124,7 +124,7 @@ pnpm workspaces（`pnpm-workspace.yaml`：`apps/*` + `packages/*`）：
 ```text
 apps/
   web/             # @kaola/web — Vue 3 + Vite + Naive UI（登录 / 待批准 / 批准 / Agent Key / 凭证档案 / 发布任务 / 任务看板）
-  server/          # @kaola/server — Fastify + drizzle-orm + better-sqlite3 + OAuth/session + agent keys + vault/profiles + tasks + claim/leases；workspace 依赖 @kaola/shared、@kaola/forge-adapters
+  server/          # @kaola/server — Fastify + drizzle-orm + better-sqlite3 + OAuth/session + agent keys + vault/profiles + tasks + claim/leases + mcp；workspace 依赖 @kaola/shared、@kaola/forge-adapters
 packages/
   shared/          # @kaola/shared — 任务卡 zod schema + 状态机；getSharedHealth() → kaola-shared-ready
   forge-adapters/  # @kaola/forge-adapters — ForgeAdapter + validateToken；getForgeAdaptersHealth() → kaola-forge-adapters-ready
@@ -144,7 +144,7 @@ docker-compose.yml
 pnpm install
 pnpm lint          # eslint .
 pnpm typecheck     # pnpm -r --if-present typecheck
-pnpm test          # node --experimental-strip-types --test packages/shared/src/index.test.ts packages/forge-adapters/src/index.test.ts packages/forge-adapters/src/validate-token.shared.test.ts apps/server/src/placeholder.test.ts apps/server/src/auth.test.ts apps/server/src/agent-keys.test.ts apps/server/src/vault.test.ts apps/server/src/tasks.test.ts apps/server/src/hosting.test.ts apps/server/src/claim.test.ts && pnpm --filter @kaola/web test
+pnpm test          # node --experimental-strip-types --test packages/shared/src/index.test.ts packages/forge-adapters/src/index.test.ts packages/forge-adapters/src/validate-token.shared.test.ts apps/server/src/placeholder.test.ts apps/server/src/auth.test.ts apps/server/src/agent-keys.test.ts apps/server/src/vault.test.ts apps/server/src/tasks.test.ts apps/server/src/hosting.test.ts apps/server/src/claim.test.ts apps/server/src/mcp.test.ts && pnpm --filter @kaola/web test
 pnpm build         # pnpm -r --if-present build
 
 pnpm dev                             # node scripts/dev.mjs（Fastify :31415 + Vite 127.0.0.1:5173）
@@ -173,7 +173,7 @@ CI：`.github/workflows/ci.yml` job `lint-test` 在 Node 22 上执行 `pnpm inst
 | M2 导入与自动闭环 | Issue 导入、webhook、状态回写 | #12–#14 |
 | M3 打磨 | 审计界面、统计、认领确认策略 | #15–#16 |
 
-当前仓库已落地 issue #1–#2（M0）、#3（OAuth / `users`）、#4（Agent API Key）、#5（凭证档案 / vault）、#6（`ForgeAdapter.validateToken`）、#7（任务 CRUD / 发布即校验）、#8（任务看板 UI）、#9（REST 租约认领）、#17（单端口 31415）。M1 其余项（MCP、PR 轮询）仍未实现。
+当前仓库已落地 issue #1–#2（M0）、#3（OAuth / `users`）、#4（Agent API Key）、#5（凭证档案 / vault）、#6（`ForgeAdapter.validateToken`）、#7（任务 CRUD / 发布即校验）、#8（任务看板 UI）、#9（REST 租约认领）、#10（MCP Server）、#17（单端口 31415）。M1 其余项（PR 轮询）仍未实现。
 
 ## 许可
 

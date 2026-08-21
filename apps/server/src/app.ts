@@ -7,6 +7,7 @@ import { registerAuth } from './auth.ts'
 import { registerClaim } from './claim.ts'
 import { registerCredentialProfiles } from './credential-profiles.ts'
 import { createDb } from './db.ts'
+import { registerMcp } from './mcp.ts'
 import { getPlaceholderBody } from './placeholder.ts'
 import { registerTasks } from './tasks.ts'
 
@@ -49,6 +50,7 @@ export function buildApp(options?: {
   registerCredentialProfiles(app, db)
   registerTasks(app, db)
   registerClaim(app, db)
+  registerMcp(app, db)
 
   if (webDist != null) {
     const root = resolve(webDist)

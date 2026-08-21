@@ -334,7 +334,7 @@ export function taskBrief({ task, posterUsername }: TaskWithPoster) {
   }
 }
 
-function selectTasks(db: AppDb): TaskWithPoster[] {
+export function selectTasks(db: AppDb): TaskWithPoster[] {
   return db
     .select({ task: tasks, posterUsername: users.username })
     .from(tasks)
