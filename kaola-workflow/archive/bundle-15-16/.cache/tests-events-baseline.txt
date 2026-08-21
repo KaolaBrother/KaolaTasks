@@ -1,0 +1,247 @@
+=== node --experimental-strip-types --test apps/server/src/events.test.ts ===
+▶ issue #15 audit log HTTP + team stats
+  ▶ authentication — session cookie, same mechanism as GET /api/v1/tasks
+    ✖ unauthenticated GET /api/v1/events and GET /api/v1/stats are 401 unauthorized (31.737875ms)
+    ✖ 待批准 GitHub user is 401 on events and stats (never sees the member workbench) (7.573541ms)
+    ✖ approved claim_only user can read events and stats, same as the board (5.313084ms)
+  ✖ authentication — session cookie, same mechanism as GET /api/v1/tasks (44.95875ms)
+  ▶ GET /api/v1/events
+    ✖ envelope is { events: [] } with newest-first EventRow shape; no query string needed (7.813166ms)
+    ✖ list carries real writers rows with parsed details and actor_username resolved via left-join (5.836875ms)
+    ✖ system-driven rows (actor_user_id null) still appear, with actor_username null (7.899708ms)
+  ✖ GET /api/v1/events (21.71025ms)
+  ▶ GET /api/v1/stats
+    ✖ empty DB returns { completed_count: 0, completed_by_username: {} } (3.0525ms)
+    ✖ completed_count counts 状态迁移 rows with details.to === 已完成; null actor groups under 系统 (7.476084ms)
+    ✖ a 已完成 task row with no matching event does not inflate stats (near-miss vs COUNT(*) FROM tasks) (6.899292ms)
+  ✖ GET /api/v1/stats (17.573334ms)
+✖ issue #15 audit log HTTP + team stats (84.459458ms)
+ℹ tests 9
+ℹ suites 4
+ℹ pass 0
+ℹ fail 9
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 387.773333
+
+✖ failing tests:
+
+test at apps/server/src/events.test.ts:406:5
+✖ unauthenticated GET /api/v1/events and GET /api/v1/stats are 401 unauthorized (31.737875ms)
+  AssertionError [ERR_ASSERTION]: expected 401, got 404: {"message":"Route GET:/api/v1/events not found","error":"Not Found","statusCode":404}
+  
+  404 !== 401
+  
+      at assertUnauthorized (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-15-16/apps/server/src/events.test.ts:385:10)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-15-16/apps/server/src/events.test.ts:408:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 401,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/events.test.ts:412:5
+✖ 待批准 GitHub user is 401 on events and stats (never sees the member workbench) (7.573541ms)
+  AssertionError [ERR_ASSERTION]: expected 401, got 404: {"message":"Route GET:/api/v1/events not found","error":"Not Found","statusCode":404}
+  
+  404 !== 401
+  
+      at assertUnauthorized (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-15-16/apps/server/src/events.test.ts:385:10)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-15-16/apps/server/src/events.test.ts:417:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 401,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/events.test.ts:421:5
+✖ approved claim_only user can read events and stats, same as the board (5.313084ms)
+  AssertionError [ERR_ASSERTION]: claim_only GET events: 404 {"message":"Route GET:/api/v1/events not found","error":"Not Found","statusCode":404}
+  
+  404 !== 200
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-15-16/apps/server/src/events.test.ts:436:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/events.test.ts:444:5
+✖ envelope is { events: [] } with newest-first EventRow shape; no query string needed (7.813166ms)
+  AssertionError [ERR_ASSERTION]: GET /api/v1/events: 404 {"message":"Route GET:/api/v1/events not found","error":"Not Found","statusCode":404}
+  
+  404 !== 200
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-15-16/apps/server/src/events.test.ts:450:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/events.test.ts:480:5
+✖ list carries real writers rows with parsed details and actor_username resolved via left-join (5.836875ms)
+  TypeError: Cannot read properties of undefined (reading 'filter')
+      at rowsForTask (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-15-16/apps/server/src/events.test.ts:394:15)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-15-16/apps/server/src/events.test.ts:490:23)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at apps/server/src/events.test.ts:517:5
+✖ system-driven rows (actor_user_id null) still appear, with actor_username null (7.899708ms)
+  TypeError: Cannot read properties of undefined (reading 'filter')
+      at rowsForTask (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-15-16/apps/server/src/events.test.ts:394:15)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-15-16/apps/server/src/events.test.ts:535:26)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at apps/server/src/events.test.ts:543:5
+✖ empty DB returns { completed_count: 0, completed_by_username: {} } (3.0525ms)
+  AssertionError [ERR_ASSERTION]: GET /api/v1/stats: 404 {"message":"Route GET:/api/v1/stats not found","error":"Not Found","statusCode":404}
+  
+  404 !== 200
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-15-16/apps/server/src/events.test.ts:547:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/events.test.ts:551:5
+✖ completed_count counts 状态迁移 rows with details.to === 已完成; null actor groups under 系统 (7.476084ms)
+  AssertionError [ERR_ASSERTION]: GET /api/v1/stats: 404 {"message":"Route GET:/api/v1/stats not found","error":"Not Found","statusCode":404}
+  
+  404 !== 200
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-15-16/apps/server/src/events.test.ts:599:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/events.test.ts:611:5
+✖ a 已完成 task row with no matching event does not inflate stats (near-miss vs COUNT(*) FROM tasks) (6.899292ms)
+  AssertionError [ERR_ASSERTION]: GET /api/v1/stats: 404 {"message":"Route GET:/api/v1/stats not found","error":"Not Found","statusCode":404}
+  
+  404 !== 200
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-15-16/apps/server/src/events.test.ts:622:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+=== (cd apps/web && npx vitest run src/App.audit.test.ts) ===
+
+ RUN  v4.1.11 /Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-15-16/apps/web
+
+ ❯ src/App.audit.test.ts (16 tests | 16 failed) 33508ms
+     × full 与 claim_only 都能看到两块；待批准与未登录都看不到，也不请求 events/stats 2117ms
+     × URL 恰好是 /api/v1/events 与 /api/v1/stats，无 query；credentials/Accept 与既有请求一致 2107ms
+     × 筛选不会重新发起 GET（过滤是纯客户端行为） 2076ms
+     × 无筛选时展示全部 7 条 2070ms
+     × 类型下拉包含全部现存 type 字面量（含 变更 与两种认领确认类型） 2102ms
+     × 人下拉包含 系统 与真实用户名 2099ms
+     × 类型筛「心跳」只留 1 条 2097ms
+     × 人筛「li.na」留 2 条；筛「系统」（空 actor）留 2 条 2106ms
+     × 任务筛「kt-2026-0004」留 2 条 2087ms
+     × 时间区间 [10:00, 10:45] 留 3 条 2099ms
+     × 组合(AND)：人=zhang.wei 且 类型=心跳，从 3 条收窄到 1 条 2099ms
+     × 空事件列表仍渲染 audit-section，行数为 0 2092ms
+     × 展示 completed_count 与按用户名（含「系统」）的分布 2067ms
+     × 空统计（无 已完成 事件）展示 0，不渲染任何用户行 2095ms
+     × 标题文案是中文；不出现英文 Audit/Stats/Timeline 2092ms
+     × 挂载时没有注入 vue-router 2100ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 16 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/App.audit.test.ts > 审计日志/团队统计 — 可见性（view === member，包含 claim_only） > full 与 claim_only 都能看到两块；待批准与未登录都看不到，也不请求 events/stats
+ FAIL  src/App.audit.test.ts > 审计日志/团队统计 — GET /api/v1/events 与 GET /api/v1/stats > URL 恰好是 /api/v1/events 与 /api/v1/stats，无 query；credentials/Accept 与既有请求一致
+ FAIL  src/App.audit.test.ts > 审计日志/团队统计 — GET /api/v1/events 与 GET /api/v1/stats > 筛选不会重新发起 GET（过滤是纯客户端行为）
+ FAIL  src/App.audit.test.ts > 审计日志 — 类型/人/任务/时间 组合过滤（AND） > 无筛选时展示全部 7 条
+ FAIL  src/App.audit.test.ts > 审计日志 — 类型/人/任务/时间 组合过滤（AND） > 类型下拉包含全部现存 type 字面量（含 变更 与两种认领确认类型）
+ FAIL  src/App.audit.test.ts > 审计日志 — 类型/人/任务/时间 组合过滤（AND） > 人下拉包含 系统 与真实用户名
+ FAIL  src/App.audit.test.ts > 审计日志 — 类型/人/任务/时间 组合过滤（AND） > 类型筛「心跳」只留 1 条
+ FAIL  src/App.audit.test.ts > 审计日志 — 类型/人/任务/时间 组合过滤（AND） > 人筛「li.na」留 2 条；筛「系统」（空 actor）留 2 条
+ FAIL  src/App.audit.test.ts > 审计日志 — 类型/人/任务/时间 组合过滤（AND） > 任务筛「kt-2026-0004」留 2 条
+ FAIL  src/App.audit.test.ts > 审计日志 — 类型/人/任务/时间 组合过滤（AND） > 时间区间 [10:00, 10:45] 留 3 条
+ FAIL  src/App.audit.test.ts > 审计日志 — 类型/人/任务/时间 组合过滤（AND） > 组合(AND)：人=zhang.wei 且 类型=心跳，从 3 条收窄到 1 条
+ FAIL  src/App.audit.test.ts > 审计日志 — 类型/人/任务/时间 组合过滤（AND） > 空事件列表仍渲染 audit-section，行数为 0
+ FAIL  src/App.audit.test.ts > 团队统计 — completed_count 与逐人分布 > 展示 completed_count 与按用户名（含「系统」）的分布
+ FAIL  src/App.audit.test.ts > 团队统计 — completed_count 与逐人分布 > 空统计（无 已完成 事件）展示 0，不渲染任何用户行
+ FAIL  src/App.audit.test.ts > 审计日志/团队统计 — 中文文案；不使用 vue-router > 标题文案是中文；不出现英文 Audit/Stats/Timeline
+ FAIL  src/App.audit.test.ts > 审计日志/团队统计 — 中文文案；不使用 vue-router > 挂载时没有注入 vue-router
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ vi.waitFor.timeout src/App.audit.test.ts:216:67
+    214|   await vi.waitFor(
+    215|     () => {
+    216|       expect(calls.some((call) => call.url === '/api/v1/events')).toBe…
+       |                                                                   ^
+    217|       expect(calls.some((call) => call.url === '/api/v1/stats')).toBe(…
+    218|     },
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/16]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  16 failed (16)
+   Start at  23:41:01
+   Duration  34.01s (transform 79ms, setup 0ms, import 354ms, tests 33.51s, environment 89ms)
+

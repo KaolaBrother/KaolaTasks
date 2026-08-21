@@ -1,0 +1,299 @@
+=== git rev-parse HEAD (worktree bundle-15-16) ===
+637c3041f7e20513929b7230bd7d394e77ffc1a1
+
+=== apps/server/src/claim-confirm.test.ts ===
+node --experimental-strip-types --test apps/server/src/claim-confirm.test.ts
+
+▶ issue #16 claim-confirmation for autonomous polling agents
+  ▶ instructed claims stay MVP 认领即授权 (comment overrides the issue body)
+    ✔ no body and explicit autonomous:false both still return 201 with a token (assertClaim201 shape unchanged) (40.186583ms)
+    ✔ MCP claim_task without autonomous still returns the token envelope (11.901334ms)
+    ✖ instructed claim ignores a leftover rejected confirmation row for the same (task, user, key) (8.159708ms)
+  ✖ instructed claims stay MVP 认领即授权 (comment overrides the issue body) (60.6745ms)
+  ▶ autonomous claim gate — 待批准 first
+    ✔ 待批准 users are still 403 before the autonomous gate, even with autonomous:true (8.757584ms)
+  ✔ autonomous claim gate — 待批准 first (8.818916ms)
+  ▶ autonomous claim gate — automation off (default)
+    ✖ autonomous + off + unconfirmed → 202 confirmation_required; no token; no token 揭示; task stays 待认领; writes 认领待确认 (9.115333ms)
+    ✖ MCP claim_task autonomous:true pending is isError false, structuredContent { pending:true, error:confirmation_required }, no token (5.809208ms)
+    ✖ idempotent re-request while pending returns 202 again and reuses one pending row (8.308875ms)
+  ✖ autonomous claim gate — automation off (default) (23.375166ms)
+  ▶ settings — trusted_automation
+    ✖ GET /api/v1/me defaults trusted_automation false; PUT settings true unlocks 直通 201; PUT false again reinstates 202 (2.953541ms)
+    ✖ trusted_automation persists across a new buildApp on the same sqlite file path (7.791625ms)
+  ✖ settings — trusted_automation (10.854291ms)
+  ▶ approve / reject a pending claim confirmation (session, not Bearer)
+    ✖ approve consumes the pending row: agent retry succeeds; approve itself reveals no token, inserts no lease, flips no status (8.937542ms)
+    ✖ MCP: approve a pending confirmation then retry claim_task succeeds with a token (7.922209ms)
+    ✖ reject sets state rejected; retry of autonomous claim starts a fresh pending, still no token (7.795959ms)
+    ✖ approve/reject on another user's confirmation id is 404; GET list only shows the current user's rows (8.80275ms)
+  ✖ approve / reject a pending claim confirmation (session, not Bearer) (33.583333ms)
+  ▶ authentication sanity around the new surfaces
+    ✖ an unauthenticated session cannot read or act on claim-confirmations, and Bearer alone does not authorize them (3.178916ms)
+  ✖ authentication sanity around the new surfaces (3.246583ms)
+✖ issue #16 claim-confirmation for autonomous polling agents (140.803209ms)
+ℹ tests 14
+ℹ suites 7
+ℹ pass 3
+ℹ fail 11
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 398.75425
+
+✖ failing tests:
+
+test at apps/server/src/claim-confirm.test.ts:870:5
+✖ instructed claim ignores a leftover rejected confirmation row for the same (task, user, key) (8.159708ms)
+  { code: 'SQLITE_ERROR' }
+
+test at apps/server/src/claim-confirm.test.ts:921:5
+✖ autonomous + off + unconfirmed → 202 confirmation_required; no token; no token 揭示; task stays 待认领; writes 认领待确认 (9.115333ms)
+  AssertionError [ERR_ASSERTION]: expected 202 confirmation_required, got 201: {"task":{"id":"kt-2026-0001","title":"为订单导出接口增加分页","description_md":"……（Markdown 详述）","source":{"type":"native"},"repo":{"forge":"gitea","base_url":"https://gitea.forge.example.test","full_name":"team/orders","base_branch":"main","suggested_dir":"orders"},"acceptance_criteria":["GET /api/orders/export 支持 page/page_size 参数","新增单元测试覆盖分页边界"],"test_command":"pnpm test","constraints":{"allowed_paths":["src/api/**","tests/**"],"forbidden_paths":["migrations/**"]},"pr_convention":{"branch_prefix":"kaola/kt-2026-0001-","title_prefix":"[kt-2026-0001] "},"credential":{"inline":true},"priority":"P1","tags":["backend","api"],"poster":"gt-auto-off","status":"进行中","created_at":"2026-08-21T15:34:45.000Z"},"token":"gitea-INLINE-ONE-OFF-TOKEN-zzq7","lease":{"expires_at":"2026-08-22T15:34:45.000Z","ttl_seconds":86400},"clone":{"suggested_dir":"orders","token_usage":"token 请通过环境变量或 git -c http.extraHeader 按次传递，不要写入 remote URL（会落盘到 .git/config）。"}}
+  
+  201 !== 202
+  
+      at assertPending202 (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-15-16/apps/server/src/claim-confirm.test.ts:573:10)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-15-16/apps/server/src/claim-confirm.test.ts:931:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 201,
+    expected: 202,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-confirm.test.ts:954:5
+✖ MCP claim_task autonomous:true pending is isError false, structuredContent { pending:true, error:confirmation_required }, no token (5.809208ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + undefined
+  - true
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-15-16/apps/server/src/claim-confirm.test.ts:968:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-confirm.test.ts:975:5
+✖ idempotent re-request while pending returns 202 again and reuses one pending row (8.308875ms)
+  AssertionError [ERR_ASSERTION]: expected 202 confirmation_required, got 201: {"task":{"id":"kt-2026-0001","title":"为订单导出接口增加分页","description_md":"……（Markdown 详述）","source":{"type":"native"},"repo":{"forge":"gitea","base_url":"https://gitea.forge.example.test","full_name":"team/orders","base_branch":"main","suggested_dir":"orders"},"acceptance_criteria":["GET /api/orders/export 支持 page/page_size 参数","新增单元测试覆盖分页边界"],"test_command":"pnpm test","constraints":{"allowed_paths":["src/api/**","tests/**"],"forbidden_paths":["migrations/**"]},"pr_convention":{"branch_prefix":"kaola/kt-2026-0001-","title_prefix":"[kt-2026-0001] "},"credential":{"inline":true},"priority":"P1","tags":["backend","api"],"poster":"gt-auto-off-idem","status":"进行中","created_at":"2026-08-21T15:34:45.000Z"},"token":"gitea-INLINE-ONE-OFF-TOKEN-zzq7","lease":{"expires_at":"2026-08-22T15:34:45.000Z","ttl_seconds":86400},"clone":{"suggested_dir":"orders","token_usage":"token 请通过环境变量或 git -c http.extraHeader 按次传递，不要写入 remote URL（会落盘到 .git/config）。"}}
+  
+  201 !== 202
+  
+      at assertPending202 (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-15-16/apps/server/src/claim-confirm.test.ts:573:10)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-15-16/apps/server/src/claim-confirm.test.ts:985:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 201,
+    expected: 202,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-confirm.test.ts:999:5
+✖ GET /api/v1/me defaults trusted_automation false; PUT settings true unlocks 直通 201; PUT false again reinstates 202 (2.953541ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + undefined
+  - false
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-15-16/apps/server/src/claim-confirm.test.ts:1003:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: false,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-confirm.test.ts:1044:5
+✖ trusted_automation persists across a new buildApp on the same sqlite file path (7.791625ms)
+  AssertionError [ERR_ASSERTION]: PUT settings on app1: 404 {"message":"Route PUT:/api/v1/me/settings not found","error":"Not Found","statusCode":404}
+  
+  404 !== 200
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-15-16/apps/server/src/claim-confirm.test.ts:1053:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-confirm.test.ts:1072:5
+✖ approve consumes the pending row: agent retry succeeds; approve itself reveals no token, inserts no lease, flips no status (8.937542ms)
+  AssertionError [ERR_ASSERTION]: expected 202 confirmation_required, got 201: {"task":{"id":"kt-2026-0001","title":"为订单导出接口增加分页","description_md":"……（Markdown 详述）","source":{"type":"native"},"repo":{"forge":"gitea","base_url":"https://gitea.forge.example.test","full_name":"team/orders","base_branch":"main","suggested_dir":"orders"},"acceptance_criteria":["GET /api/orders/export 支持 page/page_size 参数","新增单元测试覆盖分页边界"],"test_command":"pnpm test","constraints":{"allowed_paths":["src/api/**","tests/**"],"forbidden_paths":["migrations/**"]},"pr_convention":{"branch_prefix":"kaola/kt-2026-0001-","title_prefix":"[kt-2026-0001] "},"credential":{"inline":true},"priority":"P1","tags":["backend","api"],"poster":"gt-approve-flow-owner","status":"进行中","created_at":"2026-08-21T04:00:00.000Z"},"token":"gitea-INLINE-ONE-OFF-TOKEN-zzq7","lease":{"expires_at":"2026-08-22T04:00:00.000Z","ttl_seconds":86400},"clone":{"suggested_dir":"orders","token_usage":"token 请通过环境变量或 git -c http.extraHeader 按次传递，不要写入 remote URL（会落盘到 .git/config）。"}}
+  
+  201 !== 202
+  
+      at assertPending202 (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-15-16/apps/server/src/claim-confirm.test.ts:573:10)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-15-16/apps/server/src/claim-confirm.test.ts:1083:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 201,
+    expected: 202,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-confirm.test.ts:1126:5
+✖ MCP: approve a pending confirmation then retry claim_task succeeds with a token (7.922209ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + undefined
+  - true
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-15-16/apps/server/src/claim-confirm.test.ts:1136:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-confirm.test.ts:1154:5
+✖ reject sets state rejected; retry of autonomous claim starts a fresh pending, still no token (7.795959ms)
+  AssertionError [ERR_ASSERTION]: expected 202 confirmation_required, got 201: {"task":{"id":"kt-2026-0001","title":"为订单导出接口增加分页","description_md":"……（Markdown 详述）","source":{"type":"native"},"repo":{"forge":"gitea","base_url":"https://gitea.forge.example.test","full_name":"team/orders","base_branch":"main","suggested_dir":"orders"},"acceptance_criteria":["GET /api/orders/export 支持 page/page_size 参数","新增单元测试覆盖分页边界"],"test_command":"pnpm test","constraints":{"allowed_paths":["src/api/**","tests/**"],"forbidden_paths":["migrations/**"]},"pr_convention":{"branch_prefix":"kaola/kt-2026-0001-","title_prefix":"[kt-2026-0001] "},"credential":{"inline":true},"priority":"P1","tags":["backend","api"],"poster":"gt-reject-flow-owner","status":"进行中","created_at":"2026-08-21T15:34:45.000Z"},"token":"gitea-INLINE-ONE-OFF-TOKEN-zzq7","lease":{"expires_at":"2026-08-22T15:34:45.000Z","ttl_seconds":86400},"clone":{"suggested_dir":"orders","token_usage":"token 请通过环境变量或 git -c http.extraHeader 按次传递，不要写入 remote URL（会落盘到 .git/config）。"}}
+  
+  201 !== 202
+  
+      at assertPending202 (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-15-16/apps/server/src/claim-confirm.test.ts:573:10)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-15-16/apps/server/src/claim-confirm.test.ts:1164:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 201,
+    expected: 202,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-confirm.test.ts:1188:5
+✖ approve/reject on another user's confirmation id is 404; GET list only shows the current user's rows (8.80275ms)
+  AssertionError [ERR_ASSERTION]: expected 202 confirmation_required, got 201: {"task":{"id":"kt-2026-0001","title":"为订单导出接口增加分页","description_md":"……（Markdown 详述）","source":{"type":"native"},"repo":{"forge":"gitea","base_url":"https://gitea.forge.example.test","full_name":"team/orders","base_branch":"main","suggested_dir":"orders"},"acceptance_criteria":["GET /api/orders/export 支持 page/page_size 参数","新增单元测试覆盖分页边界"],"test_command":"pnpm test","constraints":{"allowed_paths":["src/api/**","tests/**"],"forbidden_paths":["migrations/**"]},"pr_convention":{"branch_prefix":"kaola/kt-2026-0001-","title_prefix":"[kt-2026-0001] "},"credential":{"inline":true},"priority":"P1","tags":["backend","api"],"poster":"gt-other-user-a","status":"进行中","created_at":"2026-08-21T15:34:45.000Z"},"token":"gitea-INLINE-ONE-OFF-TOKEN-zzq7","lease":{"expires_at":"2026-08-22T15:34:45.000Z","ttl_seconds":86400},"clone":{"suggested_dir":"orders","token_usage":"token 请通过环境变量或 git -c http.extraHeader 按次传递，不要写入 remote URL（会落盘到 .git/config）。"}}
+  
+  201 !== 202
+  
+      at assertPending202 (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-15-16/apps/server/src/claim-confirm.test.ts:573:10)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-15-16/apps/server/src/claim-confirm.test.ts:1199:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 201,
+    expected: 202,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-confirm.test.ts:1223:5
+✖ an unauthenticated session cannot read or act on claim-confirmations, and Bearer alone does not authorize them (3.178916ms)
+  AssertionError [ERR_ASSERTION]: expected 202 confirmation_required, got 201: {"task":{"id":"kt-2026-0001","title":"为订单导出接口增加分页","description_md":"……（Markdown 详述）","source":{"type":"native"},"repo":{"forge":"gitea","base_url":"https://gitea.forge.example.test","full_name":"team/orders","base_branch":"main","suggested_dir":"orders"},"acceptance_criteria":["GET /api/orders/export 支持 page/page_size 参数","新增单元测试覆盖分页边界"],"test_command":"pnpm test","constraints":{"allowed_paths":["src/api/**","tests/**"],"forbidden_paths":["migrations/**"]},"pr_convention":{"branch_prefix":"kaola/kt-2026-0001-","title_prefix":"[kt-2026-0001] "},"credential":{"inline":true},"priority":"P1","tags":["backend","api"],"poster":"gt-session-auth-only","status":"进行中","created_at":"2026-08-21T15:34:45.000Z"},"token":"gitea-INLINE-ONE-OFF-TOKEN-zzq7","lease":{"expires_at":"2026-08-22T15:34:45.000Z","ttl_seconds":86400},"clone":{"suggested_dir":"orders","token_usage":"token 请通过环境变量或 git -c http.extraHeader 按次传递，不要写入 remote URL（会落盘到 .git/config）。"}}
+  
+  201 !== 202
+  
+      at assertPending202 (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-15-16/apps/server/src/claim-confirm.test.ts:573:10)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-15-16/apps/server/src/claim-confirm.test.ts:1229:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 201,
+    expected: 202,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+=== apps/web/src/App.settings.test.ts ===
+cd apps/web && npx vitest run src/App.settings.test.ts
+
+
+ RUN  v4.1.11 /Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-15-16/apps/web
+
+ ❯ src/App.settings.test.ts (8 tests | 8 failed) 8762ms
+     × active 的 full 与 claim_only 都能看到开关与待确认列表；待批准与未登录都看不到，也不会请求这两个新接口 1112ms
+     × GET /api/v1/me 缺省 trusted_automation 字段时（既有 stub 场景）仍渲染，开关默认关闭 1078ms
+     × 打开开关会 PUT { trusted_automation: true }（credentials include），并按服务端返回值刷新显示 1095ms
+     × 关闭开关同理：PUT { trusted_automation: false } 1093ms
+     × 渲染待确认行（含任务 id）；批准按钮 POST 对应 approve 路由并刷新列表 1101ms
+     × 拒绝按钮 POST 对应 reject 路由并刷新列表 1088ms
+     × 空列表时仍渲染 claim-confirmation-list 容器，且没有任何操作按钮 1091ms
+     × claim-confirmations 的 URL 恰好是 /api/v1/claim-confirmations（无 query），credentials 与 Accept 头符合既有约定 1104ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 8 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/App.settings.test.ts > 受信自动化设置 — 可见性（gated like canManageKeys） > active 的 full 与 claim_only 都能看到开关与待确认列表；待批准与未登录都看不到，也不会请求这两个新接口
+ FAIL  src/App.settings.test.ts > 受信自动化设置 — 可见性（gated like canManageKeys） > GET /api/v1/me 缺省 trusted_automation 字段时（既有 stub 场景）仍渲染，开关默认关闭
+ FAIL  src/App.settings.test.ts > 受信自动化设置 — PUT /api/v1/me/settings > 打开开关会 PUT { trusted_automation: true }（credentials include），并按服务端返回值刷新显示
+ FAIL  src/App.settings.test.ts > 受信自动化设置 — PUT /api/v1/me/settings > 关闭开关同理：PUT { trusted_automation: false }
+ FAIL  src/App.settings.test.ts > 待确认认领列表 — GET /api/v1/claim-confirmations 与批准/拒绝 > 渲染待确认行（含任务 id）；批准按钮 POST 对应 approve 路由并刷新列表
+ FAIL  src/App.settings.test.ts > 待确认认领列表 — GET /api/v1/claim-confirmations 与批准/拒绝 > 拒绝按钮 POST 对应 reject 路由并刷新列表
+ FAIL  src/App.settings.test.ts > 待确认认领列表 — GET /api/v1/claim-confirmations 与批准/拒绝 > 空列表时仍渲染 claim-confirmation-list 容器，且没有任何操作按钮
+ FAIL  src/App.settings.test.ts > 拉取路径与请求头约定 > claim-confirmations 的 URL 恰好是 /api/v1/claim-confirmations（无 query），credentials 与 Accept 头符合既有约定
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/App.settings.test.ts:159:80
+    157|   if (me.status === 'active') {
+    158|     await vi.waitFor(() => {
+    159|       expect(calls.some((call) => call.url === '/api/v1/claim-confirma…
+       |                                                                                ^
+    160|     })
+    161|     await settle()
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/8]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  8 failed (8)
+   Start at  23:38:58
+   Duration  9.32s (transform 75ms, setup 0ms, import 391ms, tests 8.76s, environment 116ms)
+
