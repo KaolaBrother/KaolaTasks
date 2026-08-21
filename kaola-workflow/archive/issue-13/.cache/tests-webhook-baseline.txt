@@ -1,0 +1,1447 @@
+# RED baseline capture — issue #13 (tdd-guide)
+# Baseline commit: 44eca32b297d8aa15e3966c1bb29090ce6e336cb
+# Command: CI=true pnpm test
+# Captured: 2026-08-21T12:13:12Z
+
+Scope: all 5 workspace projects
+✓ Lockfile passes supply-chain policies (verified 3h ago)
+Lockfile is up to date, resolution step is skipped
+Already up to date
+
+Done in 315ms using pnpm v11.19.0
+$ node --experimental-strip-types --test packages/shared/src/index.test.ts packages/forge-adapters/src/index.test.ts packages/forge-adapters/src/validate-token.shared.test.ts packages/forge-adapters/src/get-pull-request.shared.test.ts packages/forge-adapters/src/import-issue.shared.test.ts packages/forge-adapters/src/webhook.shared.test.ts apps/server/src/import.test.ts apps/server/src/placeholder.test.ts apps/server/src/auth.test.ts apps/server/src/agent-keys.test.ts apps/server/src/vault.test.ts apps/server/src/tasks.test.ts apps/server/src/hosting.test.ts apps/server/src/claim.test.ts apps/server/src/mcp.test.ts apps/server/src/poller.test.ts apps/server/src/webhook.test.ts && pnpm --filter @kaola/web test
+▶ unauthenticated session agent-key routes
+  ✔ JSON Accept is 401 unauthorized without WWW-Authenticate; browser-like requests redirect to /login (47.652834ms)
+✔ unauthenticated session agent-key routes (48.102583ms)
+▶ GET /api/v1/agent/whoami Bearer failures
+  ✔ missing, wrong, and non-Bearer credentials are 401 with WWW-Authenticate Bearer (14.154416ms)
+  ✔ a session cookie does not authorize whoami; GET /api/v1/me does not accept Bearer (9.424209ms)
+✔ GET /api/v1/agent/whoami Bearer failures (23.723917ms)
+▶ pending GitHub cannot generate Agent Keys
+  ✔ pending GitHub POST /api/v1/agent-keys returns 403 with the generate-gate message (6.871166ms)
+✔ pending GitHub cannot generate Agent Keys (7.009583ms)
+▶ approved GitHub claim_only self-service
+  ✔ approved GitHub claim_only can generate, list without plaintext, update last_used_at, and revoke immediately (12.811375ms)
+✔ approved GitHub claim_only self-service (13.009791ms)
+▶ GitLab and Gitea full+active self-service
+  ✔ GitLab full+active can generate keys without VAULT_MASTER_KEY; GET / stays 考拉任务服务占位 (8.560208ms)
+  ✔ Gitea full+active can generate, list, and use Bearer whoami (6.646292ms)
+✔ GitLab and Gitea full+active self-service (15.335291ms)
+▶ list and revoke are own keys only
+  ✔ a full member cannot list or revoke another user's key; missing and not-owned DELETE are 404 not_found (6.276584ms)
+✔ list and revoke are own keys only (6.345458ms)
+▶ agent_keys hashed storage
+  ✔ SQLite stores sha256 hex of plaintext utf8, never the token, unique key_hash; failed Bearer does not set last_used_at (13.815542ms)
+✔ agent_keys hashed storage (13.915042ms)
+▶ login start paths
+  ✔ GET /login is allowed without a session (41.491292ms)
+  ✔ GET /login/github redirects to GitHub authorize (5.788791ms)
+  ✔ GET /login/gitlab redirects to the configured GitLab authorize URL (3.805541ms)
+  ✔ GET /login/gitea redirects to the configured Gitea authorize URL (4.774125ms)
+✔ login start paths (56.445459ms)
+▶ unauthenticated GET /api/v1/me
+  ✔ browser-like GET /api/v1/me redirects to /login and does not return a user (4.299958ms)
+  ✔ JSON GET /api/v1/me without a session returns 401 and does not return a user (4.062375ms)
+✔ unauthenticated GET /api/v1/me (8.508667ms)
+▶ OAuth callback first login
+  ✔ GitHub first login persists 待批准 claim_only user and a usable session (14.770583ms)
+  ✔ GitHub display_name falls back to login when name is null (5.472417ms)
+  ✔ GitLab first login persists active full user and a usable session (5.287583ms)
+  ✔ Gitea first login persists active full user and a usable session (4.504875ms)
+  ✔ Gitea display_name falls back to login when full_name is empty (4.006875ms)
+  ✔ second GitHub callback with the same remote_id reuses the same user id (5.002375ms)
+  ✔ the same remote_id on GitHub and GitLab is two users (5.111209ms)
+✔ OAuth callback first login (44.531625ms)
+▶ pending GitHub users and approve
+  ✔ pending GitHub user cannot POST /api/v1/users/:id/approve (4.922708ms)
+  ✔ an active full member can approve a GitHub user to active while leaving claim_only (5.274541ms)
+  ✔ approving does not reset on GitHub re-login, and claim_only still cannot approve others (7.471333ms)
+✔ pending GitHub users and approve (17.80075ms)
+▶ issue #9 lease-based claiming
+  ▶ authentication — Bearer only
+    ✔ unauthenticated claim, progress, and release are 401 unauthorized with WWW-Authenticate Bearer (56.686042ms)
+    ✔ wrong and non-Bearer credentials are 401 with WWW-Authenticate Bearer (9.25275ms)
+    ✔ a session cookie without Bearer does not authorize claim, progress, or release (13.454875ms)
+    ✔ unknown publicId with a valid Bearer key is 404 not_found (8.379333ms)
+    ✔ numeric PK in the path with a valid Bearer key is 404 not_found (8.512792ms)
+  ✔ authentication — Bearer only (96.785625ms)
+  ▶ POST /api/v1/tasks/:publicId/claim — 201 envelope
+    ✔ claiming an inline task returns 201 with task, forge token, lease TTL, and clone guidance (8.393083ms)
+    ✔ claiming a profile task returns 201; credential stays { profile_id }; token is the profile forge plaintext (8.398ms)
+    ✔ session GET list and GET one after a successful claim still omit forge token and secret keys (9.011916ms)
+  ✔ POST /api/v1/tasks/:publicId/claim — 201 envelope (25.99075ms)
+  ▶ AuthZ
+    ✔ pending 待批准 seeded Agent Key is 403, does not reveal the forge token, and writes no token 揭示 (15.28925ms)
+    ✔ approved GitHub claim_only can claim (7.387167ms)
+    ✔ active full can claim (7.728208ms)
+  ✔ AuthZ (30.538833ms)
+  ▶ conflicts / illegal states
+    ✔ second claim while 进行中 is 409 conflict, no token, and no second reveal (26.761125ms)
+    ✔ claiming a 已取消 task is 409 illegal_transition (7.489875ms)
+    ✔ claiming a 待验收 task is 409 illegal_transition (14.246875ms)
+    ✔ progress and release by a non-holder are 403 forbidden (8.305167ms)
+    ✔ progress and release with no live lease are 409 conflict 任务未被认领 (5.577709ms)
+    ✔ progress and release after the holder released are 409 任务未被认领 (6.663666ms)
+  ✔ conflicts / illegal states (69.203542ms)
+  ▶ heartbeat
+    ✔ omitted note still renews expires_at from heartbeat time and writes 心跳 with note empty string (13.166417ms)
+    ✔ a progress note is persisted on the 心跳 event; empty note still renews (13.926917ms)
+  ✔ heartbeat (27.163958ms)
+  ▶ release
+    ✔ holder release returns 200 { task } 待认领, marks the lease released, and writes 状态迁移 without reason (13.222083ms)
+    ✔ release with reason stores reason on the 状态迁移 event (14.203125ms)
+  ✔ release (27.499125ms)
+  ▶ expiry
+    ✔ check-on-read: after TTL, session GET list and GET one show 待认领, lease expired, actor_user_id null, reveal rows unchanged (14.622916ms)
+    ✔ check-on-write: after TTL, progress sweeps then returns 409 任务未被认领 (14.7885ms)
+    ✔ after expiry a different Agent Key can claim again and writes a second token 揭示 (16.905125ms)
+  ✔ expiry (46.41425ms)
+  ▶ reveal audit
+    ✔ inline claim writes token 揭示 { task_id, agent_key_id, credential: inline } and 状态迁移 待认领→进行中 (11.882917ms)
+    ✔ profile claim writes token 揭示 with credential profile and integer profile_id; no plaintext or ciphertext (10.609708ms)
+  ✔ reveal audit (22.562666ms)
+  ▶ leases table
+    ✔ successful claim inserts one active lease keyed by tasks.id PK; at most one active row per task (11.796042ms)
+  ✔ leases table (11.838833ms)
+✔ issue #9 lease-based claiming (358.363209ms)
+▶ issue #17 single-port 31415 hosting
+  ✔ omitted hosting options keep GET / as 考拉任务服务占位 with text/plain; webDist serves index.html at / (69.564167ms)
+  ✔ webDist SPA-fallbacks unmatched GET, serves assets, and does not swallow /api or /login (13.163833ms)
+  ✔ when webDist and viteDevTarget are both set, webDist wins (8.363834ms)
+  ✔ index.ts PORT default is 31415 (source pin; does not import index.ts) (0.599959ms)
+  ✔ auth.ts PUBLIC_URL default is http://localhost:31415 (source pin) (0.181542ms)
+  ✔ vite.config.ts proxies /api and /login to http://127.0.0.1:31415 (0.141542ms)
+  ✔ docker-compose maps 31415:31415 and sets PORT 31415 (0.107541ms)
+  ✔ Dockerfile EXPOSE 31415, ENV PORT=31415, and image build includes web dist (0.153333ms)
+  ✔ root package.json has a non-empty dev script (0.109625ms)
+✔ issue #17 single-port 31415 hosting (93.019791ms)
+▶ issue #12 POST /api/v1/tasks/import
+  ▶ authentication (same gate as POST /api/v1/tasks)
+    ✔ unauthenticated JSON POST returns 401 unauthorized (49.402791ms)
+    ✔ 待批准 GitHub user gets 403 forbidden (11.071417ms)
+    ✔ approved GitHub claim_only user gets 403 forbidden (8.899667ms)
+  ✔ authentication (same gate as POST /api/v1/tasks) (69.788917ms)
+  ▶ success is a pre-publish draft (200, no tasks row, no token)
+    ✔ inline credential returns 200 mapped fields and does not insert a tasks row (13.986291ms)
+    ✔ optional repo.full_name matching the parsed name still 200 (9.325ms)
+    ✔ trailing slash on issue_url is stripped in source.issue_url (5.27075ms)
+    ✔ gitea constructor baseUrl is used, not the pasted issue host (SSRF) (5.359667ms)
+  ✔ success is a pre-publish draft (200, no tasks row, no token) (34.143333ms)
+  ▶ error mapping
+    ✔ generic parse / missing issue_url / missing forge is 400 invalid_body with no message (8.527167ms)
+    ✔ unparseable issue_url is 400 with 无法解析 Issue 地址 and does not fetch (5.505041ms)
+    ✔ repo.full_name that does not equal the parsed name is 400 Issue 地址与仓库不匹配 (5.090875ms)
+    ✔ repo.base_url that is not http(s)+host uses the publish Chinese message (4.958334ms)
+    ✔ forge 404 is 404 issue_not_found (8.66475ms)
+    ✔ forge 410 is 404 issue_not_found (5.479667ms)
+    ✔ forge 401 is 422 token_check_failed with missing 读 (5.579417ms)
+    ✔ other non-OK forge status is 502 forge_unreachable (7.186333ms)
+    ✔ fetch/network throw is 502 forge_unreachable (4.191375ms)
+  ✔ error mapping (55.528792ms)
+  ▶ profile credential bind, decrypt, and token 揭示
+    ✔ matching profile 200 writes token 揭示 outcome ok; no tasks row; no token in JSON (11.57075ms)
+    ✔ profile-path 404 still writes token 揭示 with outcome issue_not_found (10.306083ms)
+    ✔ profile-path 401 still writes token 揭示 with outcome token_check_failed (9.687167ms)
+    ✔ profile-path 502 still writes token 揭示 with outcome forge_unreachable (11.955667ms)
+    ✔ unparseable issue_url with profile_id does not decrypt (no token 揭示, no fetch) (9.415709ms)
+    ✔ missing profile is 400 所选凭证档案不存在 (3.184083ms)
+    ✔ profile bind is exact forge/base_url/parsed full_name (mismatch does not decrypt) (9.883709ms)
+    ✔ profile path without VAULT_MASTER_KEY returns 500 vault_unconfigured (3.522917ms)
+  ✔ profile credential bind, decrypt, and token 揭示 (69.724708ms)
+✔ issue #12 POST /api/v1/tasks/import (229.478ms)
+▶ issue #10 MCP server
+  ▶ authentication — Bearer only, HTTP 401 before JSON-RPC
+    ✔ unauthenticated POST /api/mcp (missing Authorization) is 401 unauthorized with WWW-Authenticate Bearer (43.425209ms)
+    ✔ Token scheme, Basic, and wrong Bearer on POST /api/mcp are 401 with WWW-Authenticate Bearer (13.143541ms)
+    ✔ a session cookie without Bearer does not authorize POST /api/mcp (8.922542ms)
+    ✔ authenticated tools/list includes the six tools and claim_task describes token hygiene (22.580375ms)
+  ✔ authentication — Bearer only, HTTP 401 before JSON-RPC (88.512958ms)
+  ▶ list_tasks / get_task_brief
+    ✔ list_tasks returns { tasks } briefs that parse and never contain forge secrets (16.283833ms)
+    ✔ list_tasks filters by exact status, tag membership of one tag, and exact repo.forge (21.672791ms)
+    ✔ list_tasks and get_task_brief apply sweepExpiredLeases so an expired 进行中 task shows as 待认领 (14.00325ms)
+    ✔ a pending 待批准 Agent Key may list_tasks (17.430209ms)
+    ✔ get_task_brief returns a top-level brief; missing and numeric ids are isError not_found (13.064125ms)
+  ✔ list_tasks / get_task_brief (82.749291ms)
+  ▶ claim_task
+    ✔ claim_task success envelope keys are exactly task, token, lease, clone with the REST clone pin (14.520583ms)
+    ✔ pending claim_task is isError matching REST 403, reveals no token, and writes no token 揭示 (15.999834ms)
+    ✔ second claim_task is conflict; list_tasks and get_task_brief still omit the forge token (22.22875ms)
+  ✔ claim_task (52.87175ms)
+  ▶ report_progress / release_task
+    ✔ report_progress wraps REST: optional note (omit → empty string), envelope { task, lease }, no token (17.856667ms)
+    ✔ release_task wraps REST: optional reason, envelope { task } 待认领, no token (21.601583ms)
+    ✔ non-holder report_progress and release_task are isError forbidden with no message (12.338375ms)
+    ✔ report_progress and release_task with no live lease are isError 任务未被认领 (6.711375ms)
+  ✔ report_progress / release_task (58.626417ms)
+  ▶ submit_pr
+    ✔ submit_pr success is { task, pr_url, summary } 待验收, persists submissions, clears the lease, writes 状态迁移 (17.45325ms)
+    ✔ submit_pr fails for non-holder, no lease, and not 进行中 (24.0675ms)
+  ✔ submit_pr (41.598209ms)
+✔ issue #10 MCP server (324.620875ms)
+✔ getPlaceholderBody returns the pinned non-empty placeholder HTTP body (0.375ms)
+▶ issue #11 poller (pollPendingReviews)
+  ▶ getPullRequest-driven terminal transitions
+    ✔ merged PR: 待验收 → 已完成, submissions.pr_state → merged, system 状态迁移 (actor_user_id null) (84.126875ms)
+    ✔ closed (unmerged) PR: 待验收 → 已退回, submissions.pr_state → closed (25.246167ms)
+    ✔ open PR: task stays 待验收, pr_state stays open (23.351125ms)
+  ✔ getPullRequest-driven terminal transitions (133.1395ms)
+  ▶ scope: only 待验收 tasks are ever fetched
+    ✔ 待认领/进行中/已完成/已取消/已退回 tasks are never fetched as PRs and are left untouched (71.001834ms)
+  ✔ scope: only 待验收 tasks are ever fetched (71.133625ms)
+  ▶ resilience
+    ✔ a fetch failure on one 待验收 task is skipped, and a sibling 待验收 task still completes (34.30875ms)
+  ✔ resilience (34.381375ms)
+  ▶ reopen after a poller-driven 已退回
+    ✔ poster PATCH { status: 待认领 } succeeds after 已退回, and prior events + the submissions row remain (18.908417ms)
+  ✔ reopen after a poller-driven 已退回 (18.986583ms)
+  ▶ buildApp({ pollIntervalMs }) frequency contract
+    ✔ omitted pollIntervalMs registers no interval (3.703167ms)
+    ✔ pollIntervalMs: 0 registers no interval (5.876459ms)
+    ✔ pollIntervalMs: 1234 registers setInterval with delay 1234 (6.831625ms)
+  ✔ buildApp({ pollIntervalMs }) frequency contract (16.561292ms)
+✔ issue #11 poller (pollPendingReviews) (274.488084ms)
+▶ issue #13: per-instance webhook-vs-poll config (pollPendingReviews honors forgeInstances)
+  ✖ a syncMode: "webhook" instance matching (repoForge, repoBaseUrl) is skipped: zero getPullRequest fetches, task stays 待验收 (17.69575ms)
+  ✔ an unlisted/mismatched instance (wrong base_url, or right base_url with the wrong forge) is still polled as before (18.539625ms)
+  ✔ a syncMode: "poll" instance matching (repoForge, repoBaseUrl) is still polled (18.154084ms)
+  ✔ an explicit empty forgeInstances array polls every 待验收 task exactly as omitting the argument does (18.013333ms)
+✖ issue #13: per-instance webhook-vs-poll config (pollPendingReviews honors forgeInstances) (72.559959ms)
+▶ issue #7 tasks HTTP surface
+  ▶ authentication and DESIGN §11 permissions
+    ✔ unauthenticated JSON GET/POST/PATCH return 401 unauthorized (48.63525ms)
+    ✔ browser-like GET /api/v1/tasks redirects to /login (5.231708ms)
+    ✔ 待批准 GitHub user may read the board (§11 查看任务板 ✓) but not post (11.969625ms)
+    ✔ approved GitHub claim_only user may read the board but not post or patch (24.952459ms)
+    ✔ only the 发布者 may cancel — another active full member gets 403 (9.032417ms)
+  ✔ authentication and DESIGN §11 permissions (100.336875ms)
+  ▶ POST /api/v1/tasks — 凭证档案下拉选择 path
+    ✔ profile path creates a 待认领 task whose credential is { profile_id } (8.027458ms)
+    ✔ profile_id is accepted as a number and as a numeric string (7.780333ms)
+    ✔ an unknown profile_id is refused with 400 invalid_body and a Chinese message (4.933584ms)
+  ✔ POST /api/v1/tasks — 凭证档案下拉选择 path (20.9125ms)
+  ▶ POST /api/v1/tasks — 单任务临时 token path
+    ✔ inline token path creates a 待认领 task whose credential is { inline: true } (5.460875ms)
+    ✔ inline token is stored as ciphertext and recoverable through the vault (12.306458ms)
+    ✔ both credential paths return 500 vault_unconfigured without VAULT_MASTER_KEY (6.0325ms)
+  ✔ POST /api/v1/tasks — 单任务临时 token path (23.944375ms)
+  ▶ 发布即校验 — DESIGN §5
+    ✔ a token missing 推 and PR is refused with 422 and names both capabilities (6.534292ms)
+    ✔ a token that can push but cannot open PRs is refused naming only PR (4.8285ms)
+    ✔ a 401 token is refused with the token-invalid message, not the 权限不足 one (4.942084ms)
+    ✔ a token with no access to the repo is refused with the token-invalid message (8.405167ms)
+    ✔ an unreachable forge is a DIFFERENT outcome: 502 with its own Chinese message (4.781833ms)
+    ✔ the profile path is validated too — an under-scoped profile token is refused (4.813583ms)
+  ✔ 发布即校验 — DESIGN §5 (34.579042ms)
+  ▶ 任务卡字段完整符合 §6 schema
+    ✔ a full request body round-trips every DESIGN §6 field (10.268ms)
+    ✔ pr_convention is derived from the public id, per DESIGN §6 (5.511959ms)
+    ✔ a client-supplied pr_convention or id or status is ignored — the server owns them (4.417125ms)
+    ✔ an imported source round-trips issue_url; a native source carries only type (4.377125ms)
+    ✔ a minimal request body is completed with the documented defaults (4.479375ms)
+    ✔ created_at is ISO-8601 with offset and matches the stored unix seconds (9.143041ms)
+    ✔ POST with no title returns 400 invalid_body (3.134791ms)
+    ✔ POST with an empty title returns 400 invalid_body (2.757125ms)
+    ✔ POST with no repo returns 400 invalid_body (2.902792ms)
+    ✔ POST with an unknown forge returns 400 invalid_body (3.180208ms)
+    ✔ POST with no repo.full_name returns 400 invalid_body (3.437792ms)
+    ✔ POST with an unknown priority returns 400 invalid_body (2.875458ms)
+    ✔ POST with an unknown source type returns 400 invalid_body (2.843666ms)
+    ✔ POST with an imported source without issue_url returns 400 invalid_body (2.790375ms)
+    ✔ POST with no credential returns 400 invalid_body (2.534125ms)
+    ✔ POST with an empty credential returns 400 invalid_body (2.694125ms)
+    ✔ POST with both credential forms at once returns 400 invalid_body (2.368834ms)
+    ✔ POST with a bare inline marker and no token returns 400 invalid_body (2.517333ms)
+    ✔ POST with an empty inline token returns 400 invalid_body (2.75275ms)
+  ✔ 任务卡字段完整符合 §6 schema (75.444667ms)
+  ▶ public_id — kt-YYYY-NNNN
+    ✔ public_id has the kt-YYYY-NNNN form and carries the current year (3.02225ms)
+    ✔ public ids are distinct and their sequence increases (3.84225ms)
+    ✔ public_id is UNIQUE in SQLite (12.695917ms)
+  ✔ public_id — kt-YYYY-NNNN (19.656541ms)
+  ▶ token secrecy — DESIGN §7
+    ✔ no create/list/get response carries the inline token in any field (3.492166ms)
+    ✔ no create/list/get response carries the profile token in any field (3.735583ms)
+  ✔ token secrecy — DESIGN §7 (7.282917ms)
+  ▶ GET /api/v1/tasks and GET /api/v1/tasks/:public_id
+    ✔ list returns every task under a tasks key, each a §6 brief (3.990208ms)
+    ✔ get by public_id returns exactly the brief that create returned (2.971583ms)
+    ✔ an unknown public_id returns 404 not_found (2.828167ms)
+    ✔ a numeric-looking id returns 404 not_found — tasks are addressed by public_id only (3.254625ms)
+  ✔ GET /api/v1/tasks and GET /api/v1/tasks/:public_id (13.127792ms)
+  ▶ PATCH /api/v1/tasks/:public_id — 取消 / 重新开放
+    ✔ 待认领 → 已取消 by the poster returns the updated brief (4.006458ms)
+    ✔ 已退回 → 待认领 reopens the task (10.881875ms)
+    ✔ 已退回 → 已取消 by the poster (10.020959ms)
+    ✔ an illegal transition 待认领 → 已完成 returns 409 with a Chinese message (3.900125ms)
+    ✔ 待认领 → 进行中 is claim territory, not a poster edit: 409 illegal_transition (3.573458ms)
+    ✔ 已取消 is terminal — 已取消 → 待认领 returns 409 (3.897083ms)
+    ✔ an unknown status value returns 400 invalid_body (4.213917ms)
+    ✔ PATCH on an unknown public_id returns 404 not_found (5.81275ms)
+  ✔ PATCH /api/v1/tasks/:public_id — 取消 / 重新开放 (46.499125ms)
+  ▶ audit — 状态迁移 events (DESIGN §10)
+    ✔ cancelling writes one 状态迁移 event naming the task, from, to and actor (7.319666ms)
+    ✔ reopening writes a 状态迁移 event from 已退回 to 待认领 (6.815166ms)
+    ✔ a refused transition writes no 状态迁移 event (7.343625ms)
+  ✔ audit — 状态迁移 events (DESIGN §10) (21.559791ms)
+  ▶ tasks table invariants (DESIGN §10: credential_profile_id / inline_token_encrypted 二选一)
+    ✔ the profile path stores credential_profile_id and leaves inline_token_encrypted NULL (7.215333ms)
+    ✔ SQLite refuses a row with BOTH credential columns set (6.052083ms)
+    ✔ SQLite refuses a row with NEITHER credential column set (5.470916ms)
+  ✔ tasks table invariants (DESIGN §10: credential_profile_id / inline_token_encrypted 二选一) (18.802625ms)
+  ▶ POST /api/v1/tasks — security-review repair (profile binding / base_url / audit)
+    ▶ F1 — profile-to-repo binding (exact forge + base_url + full_name)
+      ✔ gitlab profile + gitea request is 400 before decrypt and never sends the plaintext token (6.104208ms)
+      ✔ matching forge and full_name with an attacker base_url is 400 before decrypt (5.972292ms)
+      ✔ matching forge and base_url with a different full_name is 400 before decrypt (5.653125ms)
+    ✔ F1 — profile-to-repo binding (exact forge + base_url + full_name) (17.791209ms)
+    ▶ F2 — repo.base_url must be http(s) with a non-empty host
+      ✔ POST with repo.base_url a file: URL returns 400 invalid_body before any forge fetch (2.216875ms)
+      ✔ POST with repo.base_url a javascript: URL returns 400 invalid_body before any forge fetch (2.127166ms)
+      ✔ POST with repo.base_url a missing scheme returns 400 invalid_body before any forge fetch (2.191042ms)
+      ✔ POST with repo.base_url an empty host returns 400 invalid_body before any forge fetch (1.844792ms)
+    ✔ F2 — repo.base_url must be http(s) with a non-empty host (8.438959ms)
+    ▶ F3 — decrypting a stored profile for 发布即校验 writes token 揭示
+      ✔ a matching profile 201 writes token 揭示 with pinned details; an inline token does not (6.986542ms)
+      ✔ a profile-path 422 still writes token 揭示 (plaintext already left the process) (5.8745ms)
+      ✔ a profile-path 502 still writes token 揭示 (plaintext already left the process) (5.627458ms)
+    ✔ F3 — decrypting a stored profile for 发布即校验 writes token 揭示 (18.559667ms)
+  ✔ POST /api/v1/tasks — security-review repair (profile binding / base_url / audit) (44.840917ms)
+✔ issue #7 tasks HTTP surface (427.424ms)
+▶ issue #5 credential vault
+  ▶ placeholder pin
+    ✔ GET / still returns 考拉任务服务占位 (47.278ms)
+  ✔ placeholder pin (47.618959ms)
+  ▶ unauthenticated credential-profile routes
+    ✔ JSON GET/POST/DELETE without a session return 401 unauthorized (13.675375ms)
+    ✔ browser-like GET /api/v1/credential-profiles redirects to /login (3.569417ms)
+  ✔ unauthenticated credential-profile routes (17.39975ms)
+  ▶ credential profile CRUD (session, active full)
+    ✔ GitLab POST returns 201 public fields and GET lists them without secrets (13.272292ms)
+    ✔ Gitea active full member can POST a credential profile (7.044167ms)
+    ✔ duplicate (forge, base_url, repo_full_name) returns 409 conflict (7.533709ms)
+    ✔ DELETE returns forge-revoke copy; missing id is 404 not_found (5.988916ms)
+    ✔ any active full member lists and deletes team-shared profiles (6.33175ms)
+  ✔ credential profile CRUD (session, active full) (40.422125ms)
+  ▶ permission gate (profiles are active+full only)
+    ✔ pending GitHub user gets 403 forbidden on POST/GET/DELETE (5.692875ms)
+    ✔ approved GitHub claim_only still gets 403 forbidden on POST/GET/DELETE (7.511875ms)
+  ✔ permission gate (profiles are active+full only) (13.316ms)
+  ▶ SQLite: no plaintext token; 变更 events
+    ✔ token_encrypted TEXT omits plaintext and create writes 变更 (12.122292ms)
+    ✔ DELETE writes 变更 action delete (18.69575ms)
+  ✔ SQLite: no plaintext token; 变更 events (30.960041ms)
+  ▶ vault_unconfigured
+    ✔ HTTP POST without VAULT_MASTER_KEY returns 500 vault_unconfigured (4.279833ms)
+  ✔ vault_unconfigured (4.333459ms)
+  ▶ encryptToken / decryptToken (dynamic import ./vault.ts)
+    ✔ round-trips a one-off token string and ciphertext omits plaintext (0.387792ms)
+    ✔ encryptToken throws when VAULT_MASTER_KEY is missing (0.22525ms)
+  ✔ encryptToken / decryptToken (dynamic import ./vault.ts) (0.648375ms)
+  ▶ revealCredentialProfile (dynamic import ./vault.ts)
+    ✔ returns plaintext, writes token 揭示 audit, and throws after DELETE (17.064917ms)
+  ✔ revealCredentialProfile (dynamic import ./vault.ts) (17.151209ms)
+✔ issue #5 credential vault (172.220209ms)
+▶ issue #13 webhook receiver (POST /api/v1/webhooks/:publicId)
+  ✖ unknown publicId (no matching forgeInstances entry) → 404 { error: "not_found" }, no signature required (52.376167ms)
+  ✖ bad signature (wrong secret) → 401 { error: "invalid_signature" }, and the response never leaks the secret (7.958625ms)
+  ✖ bad signature (missing signature header) → 401 { error: "invalid_signature" } (8.243083ms)
+  ✖ ping/irrelevant event with a correct signature → 204 empty body (11.388542ms)
+  ✖ merge event with a matching 待验收 submission → 204, task 已完成, submissions.pr_state merged, system 状态迁移 event (40.12275ms)
+  ✖ closed-unmerged event with a matching 待验收 submission → 204, task 已退回, submissions.pr_state closed (21.841958ms)
+  ✖ a delivery whose pr_url matches no 待验收 submission → 204 no-op, no task/event changes (25.688875ms)
+  ✖ a syncMode: "poll" instance webhook still completes the task (mode gates the poller, not this receiver) (22.053333ms)
+  ✖ no session cookie and no Bearer token are required or accepted as auth — the signature alone gates the request (28.158917ms)
+  ✖ cross-forge dispatch: a github forgeInstances entry is verified with X-Hub-Signature-256, not the gitea scheme (7.19325ms)
+✖ issue #13 webhook receiver (POST /api/v1/webhooks/:publicId) (225.801208ms)
+▶ getPullRequest shared spec
+  ▶ github
+    ✔ GETs the pull/merge-request endpoint with validateToken-style auth headers (11.958417ms)
+    ✔ merged → { state: "merged" } (0.401833ms)
+    ✔ closed and not merged → { state: "closed" } (0.255959ms)
+    ✔ open → { state: "open" } (0.48375ms)
+    ✔ trailing slash on the pasted URL is stripped before parsing (0.69475ms)
+    ✔ non-OK HTTP response rejects (after actually calling fetch, not merely throwing) (0.335417ms)
+    ✔ an unparseable prUrl rejects without calling fetch, while a valid URL from the same adapter succeeds (0.28725ms)
+  ✔ github (14.882792ms)
+  ▶ gitlab
+    ✔ GETs the pull/merge-request endpoint with validateToken-style auth headers (0.332958ms)
+    ✔ merged → { state: "merged" } (0.245ms)
+    ✔ closed and not merged → { state: "closed" } (0.2355ms)
+    ✔ open → { state: "open" } (0.162209ms)
+    ✔ trailing slash on the pasted URL is stripped before parsing (0.125958ms)
+    ✔ non-OK HTTP response rejects (after actually calling fetch, not merely throwing) (0.089041ms)
+    ✔ an unparseable prUrl rejects without calling fetch, while a valid URL from the same adapter succeeds (0.114792ms)
+  ✔ gitlab (1.472333ms)
+  ▶ gitea
+    ✔ GETs the pull/merge-request endpoint with validateToken-style auth headers (0.219041ms)
+    ✔ merged → { state: "merged" } (0.126458ms)
+    ✔ closed and not merged → { state: "closed" } (0.090084ms)
+    ✔ open → { state: "open" } (0.097ms)
+    ✔ trailing slash on the pasted URL is stripped before parsing (0.269209ms)
+    ✔ non-OK HTTP response rejects (after actually calling fetch, not merely throwing) (0.233375ms)
+    ✔ an unparseable prUrl rejects without calling fetch, while a valid URL from the same adapter succeeds (0.923291ms)
+  ✔ gitea (2.373375ms)
+  ✔ github: .diff and .patch suffixes on the pasted URL are stripped before parsing (0.252208ms)
+  ✔ github: always calls api.github.com regardless of a custom baseUrl option (0.091417ms)
+  ✔ gitlab: opened → open (verified 4-valued vendor enum mapped down to 3) (0.091125ms)
+  ✔ gitlab: locked (transient, en route to merged) → open, not merged and not closed (0.073917ms)
+  ✔ gitlab: a namespace path with subgroup slashes is encodeURIComponent-ed as a single :id segment (0.0735ms)
+  ✔ gitlab/gitea: the API origin comes from the constructor baseUrl option, not from the prUrl host (1.665917ms)
+✔ getPullRequest shared spec (21.345ms)
+▶ importIssue shared spec
+  ▶ github
+    ✔ GETs the issue endpoint with validateToken-style auth headers and returns ImportedIssue (11.501458ms)
+    ✔ trailing slash on the pasted URL is stripped before parsing and from returned issue_url (0.725459ms)
+    ✔ query and hash on the pasted URL are dropped by pathname when building the REST URL (0.27225ms)
+    ✔ null issue body/description maps to an empty description_md (0.265209ms)
+    ✔ missing issue body/description maps to an empty description_md (0.230375ms)
+    ✔ returned issue_url is the pasted web URL, not html_url / web_url from JSON (0.237375ms)
+    ✔ missing or non-string title rejects after fetch (0.375334ms)
+    ✔ non-OK HTTP response rejects after actually calling fetch, with status in the message (0.255625ms)
+    ✔ an unparseable issueUrl rejects without calling fetch (not merely notImplemented) (0.110125ms)
+    ✔ a pull/MR/work-item web path is unparseable and must not fetch (0.122542ms)
+  ✔ github (14.601125ms)
+  ▶ gitlab
+    ✔ GETs the issue endpoint with validateToken-style auth headers and returns ImportedIssue (0.235208ms)
+    ✔ trailing slash on the pasted URL is stripped before parsing and from returned issue_url (0.162458ms)
+    ✔ query and hash on the pasted URL are dropped by pathname when building the REST URL (0.096ms)
+    ✔ null issue body/description maps to an empty description_md (0.079208ms)
+    ✔ missing issue body/description maps to an empty description_md (0.096625ms)
+    ✔ returned issue_url is the pasted web URL, not html_url / web_url from JSON (0.091625ms)
+    ✔ missing or non-string title rejects after fetch (0.081375ms)
+    ✔ non-OK HTTP response rejects after actually calling fetch, with status in the message (0.062083ms)
+    ✔ an unparseable issueUrl rejects without calling fetch (not merely notImplemented) (0.054ms)
+    ✔ a pull/MR/work-item web path is unparseable and must not fetch (0.046584ms)
+  ✔ gitlab (1.133334ms)
+  ▶ gitea
+    ✔ GETs the issue endpoint with validateToken-style auth headers and returns ImportedIssue (0.129167ms)
+    ✔ trailing slash on the pasted URL is stripped before parsing and from returned issue_url (0.070542ms)
+    ✔ query and hash on the pasted URL are dropped by pathname when building the REST URL (0.057292ms)
+    ✔ null issue body/description maps to an empty description_md (2.04925ms)
+    ✔ missing issue body/description maps to an empty description_md (0.953208ms)
+    ✔ returned issue_url is the pasted web URL, not html_url / web_url from JSON (0.603666ms)
+    ✔ missing or non-string title rejects after fetch (0.184ms)
+    ✔ non-OK HTTP response rejects after actually calling fetch, with status in the message (0.291625ms)
+    ✔ an unparseable issueUrl rejects without calling fetch (not merely notImplemented) (0.099ms)
+    ✔ a pull/MR/work-item web path is unparseable and must not fetch (0.048708ms)
+  ✔ gitea (4.871917ms)
+  ✔ github: always calls api.github.com regardless of a custom baseUrl option or pasted host (0.3955ms)
+  ✔ github/gitea: a GET /issues/{n} payload that includes pull_request is still accepted (0.164041ms)
+  ✔ gitlab: description_md comes from JSON description, not body (0.07475ms)
+  ✔ github/gitea: description_md comes from JSON body, not description (0.089083ms)
+  ✔ gitlab: a nested-group namespace is encodeURIComponent-ed as a single :id segment (0.075125ms)
+  ✔ gitlab: canonical /-/issues/ is not parsed as a legacy namespace ending in /- (0.062916ms)
+  ✔ gitlab: the legacy /issues/ web_url (no /-/) is also accepted (0.082125ms)
+  ✔ gitlab: /-/work_items/ is unparseable (zero fetch) (0.067125ms)
+  ✔ gitlab/gitea: the API origin comes from the constructor baseUrl option, not from the issueUrl host (0.143ms)
+✔ importIssue shared spec (22.140417ms)
+✔ getForgeAdaptersHealth returns the pinned non-empty forge-adapters package health string (0.284083ms)
+▶ validateToken shared spec
+  ▶ github
+    ✔ all ok: GET user + push-capable repo → missing [] (same-repo, no /forks) (11.406958ms)
+    ✔ cannot read: repo/project GET 404 → missing includes 读 (0.397834ms)
+    ✔ dead token: user GET 401 → missing includes 读, 推, and PR (0.182792ms)
+    ✔ read but cannot push (Reporter / push:false / access_level 20) → missing 推, not 读 (0.350417ms)
+    ✔ cannot open PR/MR while readable → missing includes PR (3.370542ms)
+    ✔ custom baseUrl: GitLab/Gitea keep subpath; GitHub always api.github.com (0.370334ms)
+  ✔ github (16.506792ms)
+  ▶ gitlab
+    ✔ all ok: GET user + push-capable repo → missing [] (same-repo, no /forks) (0.349042ms)
+    ✔ cannot read: repo/project GET 404 → missing includes 读 (0.122708ms)
+    ✔ dead token: user GET 401 → missing includes 读, 推, and PR (0.08025ms)
+    ✔ read but cannot push (Reporter / push:false / access_level 20) → missing 推, not 读 (0.131084ms)
+    ✔ cannot open PR/MR while readable → missing includes PR (0.099041ms)
+    ✔ custom baseUrl: GitLab/Gitea keep subpath; GitHub always api.github.com (0.104667ms)
+  ✔ gitlab (0.994083ms)
+  ▶ gitea
+    ✔ all ok: GET user + push-capable repo → missing [] (same-repo, no /forks) (0.215166ms)
+    ✔ cannot read: repo/project GET 404 → missing includes 读 (0.069667ms)
+    ✔ dead token: user GET 401 → missing includes 读, 推, and PR (0.054083ms)
+    ✔ read but cannot push (Reporter / push:false / access_level 20) → missing 推, not 读 (0.096875ms)
+    ✔ cannot open PR/MR while readable → missing includes PR (0.077041ms)
+    ✔ custom baseUrl: GitLab/Gitea keep subpath; GitHub always api.github.com (0.068292ms)
+  ✔ gitea (0.630917ms)
+  ✔ github classic PAT without repo scope cannot push or open PR (0.342541ms)
+✔ validateToken shared spec (19.223959ms)
+▶ parseWebhook shared spec
+  ▶ github
+    ✖ valid signature + merged terminal event → concrete ForgeEvent with state "merged" (12.69825ms)
+    ✖ valid signature + closed-unmerged terminal event → concrete ForgeEvent with state "closed" (0.158042ms)
+    ✖ valid signature + non-terminal action/state (still open) → null, not throw (0.093125ms)
+    ✖ valid signature + irrelevant event type (push) → null, not throw (0.08975ms)
+    ✖ wrong-secret signature → throws WebhookSignatureError (not the notImplemented placeholder) (0.765208ms)
+    ✖ missing signature header entirely → throws WebhookSignatureError (0.153208ms)
+    ✖ adapter created without a webhookSecret (undefined or empty) → parse fails the same as a bad signature (0.212417ms)
+  ✖ github (14.610875ms)
+  ▶ gitlab
+    ✖ valid signature + merged terminal event → concrete ForgeEvent with state "merged" (0.153042ms)
+    ✖ valid signature + closed-unmerged terminal event → concrete ForgeEvent with state "closed" (0.063209ms)
+    ✖ valid signature + non-terminal action/state (still open) → null, not throw (0.074541ms)
+    ✖ valid signature + irrelevant event type (push) → null, not throw (0.040958ms)
+    ✖ wrong-secret signature → throws WebhookSignatureError (not the notImplemented placeholder) (0.095875ms)
+    ✖ missing signature header entirely → throws WebhookSignatureError (0.06525ms)
+    ✖ adapter created without a webhookSecret (undefined or empty) → parse fails the same as a bad signature (0.196ms)
+  ✖ gitlab (0.858417ms)
+  ▶ gitea
+    ✖ valid signature + merged terminal event → concrete ForgeEvent with state "merged" (0.18175ms)
+    ✖ valid signature + closed-unmerged terminal event → concrete ForgeEvent with state "closed" (0.062208ms)
+    ✖ valid signature + non-terminal action/state (still open) → null, not throw (0.042916ms)
+    ✖ valid signature + irrelevant event type (push) → null, not throw (0.043333ms)
+    ✖ wrong-secret signature → throws WebhookSignatureError (not the notImplemented placeholder) (0.107208ms)
+    ✖ missing signature header entirely → throws WebhookSignatureError (0.068375ms)
+    ✖ adapter created without a webhookSecret (undefined or empty) → parse fails the same as a bad signature (0.068792ms)
+  ✖ gitea (1.404084ms)
+  ✖ body may be passed as a Buffer (raw bytes), not only a string, for every kind (0.082ms)
+  ✖ github: ping event with a valid signature → null, must not throw (hook setup must not fail) (0.05225ms)
+  ✖ gitea: a tampered body (bytes differ from what was signed) → throws WebhookSignatureError (0.103542ms)
+  ✖ gitlab: irrelevant event type with a correct token is still null, not an error (token alone is not "terminal") (0.043792ms)
+✖ parseWebhook shared spec (17.572584ms)
+▶ registerWebhook shared spec
+  ▶ github
+    ✖ non-OK HTTP response rejects with a message containing "<kind> responded <status>", after exactly one fetch (0.405291ms)
+  ✖ github (0.474666ms)
+  ▶ gitlab
+    ✖ non-OK HTTP response rejects with a message containing "<kind> responded <status>", after exactly one fetch (0.101667ms)
+  ✖ gitlab (0.129375ms)
+  ▶ gitea
+    ✖ non-OK HTTP response rejects with a message containing "<kind> responded <status>", after exactly one fetch (0.089ms)
+  ✖ gitea (0.115375ms)
+  ✖ github: POST https://api.github.com/repos/{owner}/{repo}/hooks with pull_request events + secret, GitHub auth (0.081791ms)
+  ✖ github: registerWebhook always targets api.github.com regardless of a custom baseUrl option (0.053375ms)
+  ✖ gitlab: POST {baseUrl}/api/v4/projects/{id}/hooks with merge_requests_events + token, PRIVATE-TOKEN auth (0.09125ms)
+  ✖ gitlab: registerWebhook uses the constructor baseUrl, not repo.base_url, and encodes nested-group namespaces (0.060833ms)
+  ✖ gitea: POST {baseUrl}/api/v1/repos/{owner}/{repo}/hooks with type gitea + pull_request events + config, token auth (0.06675ms)
+  ✖ gitea: registerWebhook uses the constructor baseUrl, not repo.base_url (0.062333ms)
+✖ registerWebhook shared spec (1.299667ms)
+✔ getSharedHealth returns the pinned non-empty shared package health string (0.386667ms)
+▶ parseTaskBrief
+  ✔ parseTaskBrief accepts the DESIGN.md §6 Task Brief example including Chinese ellipsis description (2.205208ms)
+  ✔ parseTaskBrief accepts a valid brief whose source is native with no issue_url (0.446167ms)
+  ✔ parseTaskBrief accepts status 待认领 (0.152083ms)
+  ✔ parseTaskBrief accepts status 进行中 (0.092ms)
+  ✔ parseTaskBrief accepts status 待验收 (0.095709ms)
+  ✔ parseTaskBrief accepts status 已完成 (0.083542ms)
+  ✔ parseTaskBrief accepts status 已退回 (0.092375ms)
+  ✔ parseTaskBrief accepts status 已取消 (0.102792ms)
+  ✔ parseTaskBrief accepts repo.forge github (0.17ms)
+  ✔ parseTaskBrief accepts repo.forge gitlab (0.145167ms)
+  ✔ parseTaskBrief accepts repo.forge gitea (0.076166ms)
+  ✔ parseTaskBrief accepts priority P0 (0.088042ms)
+  ✔ parseTaskBrief accepts priority P1 (0.072ms)
+  ✔ parseTaskBrief accepts priority P2 (0.084333ms)
+  ✔ parseTaskBrief accepts priority P3 (0.063042ms)
+  ✔ parseTaskBrief rejects a brief missing required field id (0.378292ms)
+  ✔ parseTaskBrief rejects a brief missing required field title (0.149208ms)
+  ✔ parseTaskBrief rejects a brief missing required field description_md (0.118708ms)
+  ✔ parseTaskBrief rejects a brief missing required field source (0.094625ms)
+  ✔ parseTaskBrief rejects a brief missing required field repo (0.078833ms)
+  ✔ parseTaskBrief rejects a brief missing required field acceptance_criteria (0.072875ms)
+  ✔ parseTaskBrief rejects a brief missing required field test_command (0.088417ms)
+  ✔ parseTaskBrief rejects a brief missing required field constraints (0.090541ms)
+  ✔ parseTaskBrief rejects a brief missing required field pr_convention (0.101625ms)
+  ✔ parseTaskBrief rejects a brief missing required field credential (0.1885ms)
+  ✔ parseTaskBrief rejects a brief missing required field priority (0.106458ms)
+  ✔ parseTaskBrief rejects a brief missing required field tags (0.073625ms)
+  ✔ parseTaskBrief rejects a brief missing required field poster (0.078375ms)
+  ✔ parseTaskBrief rejects a brief missing required field status (0.065625ms)
+  ✔ parseTaskBrief rejects a brief missing required field created_at (0.058625ms)
+  ✔ parseTaskBrief rejects a brief missing repo.forge (0.105792ms)
+  ✔ parseTaskBrief rejects a brief missing repo.base_url (0.078458ms)
+  ✔ parseTaskBrief rejects a brief missing repo.full_name (0.057375ms)
+  ✔ parseTaskBrief rejects a brief missing repo.base_branch (0.089708ms)
+  ✔ parseTaskBrief rejects a brief missing repo.suggested_dir (0.060833ms)
+  ✔ parseTaskBrief rejects a brief missing constraints.allowed_paths (0.06725ms)
+  ✔ parseTaskBrief rejects a brief missing constraints.forbidden_paths (0.0625ms)
+  ✔ parseTaskBrief rejects a brief missing pr_convention.branch_prefix (0.055ms)
+  ✔ parseTaskBrief rejects a brief missing pr_convention.title_prefix (0.050917ms)
+  ✔ parseTaskBrief rejects status that is not one of the six Chinese labels (0.071375ms)
+  ✔ parseTaskBrief rejects repo.forge outside github | gitlab | gitea (0.06375ms)
+  ✔ parseTaskBrief rejects imported source without issue_url (0.070208ms)
+  ✔ parseTaskBrief rejects native source that includes issue_url (0.103ms)
+  ✔ parseTaskBrief rejects priority outside P0|P1|P2|P3 (0.062292ms)
+  ✔ parseTaskBrief rejects a raw token field on the brief (0.07725ms)
+  ✔ parseTaskBrief rejects credential that has no profile_id (0.161375ms)
+  ✔ parseTaskBrief rejects a raw token field inside credential (0.087458ms)
+  ✔ parseTaskBrief rejects credential that includes both profile_id and a raw token (0.070208ms)
+✔ parseTaskBrief (8.279583ms)
+▶ parseTaskBrief credential union
+  ✔ parseTaskBrief accepts credential { profile_id } — the shared credential profile form (0.243417ms)
+  ✔ parseTaskBrief accepts credential { inline: true } — the single-task temporary token form (0.084958ms)
+  ✔ parseTaskBrief round-trips credential { inline: true } without adding or dropping keys (0.069167ms)
+  ✔ parseTaskBrief accepts the DESIGN.md §6 example when its credential row is the inline form (0.047541ms)
+  ✔ parseTaskBrief rejects credential { inline: false } — inline is a marker, only true is legal (0.09775ms)
+  ✔ parseTaskBrief rejects credential carrying both profile_id and inline (二选一, exactly one form) (0.070459ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type "yes" (0.080333ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type "true" (0.05775ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type 1 (0.049583ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type 0 (0.044084ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type null (0.042958ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type [] (0.043916ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type {} (0.055833ms)
+  ✔ parseTaskBrief rejects credential {} — neither form is present (0.069375ms)
+  ✔ parseTaskBrief rejects a credential shape that is neither profile_id nor inline (0.062084ms)
+  ✔ parseTaskBrief rejects an unknown extra key alongside profile_id (0.057041ms)
+  ✔ parseTaskBrief rejects an unknown extra key alongside inline: true (0.055667ms)
+  ✔ parseTaskBrief rejects a raw token alongside inline: true (0.0555ms)
+  ✔ parseTaskBrief rejects a ciphertext-bearing credential even in the inline form (0.06575ms)
+  ✔ parseTaskBrief rejects profile_id that is not a string (0.067125ms)
+  ✔ parseTaskBrief rejects credential that is not an object: "cp-gitea-orders" (0.057458ms)
+  ✔ parseTaskBrief rejects credential that is not an object: 42 (0.064208ms)
+  ✔ parseTaskBrief rejects credential that is not an object: true (0.053292ms)
+  ✔ parseTaskBrief rejects credential that is not an object: null (0.040416ms)
+  ✔ parseTaskBrief rejects credential that is not an object: [] (0.040375ms)
+✔ parseTaskBrief credential union (1.873375ms)
+▶ transitionTaskStatus
+  ✔ transitionTaskStatus rejects 待认领 → 待认领 (0.184916ms)
+  ✔ transitionTaskStatus allows 待认领 → 进行中 (0.040667ms)
+  ✔ transitionTaskStatus rejects 待认领 → 待验收 (0.028333ms)
+  ✔ transitionTaskStatus rejects 待认领 → 已完成 (0.027125ms)
+  ✔ transitionTaskStatus rejects 待认领 → 已退回 (0.024875ms)
+  ✔ transitionTaskStatus allows 待认领 → 已取消 (0.022917ms)
+  ✔ transitionTaskStatus allows 进行中 → 待认领 (0.026917ms)
+  ✔ transitionTaskStatus rejects 进行中 → 进行中 (0.028916ms)
+  ✔ transitionTaskStatus allows 进行中 → 待验收 (0.03175ms)
+  ✔ transitionTaskStatus rejects 进行中 → 已完成 (0.031209ms)
+  ✔ transitionTaskStatus rejects 进行中 → 已退回 (0.027584ms)
+  ✔ transitionTaskStatus rejects 进行中 → 已取消 (0.03ms)
+  ✔ transitionTaskStatus rejects 待验收 → 待认领 (0.027125ms)
+  ✔ transitionTaskStatus rejects 待验收 → 进行中 (0.027666ms)
+  ✔ transitionTaskStatus rejects 待验收 → 待验收 (0.026625ms)
+  ✔ transitionTaskStatus allows 待验收 → 已完成 (0.023833ms)
+  ✔ transitionTaskStatus allows 待验收 → 已退回 (0.023334ms)
+  ✔ transitionTaskStatus rejects 待验收 → 已取消 (0.025125ms)
+  ✔ transitionTaskStatus rejects 已完成 → 待认领 (0.026167ms)
+  ✔ transitionTaskStatus rejects 已完成 → 进行中 (0.146875ms)
+  ✔ transitionTaskStatus rejects 已完成 → 待验收 (0.045667ms)
+  ✔ transitionTaskStatus rejects 已完成 → 已完成 (0.036666ms)
+  ✔ transitionTaskStatus rejects 已完成 → 已退回 (0.048959ms)
+  ✔ transitionTaskStatus rejects 已完成 → 已取消 (0.035959ms)
+  ✔ transitionTaskStatus allows 已退回 → 待认领 (0.088833ms)
+  ✔ transitionTaskStatus rejects 已退回 → 进行中 (0.055583ms)
+  ✔ transitionTaskStatus rejects 已退回 → 待验收 (0.037417ms)
+  ✔ transitionTaskStatus rejects 已退回 → 已完成 (0.03225ms)
+  ✔ transitionTaskStatus rejects 已退回 → 已退回 (0.031834ms)
+  ✔ transitionTaskStatus allows 已退回 → 已取消 (0.02725ms)
+  ✔ transitionTaskStatus rejects 已取消 → 待认领 (0.02825ms)
+  ✔ transitionTaskStatus rejects 已取消 → 进行中 (0.031875ms)
+  ✔ transitionTaskStatus rejects 已取消 → 待验收 (0.030625ms)
+  ✔ transitionTaskStatus rejects 已取消 → 已完成 (0.027958ms)
+  ✔ transitionTaskStatus rejects 已取消 → 已退回 (0.026625ms)
+  ✔ transitionTaskStatus rejects 已取消 → 已取消 (0.027583ms)
+  ✔ transitionTaskStatus rejects an unknown from status (0.228791ms)
+  ✔ transitionTaskStatus rejects an unknown to status (0.051834ms)
+✔ transitionTaskStatus (2.197583ms)
+ℹ tests 444
+ℹ suites 89
+ℹ pass 399
+ℹ fail 45
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 941.445084
+
+✖ failing tests:
+
+test at apps/server/src/poller.test.ts:841:3
+✖ a syncMode: "webhook" instance matching (repoForge, repoBaseUrl) is skipped: zero getPullRequest fetches, task stays 待验收 (17.69575ms)
+  AssertionError [ERR_ASSERTION]: a webhook-mode instance's task must not be advanced by the poller, got {"id":1,"public_id":"kt-2026-0001","status":"已完成"}
+  
+  '已完成' !== '待验收'
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/apps/server/src/poller.test.ts:871:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: '已完成',
+    expected: '待验收',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/webhook.test.ts:532:3
+✖ unknown publicId (no matching forgeInstances entry) → 404 { error: "not_found" }, no signature required (52.376167ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    {
+  +   error: 'Not Found',
+  +   message: 'Route POST:/api/v1/webhooks/does-not-exist-instance not found',
+  +   statusCode: 404
+  -   error: 'not_found'
+    }
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/apps/server/src/webhook.test.ts:548:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: { message: 'Route POST:/api/v1/webhooks/does-not-exist-instance not found', error: 'Not Found', statusCode: 404 },
+    expected: { error: 'not_found' },
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/webhook.test.ts:551:3
+✖ bad signature (wrong secret) → 401 { error: "invalid_signature" }, and the response never leaks the secret (7.958625ms)
+  AssertionError [ERR_ASSERTION]: expected 401 for a bad signature, got 404: {"message":"Route POST:/api/v1/webhooks/inst-gitea-primary not found","error":"Not Found","statusCode":404}
+  
+  404 !== 401
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/apps/server/src/webhook.test.ts:571:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 401,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/webhook.test.ts:576:3
+✖ bad signature (missing signature header) → 401 { error: "invalid_signature" } (8.243083ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  404 !== 401
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/apps/server/src/webhook.test.ts:592:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 401,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/webhook.test.ts:596:3
+✖ ping/irrelevant event with a correct signature → 204 empty body (11.388542ms)
+  AssertionError [ERR_ASSERTION]: expected 204 for an irrelevant event, got 404: {"message":"Route POST:/api/v1/webhooks/inst-gitea-primary not found","error":"Not Found","statusCode":404}
+  
+  404 !== 204
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/apps/server/src/webhook.test.ts:607:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 204,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/webhook.test.ts:611:3
+✖ merge event with a matching 待验收 submission → 204, task 已完成, submissions.pr_state merged, system 状态迁移 event (40.12275ms)
+  AssertionError [ERR_ASSERTION]: expected 204 on a successful merge delivery, got 404: {"message":"Route POST:/api/v1/webhooks/inst-gitea-primary not found","error":"Not Found","statusCode":404}
+  
+  404 !== 204
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/apps/server/src/webhook.test.ts:625:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 204,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/webhook.test.ts:658:3
+✖ closed-unmerged event with a matching 待验收 submission → 204, task 已退回, submissions.pr_state closed (21.841958ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  404 !== 204
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/apps/server/src/webhook.test.ts:672:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 204,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/webhook.test.ts:696:3
+✖ a delivery whose pr_url matches no 待验收 submission → 204 no-op, no task/event changes (25.688875ms)
+  AssertionError [ERR_ASSERTION]: expected 204 (idempotent no-op) for a non-matching pr_url, got 404: {"message":"Route POST:/api/v1/webhooks/inst-gitea-primary not found","error":"Not Found","statusCode":404}
+  
+  404 !== 204
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/apps/server/src/webhook.test.ts:711:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 204,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/webhook.test.ts:724:3
+✖ a syncMode: "poll" instance webhook still completes the task (mode gates the poller, not this receiver) (22.053333ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  404 !== 204
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/apps/server/src/webhook.test.ts:738:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 204,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/webhook.test.ts:743:3
+✖ no session cookie and no Bearer token are required or accepted as auth — the signature alone gates the request (28.158917ms)
+  AssertionError [ERR_ASSERTION]: a correctly-signed request with no cookies/Bearer must still succeed, got 404: {"message":"Route POST:/api/v1/webhooks/inst-gitea-primary not found","error":"Not Found","statusCode":404}
+  
+  404 !== 204
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/apps/server/src/webhook.test.ts:766:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 204,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/webhook.test.ts:771:3
+✖ cross-forge dispatch: a github forgeInstances entry is verified with X-Hub-Signature-256, not the gitea scheme (7.19325ms)
+  AssertionError [ERR_ASSERTION]: expected 204 for a correctly-signed github ping, got 404: {"message":"Route POST:/api/v1/webhooks/inst-github-primary not found","error":"Not Found","statusCode":404}
+  
+  404 !== 204
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/apps/server/src/webhook.test.ts:790:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 204,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/webhook.shared.test.ts:263:7
+✖ valid signature + merged terminal event → concrete ForgeEvent with state "merged" (12.69825ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/index.ts:68:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:272:32)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.start (node:internal/test_runner/test:1015:17)
+      at node:internal/test_runner/test:1531:71
+      at node:internal/per_context/primordials:466:82
+      at new Promise (<anonymous>)
+      at new SafePromise (node:internal/per_context/primordials:435:3)
+      at node:internal/per_context/primordials:466:9
+
+test at packages/forge-adapters/src/webhook.shared.test.ts:276:7
+✖ valid signature + closed-unmerged terminal event → concrete ForgeEvent with state "closed" (0.158042ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/index.ts:68:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:285:32)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Promise.all (index 0)
+
+test at packages/forge-adapters/src/webhook.shared.test.ts:289:7
+✖ valid signature + non-terminal action/state (still open) → null, not throw (0.093125ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/index.ts:68:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:298:32)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/webhook.shared.test.ts:302:7
+✖ valid signature + irrelevant event type (push) → null, not throw (0.08975ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/index.ts:68:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:307:32)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/webhook.shared.test.ts:311:7
+✖ wrong-secret signature → throws WebhookSignatureError (not the notImplemented placeholder) (0.765208ms)
+  AssertionError [ERR_ASSERTION]: expected name WebhookSignatureError, got Error
+  + actual - expected
+  
+  + 'Error'
+  - 'WebhookSignatureError'
+  
+      at Object.assertSignatureError (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:251:10)
+      at expectedException (node:assert:578:17)
+      at expectsError (node:assert:703:21)
+      at strict.throws (node:assert:759:3)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:320:16)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'Error',
+    expected: 'WebhookSignatureError',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/webhook.shared.test.ts:323:7
+✖ missing signature header entirely → throws WebhookSignatureError (0.153208ms)
+  AssertionError [ERR_ASSERTION]: expected name WebhookSignatureError, got Error
+  + actual - expected
+  
+  + 'Error'
+  - 'WebhookSignatureError'
+  
+      at Object.assertSignatureError (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:251:10)
+      at expectedException (node:assert:578:17)
+      at expectsError (node:assert:703:21)
+      at strict.throws (node:assert:759:3)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:334:16)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'Error',
+    expected: 'WebhookSignatureError',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/webhook.shared.test.ts:337:7
+✖ adapter created without a webhookSecret (undefined or empty) → parse fails the same as a bad signature (0.212417ms)
+  AssertionError [ERR_ASSERTION]: expected name WebhookSignatureError, got Error
+  + actual - expected
+  
+  + 'Error'
+  - 'WebhookSignatureError'
+  
+      at Object.assertSignatureError (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:251:10)
+      at expectedException (node:assert:578:17)
+      at expectsError (node:assert:703:21)
+      at strict.throws (node:assert:759:3)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:346:16)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'Error',
+    expected: 'WebhookSignatureError',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/webhook.shared.test.ts:263:7
+✖ valid signature + merged terminal event → concrete ForgeEvent with state "merged" (0.153042ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/index.ts:68:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:272:32)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.start (node:internal/test_runner/test:1015:17)
+      at node:internal/test_runner/test:1531:71
+      at node:internal/per_context/primordials:466:82
+      at new Promise (<anonymous>)
+      at new SafePromise (node:internal/per_context/primordials:435:3)
+      at node:internal/per_context/primordials:466:9
+
+test at packages/forge-adapters/src/webhook.shared.test.ts:276:7
+✖ valid signature + closed-unmerged terminal event → concrete ForgeEvent with state "closed" (0.063209ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/index.ts:68:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:285:32)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/webhook.shared.test.ts:289:7
+✖ valid signature + non-terminal action/state (still open) → null, not throw (0.074541ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/index.ts:68:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:298:32)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/webhook.shared.test.ts:302:7
+✖ valid signature + irrelevant event type (push) → null, not throw (0.040958ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/index.ts:68:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:307:32)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/webhook.shared.test.ts:311:7
+✖ wrong-secret signature → throws WebhookSignatureError (not the notImplemented placeholder) (0.095875ms)
+  AssertionError [ERR_ASSERTION]: expected name WebhookSignatureError, got Error
+  + actual - expected
+  
+  + 'Error'
+  - 'WebhookSignatureError'
+  
+      at Object.assertSignatureError (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:251:10)
+      at expectedException (node:assert:578:17)
+      at expectsError (node:assert:703:21)
+      at strict.throws (node:assert:759:3)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:320:16)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'Error',
+    expected: 'WebhookSignatureError',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/webhook.shared.test.ts:323:7
+✖ missing signature header entirely → throws WebhookSignatureError (0.06525ms)
+  AssertionError [ERR_ASSERTION]: expected name WebhookSignatureError, got Error
+  + actual - expected
+  
+  + 'Error'
+  - 'WebhookSignatureError'
+  
+      at Object.assertSignatureError (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:251:10)
+      at expectedException (node:assert:578:17)
+      at expectsError (node:assert:703:21)
+      at strict.throws (node:assert:759:3)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:334:16)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'Error',
+    expected: 'WebhookSignatureError',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/webhook.shared.test.ts:337:7
+✖ adapter created without a webhookSecret (undefined or empty) → parse fails the same as a bad signature (0.196ms)
+  AssertionError [ERR_ASSERTION]: expected name WebhookSignatureError, got Error
+  + actual - expected
+  
+  + 'Error'
+  - 'WebhookSignatureError'
+  
+      at Object.assertSignatureError (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:251:10)
+      at expectedException (node:assert:578:17)
+      at expectsError (node:assert:703:21)
+      at strict.throws (node:assert:759:3)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:346:16)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'Error',
+    expected: 'WebhookSignatureError',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/webhook.shared.test.ts:263:7
+✖ valid signature + merged terminal event → concrete ForgeEvent with state "merged" (0.18175ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/index.ts:68:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:272:32)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.start (node:internal/test_runner/test:1015:17)
+      at node:internal/test_runner/test:1531:71
+      at node:internal/per_context/primordials:466:82
+      at new Promise (<anonymous>)
+      at new SafePromise (node:internal/per_context/primordials:435:3)
+      at node:internal/per_context/primordials:466:9
+
+test at packages/forge-adapters/src/webhook.shared.test.ts:276:7
+✖ valid signature + closed-unmerged terminal event → concrete ForgeEvent with state "closed" (0.062208ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/index.ts:68:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:285:32)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/webhook.shared.test.ts:289:7
+✖ valid signature + non-terminal action/state (still open) → null, not throw (0.042916ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/index.ts:68:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:298:32)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/webhook.shared.test.ts:302:7
+✖ valid signature + irrelevant event type (push) → null, not throw (0.043333ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/index.ts:68:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:307:32)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/webhook.shared.test.ts:311:7
+✖ wrong-secret signature → throws WebhookSignatureError (not the notImplemented placeholder) (0.107208ms)
+  AssertionError [ERR_ASSERTION]: expected name WebhookSignatureError, got Error
+  + actual - expected
+  
+  + 'Error'
+  - 'WebhookSignatureError'
+  
+      at Object.assertSignatureError (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:251:10)
+      at expectedException (node:assert:578:17)
+      at expectsError (node:assert:703:21)
+      at strict.throws (node:assert:759:3)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:320:16)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'Error',
+    expected: 'WebhookSignatureError',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/webhook.shared.test.ts:323:7
+✖ missing signature header entirely → throws WebhookSignatureError (0.068375ms)
+  AssertionError [ERR_ASSERTION]: expected name WebhookSignatureError, got Error
+  + actual - expected
+  
+  + 'Error'
+  - 'WebhookSignatureError'
+  
+      at Object.assertSignatureError (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:251:10)
+      at expectedException (node:assert:578:17)
+      at expectsError (node:assert:703:21)
+      at strict.throws (node:assert:759:3)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:334:16)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'Error',
+    expected: 'WebhookSignatureError',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/webhook.shared.test.ts:337:7
+✖ adapter created without a webhookSecret (undefined or empty) → parse fails the same as a bad signature (0.068792ms)
+  AssertionError [ERR_ASSERTION]: expected name WebhookSignatureError, got Error
+  + actual - expected
+  
+  + 'Error'
+  - 'WebhookSignatureError'
+  
+      at Object.assertSignatureError (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:251:10)
+      at expectedException (node:assert:578:17)
+      at expectsError (node:assert:703:21)
+      at strict.throws (node:assert:759:3)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:346:16)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'Error',
+    expected: 'WebhookSignatureError',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/webhook.shared.test.ts:354:3
+✖ body may be passed as a Buffer (raw bytes), not only a string, for every kind (0.082ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/index.ts:68:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:364:30)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Suite.postRun (node:internal/test_runner/test:1247:19)
+      at Suite.run (node:internal/test_runner/test:1548:10)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/webhook.shared.test.ts:369:3
+✖ github: ping event with a valid signature → null, must not throw (hook setup must not fail) (0.05225ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/index.ts:68:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:374:28)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/webhook.shared.test.ts:378:3
+✖ gitea: a tampered body (bytes differ from what was signed) → throws WebhookSignatureError (0.103542ms)
+  AssertionError [ERR_ASSERTION]: expected name WebhookSignatureError, got Error
+  + actual - expected
+  
+  + 'Error'
+  - 'WebhookSignatureError'
+  
+      at Object.assertSignatureError (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:251:10)
+      at expectedException (node:assert:578:17)
+      at expectsError (node:assert:703:21)
+      at strict.throws (node:assert:759:3)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:388:12)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'Error',
+    expected: 'WebhookSignatureError',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/webhook.shared.test.ts:391:3
+✖ gitlab: irrelevant event type with a correct token is still null, not an error (token alone is not "terminal") (0.043792ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/index.ts:68:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:396:28)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/webhook.shared.test.ts:404:7
+✖ non-OK HTTP response rejects with a message containing "<kind> responded <status>", after exactly one fetch (0.405291ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /github responded 422/. Input:
+  
+  'not implemented'
+  
+      at Object.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:414:20)
+      at expectedException (node:assert:578:17)
+      at expectsError (node:assert:703:21)
+      at strict.rejects (node:assert:769:3)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:408:9)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'not implemented',
+    expected: /github responded 422/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/webhook.shared.test.ts:404:7
+✖ non-OK HTTP response rejects with a message containing "<kind> responded <status>", after exactly one fetch (0.101667ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /gitlab responded 422/. Input:
+  
+  'not implemented'
+  
+      at Object.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:414:20)
+      at expectedException (node:assert:578:17)
+      at expectsError (node:assert:703:21)
+      at strict.rejects (node:assert:769:3)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:408:9)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'not implemented',
+    expected: /gitlab responded 422/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/webhook.shared.test.ts:404:7
+✖ non-OK HTTP response rejects with a message containing "<kind> responded <status>", after exactly one fetch (0.089ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /gitea responded 422/. Input:
+  
+  'not implemented'
+  
+      at Object.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:414:20)
+      at expectedException (node:assert:578:17)
+      at expectsError (node:assert:703:21)
+      at strict.rejects (node:assert:769:3)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:408:9)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'not implemented',
+    expected: /gitea responded 422/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/webhook.shared.test.ts:424:3
+✖ github: POST https://api.github.com/repos/{owner}/{repo}/hooks with pull_request events + secret, GitHub auth (0.081791ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/index.ts:68:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:428:19)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Suite.postRun (node:internal/test_runner/test:1247:19)
+      at Suite.run (node:internal/test_runner/test:1548:10)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/webhook.shared.test.ts:448:3
+✖ github: registerWebhook always targets api.github.com regardless of a custom baseUrl option (0.053375ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/index.ts:68:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:452:19)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/webhook.shared.test.ts:458:3
+✖ gitlab: POST {baseUrl}/api/v4/projects/{id}/hooks with merge_requests_events + token, PRIVATE-TOKEN auth (0.09125ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/index.ts:68:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:463:19)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/webhook.shared.test.ts:482:3
+✖ gitlab: registerWebhook uses the constructor baseUrl, not repo.base_url, and encodes nested-group namespaces (0.060833ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/index.ts:68:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:488:19)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/webhook.shared.test.ts:499:3
+✖ gitea: POST {baseUrl}/api/v1/repos/{owner}/{repo}/hooks with type gitea + pull_request events + config, token auth (0.06675ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/index.ts:68:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:504:19)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/webhook.shared.test.ts:526:3
+✖ gitea: registerWebhook uses the constructor baseUrl, not repo.base_url (0.062333ms)
+  Error: not implemented
+      at Object.notImplemented (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/index.ts:68:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-13/packages/forge-adapters/src/webhook.shared.test.ts:531:19)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+[ELIFECYCLE] Test failed. See above for more details.
