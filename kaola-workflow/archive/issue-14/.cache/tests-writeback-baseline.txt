@@ -1,0 +1,163 @@
+RED baseline for issue #14 (status write-back to source issues)
+Worktree: /Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-14
+Baseline commit (HEAD at time of authoring, unchanged by this run): a722c8b
+Command (this run only ran the two new files individually; both are also appended to the
+root `pnpm test` script in package.json): 
+  node --experimental-strip-types --test packages/forge-adapters/src/comment-on-issue.shared.test.ts
+  node --experimental-strip-types --test apps/server/src/writeback.test.ts
+
+Full-suite sanity check (proves the harness was not broken and nothing pre-existing regressed):
+  node --experimental-strip-types --test packages/shared/src/index.test.ts packages/forge-adapters/src/index.test.ts packages/forge-adapters/src/validate-token.shared.test.ts packages/forge-adapters/src/get-pull-request.shared.test.ts packages/forge-adapters/src/import-issue.shared.test.ts packages/forge-adapters/src/webhook.shared.test.ts packages/forge-adapters/src/comment-on-issue.shared.test.ts apps/server/src/import.test.ts apps/server/src/placeholder.test.ts apps/server/src/auth.test.ts apps/server/src/agent-keys.test.ts apps/server/src/vault.test.ts apps/server/src/tasks.test.ts apps/server/src/hosting.test.ts apps/server/src/claim.test.ts apps/server/src/mcp.test.ts apps/server/src/poller.test.ts apps/server/src/webhook.test.ts apps/server/src/writeback.test.ts
+  => ℹ tests 479 / ℹ pass 451 / ℹ fail 28  (28 = 19 from comment-on-issue.shared.test.ts + 9 from writeback.test.ts; all pre-existing 451 tests across every other file still pass, unchanged)
+
+Note: `pnpm install` had to be run in this worktree first (node_modules was absent; better-sqlite3
+was unresolvable). This is a workspace-dependency install, not a production-code change.
+
+================================================================================
+1) packages/forge-adapters/src/comment-on-issue.shared.test.ts
+================================================================================
+Command: node --experimental-strip-types --test packages/forge-adapters/src/comment-on-issue.shared.test.ts
+Result: ℹ tests 19 / ℹ pass 0 / ℹ fail 19  (every test in the file runs its body and fails on
+behavior — none are load/import failures)
+
+Summary tree (all 19 cases fail; each is a real behavioral assertion, not a placeholder pass):
+
+▶ commentOnIssue shared spec
+  ▶ github
+    ✖ POSTs { body } to the comment endpoint with the same per-kind auth headers as the sibling methods
+    ✖ treats any res.ok (2xx) response as success, not only a hard-coded 201
+    ✖ non-OK HTTP response rejects with "commentOnIssue: <kind> responded <status>", after exactly one fetch
+    ✖ an unparseable issue_url rejects without calling fetch (not merely notImplemented)
+    ✖ a pull/MR web path in issue_url is unparseable and must not fetch
+  ▶ gitlab  (same 5 cases, all ✖)
+  ▶ gitea   (same 5 cases, all ✖)
+  ✖ github: always POSTs to api.github.com regardless of a custom baseUrl option or the pasted issue host
+  ✖ gitlab/gitea: the API origin comes from the constructor baseUrl option, never from the issue_url host (SSRF)
+  ✖ gitlab: a nested-group namespace is encodeURIComponent-ed as a single :id segment in the notes URL
+  ✖ the same body string is sent verbatim as the JSON { body } field for every kind
+ℹ tests 19 / ℹ pass 0 / ℹ fail 19
+
+Representative failure #1 (github "POSTs { body }..." — the primary happy-path case, same shape
+for gitlab/gitea):
+
+test at packages/forge-adapters/src/comment-on-issue.shared.test.ts:208:7
+✖ POSTs { body } to the comment endpoint with the same per-kind auth headers as the sibling methods (0.386667ms)
+  Error: not implemented
+      at Object.notImplemented [as commentOnIssue] (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-14/packages/forge-adapters/src/index.ts:90:9)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-14/packages/forge-adapters/src/comment-on-issue.shared.test.ts:214:38)
+
+Representative failure #2 (the predicate-guarded rejection cases — proves the notImplemented
+placeholder is explicitly rejected as a pass, per the webhook.shared.test.ts convention):
+
+test at packages/forge-adapters/src/comment-on-issue.shared.test.ts:240:7
+✖ non-OK HTTP response rejects with "commentOnIssue: <kind> responded <status>", after exactly one fetch
+  AssertionError [ERR_ASSERTION]: a real commentOnIssue failure must not be the notImplemented placeholder
+      at assertNotPlaceholder (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-14/packages/forge-adapters/src/comment-on-issue.shared.test.ts:197:10)
+      ...
+    actual: 'not implemented',
+    expected: 'not implemented',
+    operator: 'notStrictEqual',
+
+================================================================================
+2) apps/server/src/writeback.test.ts
+================================================================================
+Command: node --experimental-strip-types --test apps/server/src/writeback.test.ts
+Result: ℹ tests 15 / ℹ pass 6 / ℹ fail 9
+
+Full test tree:
+
+▶ issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成)
+  ▶ 认领 (claim) write-back
+    ✖ imported gitea task: REST claim posts a write-back comment with the task credential, not the agent key
+    ✔ native task: REST claim never posts a write-back comment and writes no 回写 event
+    ✖ imported github task: claim posts to the GitHub Issues API with a Bearer task-credential header
+    ✖ imported gitlab task: claim posts a note with a PRIVATE-TOKEN task-credential header
+    ✔ a forge 5xx on the claim comment never blocks the claim, and no successful 回写 is recorded
+  ▶ 提交 PR (submit_pr) write-back
+    ✖ imported gitea task: MCP submit_pr posts a write-back comment containing publicId, PUBLIC_URL, and pr_url
+    ✔ a forge network failure on the submit_pr comment never blocks submit_pr, and no successful 回写 is recorded
+  ▶ 完成 (complete) write-back
+    ✖ imported gitea task: pollPendingReviews posts a write-back comment on 已完成 (merged)
+    ✖ imported gitea task: a webhook merged delivery posts a write-back comment on 已完成
+    ✔ imported gitea task: a closed (unmerged) PR via pollPendingReviews (已退回) never posts a completion write-back comment
+    ✔ a forge 5xx on the completion comment never blocks reaching 已完成, and no successful 回写 is recorded
+  ▶ native task: no write-back at any of the three hooks
+    ✔ a native task never posts a write-back comment across claim, submit_pr, and completion
+  ▶ retry (retryPendingWritebacks, exported from apps/server/src/poller.ts)
+    ✖ re-posts a write-back comment that failed on 认领, and does not duplicate once it has succeeded
+    ✖ re-posts a write-back comment that failed on 完成 (via pollPendingReviews)
+    ✖ is a safe no-op when there is nothing pending
+
+Note: the 6 passing cases are all "must NOT comment / must NOT block" negative-space assertions
+that are vacuously true today (the feature doesn't exist, so of course nothing comments) and
+remain true once correctly implemented — they are not false positives, they pin required
+non-behavior (native tasks, 已退回, and non-blocking-on-failure).
+
+Failure #1 (claim never posts, github kind):
+
+test at apps/server/src/writeback.test.ts:684:5
+✖ imported github task: claim posts to the GitHub Issues API with a Bearer task-credential header
+  AssertionError [ERR_ASSERTION]: expected exactly one github write-back comment POST, got []
+  0 !== 1
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-14/apps/server/src/writeback.test.ts:695:14)
+
+Failure #2 (submit_pr never posts):
+
+test at apps/server/src/writeback.test.ts:755:5
+✖ imported gitea task: MCP submit_pr posts a write-back comment containing publicId, PUBLIC_URL, and pr_url
+  AssertionError [ERR_ASSERTION]: expected the claim comment plus the submit_pr comment, got []
+  0 !== 2
+
+Failure #3 (completion via poller never posts):
+
+test at apps/server/src/writeback.test.ts:805:5
+✖ imported gitea task: pollPendingReviews posts a write-back comment on 已完成 (merged)
+  AssertionError [ERR_ASSERTION]: expected a write-back comment after completion, got []
+    actual: undefined
+    expected: true
+
+Failure #4 (completion via webhook never posts):
+
+test at apps/server/src/writeback.test.ts:837:5
+✖ imported gitea task: a webhook merged delivery posts a write-back comment on 已完成
+  AssertionError [ERR_ASSERTION]: expected a write-back comment after the webhook-driven completion, got []
+
+Failure #5 (retry seam missing export — the pinned "acceptable RED" case):
+
+test at apps/server/src/writeback.test.ts:1013:5
+✖ re-posts a write-back comment that failed on 完成 (via pollPendingReviews)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  + 'undefined'
+  - 'function'
+      at TestContext.<anonymous> (.../writeback.test.ts:1034:14)
+  (asserts `typeof poller.retryPendingWritebacks === 'function'`; today it is `undefined` because
+  apps/server/src/poller.ts exports no such function. This assertion is reached and fails cleanly
+  — the dynamic `await import('./poller.ts')` inside the test body means this missing export does
+  NOT crash module load for the rest of the file; every other test in writeback.test.ts still runs
+  and produces its own independent behavioral RED, as shown above.)
+
+test at apps/server/src/writeback.test.ts:1041:5
+✖ is a safe no-op when there is nothing pending
+  AssertionError [ERR_ASSERTION]: Got unwanted rejection: retryPendingWritebacks must never reject, even with zero tasks in the database
+  Actual message: "poller.retryPendingWritebacks is not a function"
+
+================================================================================
+3) Full-suite harness sanity check (no pre-existing regression)
+================================================================================
+Command (18 files, matches the appended package.json `scripts.test` node invocation minus the
+`pnpm --filter @kaola/web test` tail):
+  node --experimental-strip-types --test packages/shared/src/index.test.ts packages/forge-adapters/src/index.test.ts packages/forge-adapters/src/validate-token.shared.test.ts packages/forge-adapters/src/get-pull-request.shared.test.ts packages/forge-adapters/src/import-issue.shared.test.ts packages/forge-adapters/src/webhook.shared.test.ts packages/forge-adapters/src/comment-on-issue.shared.test.ts apps/server/src/import.test.ts apps/server/src/placeholder.test.ts apps/server/src/auth.test.ts apps/server/src/agent-keys.test.ts apps/server/src/vault.test.ts apps/server/src/tasks.test.ts apps/server/src/hosting.test.ts apps/server/src/claim.test.ts apps/server/src/mcp.test.ts apps/server/src/poller.test.ts apps/server/src/webhook.test.ts apps/server/src/writeback.test.ts
+
+Result: ℹ tests 479 / ℹ pass 451 / ℹ fail 28
+  28 = 19 (comment-on-issue.shared.test.ts) + 9 (writeback.test.ts)
+  451 = every pre-existing test across every other file, unchanged and still green.
+
+Typecheck: `pnpm --filter @kaola/forge-adapters typecheck` passes cleanly with the new shared spec.
+Lint: `pnpm eslint packages/forge-adapters/src/comment-on-issue.shared.test.ts apps/server/src/writeback.test.ts` — 0 problems.
+
+git status --short (only the three allowed writes touched):
+ M package.json
+?? apps/server/src/writeback.test.ts
+?? packages/forge-adapters/src/comment-on-issue.shared.test.ts
+
