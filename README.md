@@ -2,7 +2,7 @@
 
 > 团队内部任务协作平台：人发任务，Agent 接单，PR 交付。
 >
-> **状态**：M0 脚手架已落地；M1 切片 #3（多源 OAuth + `users`）、#4（Agent API Key）、#5（凭证档案 / vault）、#6（`ForgeAdapter` + `validateToken`）、#7（任务 CRUD / 发布即校验）、#8（任务看板 UI）、#9（REST 租约认领）、#10（MCP Server）、#11（PR 轮询）、#17（单端口 31415）已落地；M2 全部三个切片 #12（三 forge Issue 导入 + UI「导入内容」来源标记）、#13（webhook 签名校验 + 轮询兜底配置化）、#14（认领 / 提交 PR / 完成时状态回写源 Issue）均已落地；M3 两个切片 #15（审计日志 HTTP + 团队统计）、#16（自主认领确认闸门 + 受信自动化设置）均已落地。设计文档 [v0.2](docs/DESIGN.md)。Backlog 见 [Issues](https://github.com/KaolaBrother/KaolaTasks/issues)。
+> **状态**：M0 脚手架已落地；M1 切片 #3（多源 OAuth + `users`）、#4（Agent API Key）、#5（凭证档案 / vault）、#6（`ForgeAdapter` + `validateToken`）、#7（任务 CRUD / 发布即校验）、#8（任务看板 UI）、#9（REST 租约认领）、#10（MCP Server）、#11（PR 轮询）、#17（单端口 31415）已落地；M2 全部三个切片 #12（三 forge Issue 导入 + UI「导入内容」来源标记）、#13（webhook 签名校验 + 轮询兜底配置化）、#14（认领 / 提交 PR / 完成时状态回写源 Issue）均已落地；M3 两个切片 #15（审计日志 HTTP + 团队统计）、#16（自主认领确认闸门 + 受信自动化设置）均已落地；#18（Eucalyptus Ink 四栏工作台）已落地。设计文档 [v0.2](docs/DESIGN.md)。Backlog 见 [Issues](https://github.com/KaolaBrother/KaolaTasks/issues)。
 
 ## 这是什么
 
@@ -12,9 +12,9 @@
 
 ## 核心特性
 
-以下为产品设计（见 [设计文档](docs/DESIGN.md)）。当前已落地的是登录、Agent Key、凭证档案 / vault、token 校验库、任务 CRUD（发布即校验）、任务看板、REST 租约认领、MCP Server、PR 轮询、Issue 导入、webhook 接收 + 轮询兜底配置化、认领 / 提交 PR / 完成时状态回写源 Issue，以及审计日志 / 团队统计与自主认领确认闸门，即完整 M1（#3–#11）加上完整 M2（#12–#14）加上完整 M3（#15–#16）。
+以下为产品设计（见 [设计文档](docs/DESIGN.md)）。当前已落地的是登录、Agent Key、凭证档案 / vault、token 校验库、任务 CRUD（发布即校验）、任务看板、REST 租约认领、MCP Server、PR 轮询、Issue 导入、webhook 接收 + 轮询兜底配置化、认领 / 提交 PR / 完成时状态回写源 Issue，以及审计日志 / 团队统计与自主认领确认闸门，加上四栏工作台壳层，即完整 M1（#3–#11）加上完整 M2（#12–#14）加上完整 M3（#15–#16）以及 #18。
 
-**已落地（#3 / #4 / #5 / #6 / #7 / #8 / #9 / #10 / #11 / #12 / #13 / #14 / #15 / #16 / #17）：**
+**已落地（#3 / #4 / #5 / #6 / #7 / #8 / #9 / #10 / #11 / #12 / #13 / #14 / #15 / #16 / #17 / #18）：**
 
 - **多源 OAuth 登录**：GitHub / GitLab / Gitea；会话用户见 `GET /api/v1/me`；正式成员可 `POST /api/v1/users/:id/approve`
 - **Agent API Key**：`status === 'active'` 的成员可自助 `POST/GET /api/v1/agent-keys`、`DELETE /api/v1/agent-keys/:id`；明文 `token` 仅创建时返回一次（前缀 `ktk_`）；Bearer `GET /api/v1/agent/whoami`
@@ -22,7 +22,8 @@
 - **三 forge `validateToken`**：`createForgeAdapter(kind)` 对 GitHub / GitLab / Gitea 实测可读 / 可推 / 可开 PR（缺失项为 `读` | `推` | `PR`）；Push/PR 为 REST 权限代理，不实际 git push / POST PR。创建档案时**不**调用 `validateToken`；任务发布时作为适配器方法调用
 - **任务 CRUD / 发布即校验**：`GET/POST /api/v1/tasks`、`GET/PATCH /api/v1/tasks/:publicId`；`tasks` 表；发布即校验（`422` `token_check_failed` / `502` `forge_unreachable`）。中文「发布任务」表单（`active`+`full`）
 - **Issue 导入（#12）**：三 forge `importIssue`；会话 `POST /api/v1/tasks/import` 返回 `200` 草稿（标题 / `description_md` / `source: { type: 'imported', issue_url }` / `repo.{forge,base_url,full_name}`），不写入 `tasks` 行、不调用 `validateToken`、响应永不含 forge token。用户补全表单后仍走现有 `POST /api/v1/tasks` 发布即校验。UI 来源标记文案恰好是「导入内容」（表单 `task-import-source-label`、看板详情 `board-detail-import-label`）；按钮文案「导入」。Host 规则与 `getPullRequest` 相同（GitHub 固定 `api.github.com`；GitLab/Gitea 用构造函数 `baseUrl`，不用粘贴 URL 的主机）。`registerWebhook` / `parseWebhook` 见下 #13；`commentOnIssue` 见下 #14
-- **任务看板（#8）**：成员工作台中文「任务看板」，列表 / 看板双视图，客户端筛选（状态 / 标签 / Forge），详情含一条由 `created_at`+`poster` 合成的「发布」时间线。拉取 `GET /api/v1/tasks`（无 query）。无 vue-router。无认领 UI。待批准用户仍看「账号待批准」卡（无看板）。`claim_only` 可见看板，不可见发布表单
+- **任务看板（#8）**：成员工作台「看板」栏中文「任务看板」，列表 / 看板双视图，客户端筛选（状态 / 标签 / Forge），详情含一条由 `created_at`+`poster` 合成的「发布」时间线。拉取 `GET /api/v1/tasks`（无 query）。无 vue-router。无 Agent 认领 UI。待批准用户仍看「账号待批准」卡（无看板）。`claim_only` 可见看板，不可见「发布」栏与凭证档案（见 #18）。发布者可在详情对既有 `PATCH /api/v1/tasks/:publicId` 点「取消」/「重新开放」（#18）
+- **工作台四栏壳层（#18）**：成员工作台导航「看板 / 发布 / 钥匙 / 审计」（`v-show` 切栏，无 vue-router）。Eucalyptus Ink 色板（`theme.ts` Paper `#F3F6F4` / Ink `#1C2420` / Leaf `#3D6B54` / Bark `#6B746F` / Slip `#FFFEFB` / Clay `#B4532A`）与 `theme.css`（`768px` 以下导航改为横向）。发布表单按组排列，分支/目录收进 `<details>`「高级」。凭证档案 `base_url` 按 forge 预填（GitHub `https://github.com`、GitLab `https://gitlab.com`、Gitea 留空）。`claim_only` 无「发布」导航、无凭证档案。仍无 Agent 认领 UI。token 揭示通道不变：仅 REST 认领 `201` 顶层 `token` 与 MCP `claim_task` 成功信封 `token`
 - **REST 租约认领（#9）**：Bearer `Authorization: Bearer ktk_…`；`POST /api/v1/tasks/:publicId/claim` `201` 键 `clone`、`lease`、`task`、`token`（`token` 为 forge 明文；`lease.ttl_seconds` 为数字 `86400`）；`POST …/progress` `200` `{ task, lease }` 无 token；`POST …/release` `200` `{ task }` 状态 `待认领` 无 token。会话 `GET` 列表/单条仍不含 token。过期靠 `sweepExpiredLeases`（读/写时检查），无 cron。无 REST `POST …/submit_pr`
 - **MCP Server（#10）**：Agent 将 Bearer API Key 配到 `POST {origin}/api/mcp`（Streamable HTTP；测试里 `initialize` 的 `protocolVersion` 为 `2025-11-25`；有状态 `mcp-session-id`）。未鉴权 → HTTP `401` `{ error: 'unauthorized' }` + `WWW-Authenticate: Bearer`（在 JSON-RPC 之前）。`GET`/`DELETE /api/mcp` 为 `405`。六个工具：`list_tasks` `{ tasks }`、`get_task_brief` 顶层 brief、`claim_task` 信封 `clone`/`lease`/`task`/`token`、`report_progress` `{ task, lease }`、`release_task` `{ task }`、`submit_pr` `{ task, pr_url, summary }` 且状态 `待验收`。业务错误为 JSON-RPC result `isError` + REST `{ error, message? }`（HTTP 200）。依赖 `@modelcontextprotocol/sdk` `1.30.0`、`zod` `^4.4.3`
 - **PR 轮询闭环（#11）**：`pollPendingReviews(db)` 只拉取 `status === '待验收'` 的任务，取每条任务最新一条 `submissions` 行的 `pr_url`，解密其凭证后调用 `adapter.getPullRequest({ token }, prUrl)` → `{ state: 'open' | 'merged' | 'closed' }`。`merged` → 任务转 `已完成`、`submissions.pr_state` 置 `merged`；`closed`（未合并关闭）→ 任务转 `已退回`、`pr_state` 置 `closed`；`open` 保持 `待验收` 不变。成功迁移写 `状态迁移` 事件 `{ task_id, from, to, pr_url }`，`actor_user_id` 为 `null`（系统驱动，同 `sweepExpiredLeases`）。单条任务的取状态或写入失败只跳过该行，不影响其余 `待验收` 任务。`buildApp({ pollIntervalMs })`：省略或 `<= 0` 不注册定时器；正值时 `setInterval` 驱动轮询，`app.close()` 时清理。生产入口 `index.ts` 读取 `POLL_INTERVAL_MS`（未设或空串默认 `60000` 毫秒）。poster 对 `已退回` 任务的 `PATCH → 待认领`（#9 已有）不受影响
@@ -117,7 +118,7 @@ docker compose up -d --build
 
 Agent Key（`apps/web/src/App.vue` 在 `status === 'active'` 时显示）：自助生成 / 列表 / 吊销；明文仅创建时显示一次。凭证档案（`active` 且 `permission_level === 'full'` 时显示）：按 forge + `base_url` + `repo_full_name` 保存加密 token；删除后界面展示 `请同时到 forge 侧撤销该 token。`。GitHub `claim_only` 可管理自己的 Agent Key，不能管理凭证档案。
 
-发布任务与看板已实现：`active` 且 `permission_level === 'full'` 时显示中文「发布任务」表单，`POST /api/v1/tasks`（发布即校验）。来源选「从 Issue 导入」时可点「导入」走 `POST /api/v1/tasks/import`（`200` 草稿，不落库）；补全后仍点「发布」。导入正文带来源标记「导入内容」。成员工作台（含 `claim_only`）显示「任务看板」（无认领按钮；详情仍只有一条合成「发布」时间线）。REST 认领已实现（Bearer `POST /api/v1/tasks/:publicId/claim` 等，见上）。Agent 将 Bearer API Key 配到 `POST {origin}/api/mcp`（六个 MCP 工具，见上）。目标流程见 [设计文档](docs/DESIGN.md) §3、§7、§9。
+发布任务与看板已实现：成员工作台为四栏「看板 / 发布 / 钥匙 / 审计」（无 vue-router）。`active` 且 `permission_level === 'full'` 时显示「发布」栏中文表单，`POST /api/v1/tasks`（发布即校验）。来源选「从 Issue 导入」时可点「导入」走 `POST /api/v1/tasks/import`（`200` 草稿，不落库）；补全后仍点「发布」。导入正文带来源标记「导入内容」。成员工作台（含 `claim_only`）显示「看板」（无 Agent 认领按钮；详情仍有一条合成「发布」时间线；发布者可「取消」/「重新开放」，走既有 `PATCH /api/v1/tasks/:publicId`）。`claim_only` 不显示「发布」栏与凭证档案。REST 认领已实现（Bearer `POST /api/v1/tasks/:publicId/claim` 等，见上）。Agent 将 Bearer API Key 配到 `POST {origin}/api/mcp`（六个 MCP 工具，见上）。目标流程见 [设计文档](docs/DESIGN.md) §3、§7、§9。
 
 ## 项目结构
 
@@ -125,7 +126,7 @@ pnpm workspaces（`pnpm-workspace.yaml`：`apps/*` + `packages/*`）：
 
 ```text
 apps/
-  web/             # @kaola/web — Vue 3 + Vite + Naive UI（登录 / 待批准 / 批准 / Agent Key / 凭证档案 / 发布任务 / 任务看板）
+  web/             # @kaola/web — Vue 3 + Vite + Naive UI（登录 / 待批准 / 四栏工作台：看板 / 发布 / 钥匙 / 审计；无 vue-router）
   server/          # @kaola/server — Fastify + drizzle-orm + better-sqlite3 + OAuth/session + agent keys + vault/profiles + tasks + claim/leases + mcp + poller + webhook + writeback；workspace 依赖 @kaola/shared、@kaola/forge-adapters
 packages/
   shared/          # @kaola/shared — 任务卡 zod schema + 状态机；getSharedHealth() → kaola-shared-ready
@@ -175,7 +176,7 @@ CI：`.github/workflows/ci.yml` job `lint-test` 在 Node 22 上执行 `pnpm inst
 | M2 导入与自动闭环 | Issue 导入、webhook、状态回写 | #12–#14 |
 | M3 打磨 | 审计界面、统计、认领确认策略 | #15–#16 |
 
-当前仓库已落地 issue #1–#2（M0）、#3（OAuth / `users`）、#4（Agent API Key）、#5（凭证档案 / vault）、#6（`ForgeAdapter.validateToken`）、#7（任务 CRUD / 发布即校验）、#8（任务看板 UI）、#9（REST 租约认领）、#10（MCP Server）、#11（PR 轮询）、#12（Issue 导入）、#13（webhook 签名校验 + 轮询兜底配置化）、#14（状态回写源 Issue）、#15（审计日志 + 团队统计）、#16（自主认领确认闸门 + 受信自动化）、#17（单端口 31415）。M1（#3–#11）、M2（#12–#14）与 M3（#15–#16）均已全部落地。
+当前仓库已落地 issue #1–#2（M0）、#3（OAuth / `users`）、#4（Agent API Key）、#5（凭证档案 / vault）、#6（`ForgeAdapter.validateToken`）、#7（任务 CRUD / 发布即校验）、#8（任务看板 UI）、#9（REST 租约认领）、#10（MCP Server）、#11（PR 轮询）、#12（Issue 导入）、#13（webhook 签名校验 + 轮询兜底配置化）、#14（状态回写源 Issue）、#15（审计日志 + 团队统计）、#16（自主认领确认闸门 + 受信自动化）、#17（单端口 31415）、#18（Eucalyptus Ink 四栏工作台）。M1（#3–#11）、M2（#12–#14）与 M3（#15–#16）均已全部落地。
 
 ## 许可
 

@@ -163,7 +163,7 @@ Profile path writes `events.type` `token 揭示` after decrypt (including 404 / 
 
 Session cookie. Same `active`+`full` gate (`403` `{ error: 'forbidden' }`). Body `{ status }`; `status` must be a `taskStatusSchema` value else `400` `{ error: 'invalid_body' }`. Missing `public_id` → `404` `{ error: 'not_found' }`. Non-poster → `403` `{ error: 'forbidden' }`.
 
-Poster-only edges in source: `待认领` → `已取消`; `已退回` → `已取消` | `待认领`. Other requested statuses (including `待认领` → `进行中`) → `409` `{ error: 'illegal_transition', message: '任务状态不允许从「${from}」变更为「${to}」。' }`. Success writes `events.type` `状态迁移`, `details` `{ task_id, from, to }` (`task_id` is the `public_id` string) and returns `200` the updated brief.
+Poster-only edges in source: `待认领` → `已取消`; `已退回` → `已取消` | `待认领`. Other requested statuses (including `待认领` → `进行中`) → `409` `{ error: 'illegal_transition', message: '任务状态不允许从「${from}」变更为「${to}」。' }`. Success writes `events.type` `状态迁移`, `details` `{ task_id, from, to }` (`task_id` is the `public_id` string) and returns `200` the updated brief. `@kaola/web` poster board detail now calls this existing route (取消 → `{ status: '已取消' }`; 重新开放 → `{ status: '待认领' }`); the wire contract is unchanged.
 
 ### `POST /api/v1/tasks/:publicId/claim`
 
