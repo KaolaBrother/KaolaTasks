@@ -25,6 +25,12 @@ export type ImportedIssue = {
   issue_url: string
   repo: { full_name: string }
 }
+
+export type ListedIssue = {
+  number: number
+  title: string
+  issue_url: string
+}
 export type PrStatus = { state: 'open' | 'merged' | 'closed' }
 
 // Issue #13: the only two terminal PR/MR outcomes a webhook (or the poller) ever needs to act on.
@@ -54,6 +60,7 @@ export interface ForgeAdapter {
   readonly kind: ForgeKind
   validateToken(cred: Credential, repo: RepoRef): Promise<TokenCheck>
   importIssue(cred: Credential, issueUrl: string): Promise<ImportedIssue>
+  listIssues(cred: Credential, repo: RepoRef): Promise<ListedIssue[]>
   getPullRequest(cred: Credential, prUrl: string): Promise<PrStatus>
   registerWebhook(cred: Credential, repo: RepoRef, callback: string): Promise<void>
   parseWebhook(headers: Headers, body: unknown): ForgeEvent | null
@@ -81,6 +88,7 @@ export function createForgeAdapter(
     kind,
     validateToken: (cred, repo) => validateToken(kind, options, cred, repo),
     importIssue: (cred, issueUrl) => importIssue(kind, options, cred, issueUrl),
+    listIssues: (cred, repo) => listIssues(kind, options, cred, repo),
     getPullRequest: (cred, prUrl) => getPullRequest(kind, options, cred, prUrl),
     registerWebhook: (cred, repo, callback) => registerWebhook(kind, options, cred, repo, callback),
     parseWebhook: (headers, body) => parseWebhook(kind, options, headers, body),
@@ -490,6 +498,68 @@ async function importIssue(
     issue_url: issueUrl.replace(/\/+$/u, ''),
     repo: { full_name: resolved.fullName },
   }
+}
+
+// Issue #19: list open issues for a repo. Fetch origin matches getPullRequest / importIssue
+// (`prApiOrigin`: GitHub always api.github.com; GitLab/Gitea constructor baseUrl). `issue_url`
+// is constructed from `repo.base_url`, never copied from html_url / web_url.
+function listIssuesApiUrl(
+  kind: ForgeKind,
+  options: CreateForgeAdapterOptions | undefined,
+  repo: RepoRef,
+): string {
+  const origin = prApiOrigin(kind, options)
+  if (kind === 'github') {
+    const [owner, name] = splitFullName(repo.full_name)
+    return `${origin}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/issues?state=open&per_page=50&sort=created&direction=desc`
+  }
+  if (kind === 'gitlab') {
+    return `${origin}/api/v4/projects/${encodeURIComponent(repo.full_name)}/issues?state=opened&per_page=50&order_by=created_at&sort=desc`
+  }
+  const [owner, name] = splitFullName(repo.full_name)
+  return `${origin}/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/issues?state=open&type=issues&limit=50`
+}
+
+function listedIssueWebUrl(kind: ForgeKind, repo: RepoRef, number: number): string {
+  const base = repo.base_url.replace(/\/+$/u, '')
+  if (kind === 'gitlab') return `${base}/${repo.full_name}/-/issues/${number}`
+  return `${base}/${repo.full_name}/issues/${number}`
+}
+
+function mapListedIssue(kind: ForgeKind, repo: RepoRef, item: unknown): ListedIssue | undefined {
+  const obj = asObject(item)
+  if (obj == null) return undefined
+  if (kind === 'github' && 'pull_request' in obj) return undefined
+  const number = kind === 'gitlab' ? obj.iid : obj.number
+  if (typeof number !== 'number') return undefined
+  return {
+    number,
+    title: obj.title as string,
+    issue_url: listedIssueWebUrl(kind, repo, number),
+  }
+}
+
+async function listIssues(
+  kind: ForgeKind,
+  options: CreateForgeAdapterOptions | undefined,
+  cred: Credential,
+  repo: RepoRef,
+): Promise<ListedIssue[]> {
+  const url = listIssuesApiUrl(kind, options, repo)
+  const res = await forgeGet(kind, url, cred.token)
+  if (!res.ok) {
+    throw new Error(`listIssues: ${kind} responded ${res.status}`)
+  }
+  const payload: unknown = await res.json()
+  if (!Array.isArray(payload)) {
+    throw new Error(`listIssues: ${kind} response is not an array`)
+  }
+  const listed: ListedIssue[] = []
+  for (const item of payload) {
+    const mapped = mapListedIssue(kind, repo, item)
+    if (mapped != null) listed.push(mapped)
+  }
+  return listed
 }
 
 // Issue #14: post a status-update comment (GitHub/Gitea) or note (GitLab) on the imported Issue.

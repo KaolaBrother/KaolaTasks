@@ -1,13 +1,15 @@
-// Oracle for the 发布任务 form in App.vue (issue #7).
-//
-// The form does not exist yet, so these tests define its observable surface. The data-testid
-// contract, the fetch stub and every judgement call are written up in
-// kaola-workflow/issue-7/.cache/tests-web.md — read that before implementing.
+// Oracle for the 发布任务 form in App.vue (issue #7, import #12, publish picker #19).
 //
 // The wire format asserted here is the one apps/server/src/tasks.ts actually implements:
 // snake_case bodies, a request-side credential union of { profile_id } XOR { token } (which is
 // deliberately NOT the brief-side { profile_id } | { inline: true }), and the Chinese strings
 // copied character for character out of the server module.
+//
+// Issue #19 (DESIGN §7): in profile mode the credential dropdown IS the repo picker
+// (`{forge} {repo_full_name}`); imported+profile lists Issues via
+// GET /api/v1/credential-profiles/:id/issues and does not paste a URL. Inline token
+// paste-URL + hand-filled repo stay as the fallback. POST /tasks and POST /import
+// bodies are unchanged.
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
@@ -61,6 +63,17 @@ const PROFILES = [
     created_by: 7,
   },
 ]
+
+const LISTED_ISSUE_87 = {
+  number: 87,
+  title: '为订单导出接口增加分页',
+  issue_url: `${FORGE_BASE_URL}/team/orders/issues/87`,
+}
+const LISTED_ISSUE_5 = {
+  number: 12,
+  title: '账单对账失败重试',
+  issue_url: 'https://gitlab.example.test/team/billing/-/issues/12',
+}
 
 const CREATED_ID = 'kt-2026-0042'
 const CREATED_BRIEF = {
@@ -171,11 +184,26 @@ async function settle() {
 
 // --- mount helper --------------------------------------------------------------------------
 
-async function mountApp(me: Record<string, unknown> = ME_FULL) {
+type ProfileFixture = (typeof PROFILES)[number]
+
+async function mountApp(
+  me: Record<string, unknown> = ME_FULL,
+  opts: { profiles?: readonly ProfileFixture[] } = {},
+) {
+  const profiles = opts.profiles ?? PROFILES
   const { calls, routes } = installFetch()
   routes.set('GET /api/v1/me', () => jsonResponse(200, me))
   routes.set('GET /api/v1/agent-keys', () => jsonResponse(200, { keys: [] }))
-  routes.set('GET /api/v1/credential-profiles', () => jsonResponse(200, { profiles: PROFILES }))
+  routes.set('GET /api/v1/credential-profiles', () => jsonResponse(200, { profiles }))
+  // Listed Issues for the two fixture profiles. Unstubbed keys already 500; tests that
+  // select a profile in imported mode need these routes so a correct UI does not trip
+  // the guard. A UI that never fetches simply never hits them.
+  routes.set('GET /api/v1/credential-profiles/3/issues', () =>
+    jsonResponse(200, { issues: [LISTED_ISSUE_87] }),
+  )
+  routes.set('GET /api/v1/credential-profiles/5/issues', () =>
+    jsonResponse(200, { issues: [LISTED_ISSUE_5] }),
+  )
   // Registered defensively: a task board is not required by these tests, but an implementer who
   // adds one to onMounted must not trip the unstubbed-call guard.
   routes.set('GET /api/v1/tasks', () => jsonResponse(200, { tasks: [] }))
@@ -263,27 +291,42 @@ function createBody(calls: FetchCall[]): Record<string, unknown> {
   return posts[0].body as Record<string, unknown>
 }
 
-// --- form fill helpers ---------------------------------------------------------------------
+function issueListCalls(calls: FetchCall[]): FetchCall[] {
+  return calls.filter(
+    (call) => call.method === 'GET' && /^\/api\/v1\/credential-profiles\/\d+\/issues$/.test(call.url),
+  )
+}
 
-async function fillRequired(
-  wrapper: VueWrapper,
-  overrides: { title?: string; repo?: string } = {},
-) {
+async function selectListedIssue(wrapper: VueWrapper, number: number) {
+  const options = selectOf(wrapper, 'task-issue-select').props('options') as
+    | { label?: unknown; value?: string | number }[]
+    | undefined
+  const option = options?.find((candidate) => String(candidate.label).startsWith(`#${number} `))
+  if (option == null || option.value == null) {
+    throw new Error(`missing issue option #${number}`)
+  }
+  await setSelect(wrapper, 'task-issue-select', option.value)
+  await settle()
+}
+
+// --- form fill helpers ---------------------------------------------------------------------
+//
+// Profile mode (the default) hides hand-filled forge / base_url / repo. Native required
+// fields are title + a selected profile. Imported adds an Issue pick from GET .../issues.
+
+async function fillRequired(wrapper: VueWrapper, overrides: { title?: string } = {}) {
   await setField(wrapper, 'task-title', overrides.title ?? '为订单导出接口增加分页')
-  await setSelect(wrapper, 'task-forge', 'gitea')
-  await setField(wrapper, 'task-base-url', FORGE_BASE_URL)
-  await setField(wrapper, 'task-repo', overrides.repo ?? 'team/orders')
   await setSelect(wrapper, 'task-credential-profile', 3)
+  await settle()
 }
 
 async function fillEverything(wrapper: VueWrapper) {
   await setField(wrapper, 'task-title', '为订单导出接口增加分页')
   await setField(wrapper, 'task-description', '……（Markdown 详述）')
   await setSelect(wrapper, 'task-source-type', 'imported')
-  await setField(wrapper, 'task-issue-url', `${FORGE_BASE_URL}/team/orders/issues/87`)
-  await setSelect(wrapper, 'task-forge', 'gitea')
-  await setField(wrapper, 'task-base-url', FORGE_BASE_URL)
-  await setField(wrapper, 'task-repo', 'team/orders')
+  await setSelect(wrapper, 'task-credential-profile', 3)
+  await settle()
+  await selectListedIssue(wrapper, 87)
   await setField(wrapper, 'task-base-branch', 'develop')
   await setField(wrapper, 'task-suggested-dir', 'orders')
   await setField(
@@ -296,7 +339,6 @@ async function fillEverything(wrapper: VueWrapper) {
   await setField(wrapper, 'task-forbidden-paths', 'migrations/**')
   await setSelect(wrapper, 'task-priority', 'P1')
   await setField(wrapper, 'task-tags', 'backend\napi')
-  await setSelect(wrapper, 'task-credential-profile', 3)
 }
 
 // =============================================================================================
@@ -413,8 +455,9 @@ describe('发布任务表单 — 请求线格式', () => {
 
   it('每一个 fetch 都带 credentials: include 与 Accept: application/json', async () => {
     // Accept 是承重的：没有它，服务端的 sendUnauthorized 会 302 到 /login 而不是回 401 JSON。
+    // fillEverything goes through imported+profile so the loop also covers GET .../issues.
     const { wrapper, calls } = await mountApp()
-    await fillRequired(wrapper)
+    await fillEverything(wrapper)
     await submit(wrapper)
 
     expect(createCalls(calls)).toHaveLength(1)
@@ -459,10 +502,10 @@ describe('发布任务表单 — 两条凭证路径（{profile_id} XOR {token}�
   it('内联路径发送 credential: { token }，且不带 profile_id', async () => {
     const { wrapper, calls } = await mountApp()
     await setField(wrapper, 'task-title', '为订单导出接口增加分页')
+    await setSelect(wrapper, 'task-credential-mode', 'inline')
     await setSelect(wrapper, 'task-forge', 'gitea')
     await setField(wrapper, 'task-base-url', FORGE_BASE_URL)
     await setField(wrapper, 'task-repo', 'team/orders')
-    await setSelect(wrapper, 'task-credential-mode', 'inline')
     await setField(wrapper, 'task-credential-token', 'ghp_oneoff_secret')
     await submit(wrapper)
 
@@ -474,8 +517,8 @@ describe('发布任务表单 — 两条凭证路径（{profile_id} XOR {token}�
     const options = selectOf(wrapper, 'task-credential-profile').props('options')
     expect(options).toHaveLength(2)
     expect(options?.map((option) => option.value)).toEqual([3, 5])
-    expect(String(options?.[0].label)).toContain('team/orders')
-    expect(String(options?.[1].label)).toContain('team/billing')
+    expect(String(options?.[0].label)).toBe('gitea team/orders')
+    expect(String(options?.[1].label)).toBe('gitlab team/billing')
 
     await setSelect(wrapper, 'task-credential-mode', 'inline')
     await setSelect(wrapper, 'task-credential-mode', 'profile')
@@ -489,10 +532,10 @@ describe('发布任务表单 — 两条凭证路径（{profile_id} XOR {token}�
   it('发布成功后清空内联 token 输入框', async () => {
     const { wrapper } = await mountApp()
     await setField(wrapper, 'task-title', '为订单导出接口增加分页')
+    await setSelect(wrapper, 'task-credential-mode', 'inline')
     await setSelect(wrapper, 'task-forge', 'gitea')
     await setField(wrapper, 'task-base-url', FORGE_BASE_URL)
     await setField(wrapper, 'task-repo', 'team/orders')
-    await setSelect(wrapper, 'task-credential-mode', 'inline')
     await setField(wrapper, 'task-credential-token', 'ghp_oneoff_secret')
     expect(fieldValue(wrapper, 'task-credential-token')).toBe('ghp_oneoff_secret')
 
@@ -513,17 +556,11 @@ describe('发布任务表单 — 提交前校验', () => {
     expect(createCalls(calls)).toHaveLength(1)
   })
 
-  it('仓库 full_name 为空时不发请求', async () => {
-    const { wrapper, calls } = await mountApp()
-    await fillRequired(wrapper, { repo: '' })
-    await submit(wrapper)
-    expect(createCalls(calls)).toHaveLength(0)
-  })
-
-  it('选择 imported 却没填 issue_url 时不发请求', async () => {
+  it('选择 imported 却没选 Issue 时不发请求', async () => {
     const { wrapper, calls } = await mountApp()
     await fillRequired(wrapper)
     await setSelect(wrapper, 'task-source-type', 'imported')
+    await settle()
     await submit(wrapper)
     expect(createCalls(calls)).toHaveLength(0)
   })
@@ -531,9 +568,6 @@ describe('发布任务表单 — 提交前校验', () => {
   it('档案模式下没选档案时不发请求', async () => {
     const { wrapper, calls } = await mountApp()
     await setField(wrapper, 'task-title', '为订单导出接口增加分页')
-    await setSelect(wrapper, 'task-forge', 'gitea')
-    await setField(wrapper, 'task-base-url', FORGE_BASE_URL)
-    await setField(wrapper, 'task-repo', 'team/orders')
     await submit(wrapper)
     expect(createCalls(calls)).toHaveLength(0)
   })
@@ -541,10 +575,10 @@ describe('发布任务表单 — 提交前校验', () => {
   it('内联模式下 token 为空时不发请求', async () => {
     const { wrapper, calls } = await mountApp()
     await setField(wrapper, 'task-title', '为订单导出接口增加分页')
+    await setSelect(wrapper, 'task-credential-mode', 'inline')
     await setSelect(wrapper, 'task-forge', 'gitea')
     await setField(wrapper, 'task-base-url', FORGE_BASE_URL)
     await setField(wrapper, 'task-repo', 'team/orders')
-    await setSelect(wrapper, 'task-credential-mode', 'inline')
     await submit(wrapper)
     expect(createCalls(calls)).toHaveLength(0)
   })
@@ -630,10 +664,10 @@ describe('发布任务表单 — 发布即校验的两种失败（DESIGN §5）'
       throw new TypeError('fetch failed')
     })
     await setField(wrapper, 'task-title', '为订单导出接口增加分页')
+    await setSelect(wrapper, 'task-credential-mode', 'inline')
     await setSelect(wrapper, 'task-forge', 'gitea')
     await setField(wrapper, 'task-base-url', FORGE_BASE_URL)
     await setField(wrapper, 'task-repo', 'team/orders')
-    await setSelect(wrapper, 'task-credential-mode', 'inline')
     await setField(wrapper, 'task-credential-token', 'ghp_oneoff_secret')
     await submit(wrapper)
 
@@ -655,7 +689,7 @@ describe('发布任务表单 — 发布成功', () => {
 
 const IMPORT_TITLE = '从 Issue 导入的标题'
 const IMPORT_DESCRIPTION = '从 Issue 导入的正文'
-const IMPORT_ISSUE_URL = `${FORGE_BASE_URL}/team/orders/issues/87`
+const IMPORT_ISSUE_URL = LISTED_ISSUE_87.issue_url
 const IMPORT_DRAFT = {
   title: IMPORT_TITLE,
   description_md: IMPORT_DESCRIPTION,
@@ -676,10 +710,9 @@ async function clickImport(wrapper: VueWrapper) {
 
 async function fillImportPrereqs(wrapper: VueWrapper) {
   await setSelect(wrapper, 'task-source-type', 'imported')
-  await setField(wrapper, 'task-issue-url', IMPORT_ISSUE_URL)
-  await setSelect(wrapper, 'task-forge', 'gitea')
-  await setField(wrapper, 'task-base-url', FORGE_BASE_URL)
   await setSelect(wrapper, 'task-credential-profile', 3)
+  await settle()
+  await selectListedIssue(wrapper, 87)
 }
 
 describe('发布任务表单 — Issue 导入（issue #12）', () => {
@@ -730,11 +763,11 @@ describe('发布任务表单 — Issue 导入（issue #12）', () => {
   it('内联 token 路径的导入请求发送 credential: { token }', async () => {
     const { wrapper, calls, routes } = await mountApp()
     routes.set('POST /api/v1/tasks/import', () => jsonResponse(200, IMPORT_DRAFT))
+    await setSelect(wrapper, 'task-credential-mode', 'inline')
     await setSelect(wrapper, 'task-source-type', 'imported')
     await setField(wrapper, 'task-issue-url', IMPORT_ISSUE_URL)
     await setSelect(wrapper, 'task-forge', 'gitea')
     await setField(wrapper, 'task-base-url', FORGE_BASE_URL)
-    await setSelect(wrapper, 'task-credential-mode', 'inline')
     await setField(wrapper, 'task-credential-token', 'ghp_oneoff_secret')
     await clickImport(wrapper)
     expect(importCalls(calls)[0].body).toEqual({
@@ -754,9 +787,8 @@ describe('发布任务表单 — Issue 导入（issue #12）', () => {
 
     expect(fieldValue(wrapper, 'task-title')).toBe(IMPORT_TITLE)
     expect(fieldValue(wrapper, 'task-description')).toBe(IMPORT_DESCRIPTION)
-    expect(fieldValue(wrapper, 'task-repo')).toBe('team/orders')
     expect(selectOf(wrapper, 'task-source-type').props('value')).toBe('imported')
-    expect(node(wrapper, 'task-issue-url').exists()).toBe(true)
+    expect(node(wrapper, 'task-issue-url').exists()).toBe(false)
     expect(node(wrapper, 'task-import-source-label').exists()).toBe(true)
     expect(textOf(wrapper, 'task-import-source-label').trim()).toBe('导入内容')
   })
@@ -781,3 +813,130 @@ describe('发布任务表单 — Issue 导入（issue #12）', () => {
     generic.wrapper.unmount()
   })
 })
+
+describe('发布任务表单 — 档案下拉选仓库与 Issue（issue #19）', () => {
+  it('档案选项文案恰好是 `{forge} {repo_full_name}`，值仍是档案 id', async () => {
+    const { wrapper } = await mountApp()
+    const options = selectOf(wrapper, 'task-credential-profile').props('options')
+    expect(options?.map((option) => option.value)).toEqual([3, 5])
+    expect(options?.map((option) => String(option.label))).toEqual([
+      'gitea team/orders',
+      'gitlab team/billing',
+    ])
+  })
+
+  it('档案模式隐藏手填仓库字段；切到内联后才显示', async () => {
+    const { wrapper } = await mountApp()
+    expect(node(wrapper, 'task-forge').exists()).toBe(false)
+    expect(node(wrapper, 'task-base-url').exists()).toBe(false)
+    expect(node(wrapper, 'task-repo').exists()).toBe(false)
+
+    await setSelect(wrapper, 'task-source-type', 'imported')
+    expect(node(wrapper, 'task-forge').exists()).toBe(false)
+    expect(node(wrapper, 'task-base-url').exists()).toBe(false)
+    expect(node(wrapper, 'task-repo').exists()).toBe(false)
+
+    await setSelect(wrapper, 'task-credential-mode', 'inline')
+    expect(node(wrapper, 'task-forge').exists()).toBe(true)
+    expect(node(wrapper, 'task-base-url').exists()).toBe(true)
+    expect(node(wrapper, 'task-repo').exists()).toBe(true)
+  })
+
+  it('imported 下选档案 3 发一次 GET .../3/issues；改选 5 再发 .../5/issues', async () => {
+    const { wrapper, calls } = await mountApp()
+    expect(issueListCalls(calls)).toHaveLength(0)
+
+    await setSelect(wrapper, 'task-source-type', 'imported')
+    await settle()
+    expect(issueListCalls(calls)).toHaveLength(0)
+
+    await setSelect(wrapper, 'task-credential-profile', 3)
+    await settle()
+    expect(issueListCalls(calls).map((call) => call.url)).toEqual([
+      '/api/v1/credential-profiles/3/issues',
+    ])
+
+    await setSelect(wrapper, 'task-credential-profile', 5)
+    await settle()
+    expect(issueListCalls(calls).map((call) => call.url)).toEqual([
+      '/api/v1/credential-profiles/3/issues',
+      '/api/v1/credential-profiles/5/issues',
+    ])
+  })
+
+  it('Issue 选项是 `#{number} {title}`；选中不发 POST /import', async () => {
+    const { wrapper, calls, routes } = await mountApp()
+    routes.set('POST /api/v1/tasks/import', () => jsonResponse(200, IMPORT_DRAFT))
+    await setSelect(wrapper, 'task-source-type', 'imported')
+    await setSelect(wrapper, 'task-credential-profile', 3)
+    await settle()
+
+    const options = selectOf(wrapper, 'task-issue-select').props('options') as
+      | { label?: unknown }[]
+      | undefined
+    expect(options?.map((option) => String(option.label))).toEqual([
+      `#${LISTED_ISSUE_87.number} ${LISTED_ISSUE_87.title}`,
+    ])
+
+    await selectListedIssue(wrapper, 87)
+    expect(importCalls(calls)).toHaveLength(0)
+  })
+
+  it('档案+imported 没有粘贴 URL；导入 POST 用列表里的 issue_url 与 profile 凭证', async () => {
+    const { wrapper, calls, routes } = await mountApp()
+    routes.set('POST /api/v1/tasks/import', () => jsonResponse(200, IMPORT_DRAFT))
+    await fillImportPrereqs(wrapper)
+    expect(node(wrapper, 'task-issue-url').exists()).toBe(false)
+
+    await clickImport(wrapper)
+    expect(importCalls(calls)).toHaveLength(1)
+    expect(importCalls(calls)[0].body).toEqual({
+      issue_url: LISTED_ISSUE_87.issue_url,
+      repo: { forge: 'gitea', base_url: FORGE_BASE_URL },
+      credential: { profile_id: 3 },
+    })
+  })
+
+  it('无档案：选项为空、提示去钥匙，来源 imported 也不发 issues GET', async () => {
+    const { wrapper, calls } = await mountApp(ME_FULL, { profiles: [] })
+    expect(selectOf(wrapper, 'task-credential-profile').props('options')).toEqual([])
+    expect(node(wrapper, 'task-profile-empty-hint').exists()).toBe(true)
+    expect(textOf(wrapper, 'task-profile-empty-hint')).toContain('钥匙')
+
+    await setSelect(wrapper, 'task-source-type', 'imported')
+    await settle()
+    expect(issueListCalls(calls)).toHaveLength(0)
+  })
+
+  it('内联+imported：显示粘贴 URL，不发 issues GET', async () => {
+    const { wrapper, calls } = await mountApp()
+    await setSelect(wrapper, 'task-credential-mode', 'inline')
+    await setSelect(wrapper, 'task-source-type', 'imported')
+    await settle()
+
+    expect(node(wrapper, 'task-issue-url').exists()).toBe(true)
+    expect(node(wrapper, 'task-issue-select').exists()).toBe(false)
+    expect(issueListCalls(calls)).toHaveLength(0)
+  })
+
+  it('native+档案：无 Issue 下拉；发布 repo 来自档案，无需手填仓库', async () => {
+    const { wrapper, calls } = await mountApp()
+    expect(node(wrapper, 'task-issue-select').exists()).toBe(false)
+
+    await fillRequired(wrapper)
+    expect(node(wrapper, 'task-issue-select').exists()).toBe(false)
+    expect(node(wrapper, 'task-import').exists()).toBe(false)
+    expect(node(wrapper, 'task-forge').exists()).toBe(false)
+    expect(node(wrapper, 'task-repo').exists()).toBe(false)
+
+    await submit(wrapper)
+    expect(createBody(calls).repo).toEqual({
+      forge: 'gitea',
+      base_url: FORGE_BASE_URL,
+      full_name: 'team/orders',
+    })
+    expect(createBody(calls).source).toEqual({ type: 'native' })
+    expect(createBody(calls).credential).toEqual({ profile_id: 3 })
+  })
+})
+

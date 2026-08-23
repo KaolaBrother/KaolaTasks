@@ -252,8 +252,22 @@
                       />
                     </n-form-item>
                     <n-text v-if="taskSourceType === 'imported'" data-testid="task-import-source-label">导入内容</n-text>
-                    <n-form-item v-if="taskSourceType === 'imported'" label="Issue URL">
+                    <n-form-item
+                      v-if="taskSourceType === 'imported' && taskCredentialMode === 'inline'"
+                      label="Issue URL"
+                    >
                       <n-input data-testid="task-issue-url" v-model:value="taskIssueUrl" placeholder="https://…" />
+                    </n-form-item>
+                    <n-form-item
+                      v-if="taskSourceType === 'imported' && taskCredentialMode === 'profile'"
+                      label="Issue"
+                    >
+                      <n-select
+                        data-testid="task-issue-select"
+                        v-model:value="taskIssueUrl"
+                        :options="listedIssueOptions"
+                        placeholder="选择 Issue"
+                      />
                     </n-form-item>
                     <n-button
                       v-if="taskSourceType === 'imported'"
@@ -266,13 +280,13 @@
                     </n-button>
                   </section>
                   <section data-testid="task-group-repo" class="form-group">
-                    <n-form-item label="Forge">
+                    <n-form-item v-if="taskCredentialMode === 'inline'" label="Forge">
                       <n-select data-testid="task-forge" v-model:value="taskForge" :options="forgeOptions" />
                     </n-form-item>
-                    <n-form-item label="仓库地址">
+                    <n-form-item v-if="taskCredentialMode === 'inline'" label="仓库地址">
                       <n-input data-testid="task-base-url" v-model:value="taskBaseUrl" placeholder="base_url" />
                     </n-form-item>
-                    <n-form-item label="仓库">
+                    <n-form-item v-if="taskCredentialMode === 'inline'" label="仓库">
                       <n-input data-testid="task-repo" v-model:value="taskRepo" placeholder="owner/repo" />
                     </n-form-item>
                     <details data-testid="task-group-advanced" class="form-advanced">
@@ -349,6 +363,12 @@
                           :options="taskProfileOptions"
                           placeholder="选择凭证档案"
                         />
+                        <n-text
+                          v-if="taskCredentialMode === 'profile' && profiles.length === 0"
+                          data-testid="task-profile-empty-hint"
+                        >
+                          暂无凭证档案，请先到钥匙页添加。
+                        </n-text>
                         <n-input
                           v-if="taskCredentialMode === 'inline'"
                           data-testid="task-credential-token"
@@ -668,6 +688,12 @@ type ProfileRow = {
   created_by: number
 }
 
+type ListedIssue = {
+  number: number
+  title: string
+  issue_url: string
+}
+
 type BoardTask = {
   id: string
   title: string
@@ -753,6 +779,8 @@ const taskTags = ref('')
 const taskCredentialMode = ref<'profile' | 'inline'>('profile')
 const taskCredentialProfileId = ref<number | null>(null)
 const taskCredentialToken = ref('')
+const listedIssues = ref<ListedIssue[]>([])
+let listedIssuesRequest = 0
 const taskCreating = ref(false)
 const taskMessage = ref('')
 const taskOk = ref(false)
@@ -858,8 +886,15 @@ const navCurrentIndex = computed(() => {
 
 const taskProfileOptions = computed(() =>
   profiles.value.map((profile) => ({
-    label: `#${profile.id} ${profile.forge} ${profile.repo_full_name}（${profile.base_url}）`,
+    label: `${profile.forge} ${profile.repo_full_name}`,
     value: profile.id,
+  })),
+)
+
+const listedIssueOptions = computed(() =>
+  listedIssues.value.map((issue) => ({
+    label: `#${issue.number} ${issue.title}`,
+    value: issue.issue_url,
   })),
 )
 
@@ -956,8 +991,79 @@ watch(profileForge, (forge) => {
 })
 
 watch(taskForge, (forge) => {
+  if (taskCredentialMode.value === 'profile') return
   taskBaseUrl.value = applyForgeBaseUrl(forge, taskBaseUrl.value)
 })
+
+function asTaskForge(forge: string): ForgeKind {
+  if (forge === 'github' || forge === 'gitlab' || forge === 'gitea') return forge
+  return 'gitlab'
+}
+
+function resetListedIssues() {
+  listedIssuesRequest += 1
+  listedIssues.value = []
+  taskIssueUrl.value = ''
+}
+
+function applySelectedProfile() {
+  if (taskCredentialMode.value !== 'profile') return
+  const id = taskCredentialProfileId.value
+  if (typeof id !== 'number') return
+  const profile = profiles.value.find((row) => row.id === id)
+  if (profile == null) return
+  taskForge.value = asTaskForge(profile.forge)
+  taskBaseUrl.value = profile.base_url
+  taskRepo.value = profile.repo_full_name
+}
+
+function parseListedIssues(body: Record<string, unknown> | null): ListedIssue[] {
+  if (body == null || !Array.isArray(body.issues)) return []
+  const issues: ListedIssue[] = []
+  for (const item of body.issues) {
+    if (item == null || typeof item !== 'object') continue
+    const row = item as Record<string, unknown>
+    if (
+      typeof row.number !== 'number' ||
+      typeof row.title !== 'string' ||
+      typeof row.issue_url !== 'string'
+    ) {
+      continue
+    }
+    issues.push({ number: row.number, title: row.title, issue_url: row.issue_url })
+  }
+  return issues
+}
+
+async function loadListedIssues(profileId: number) {
+  const request = ++listedIssuesRequest
+  try {
+    const res = await fetch(`/api/v1/credential-profiles/${profileId}/issues`, {
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+    })
+    const body = await readJson(res)
+    if (request !== listedIssuesRequest) return
+    listedIssues.value = res.ok ? parseListedIssues(body) : []
+  } catch {
+    if (request !== listedIssuesRequest) return
+    listedIssues.value = []
+  }
+}
+
+watch(
+  [taskSourceType, taskCredentialMode, taskCredentialProfileId],
+  () => {
+    resetListedIssues()
+    applySelectedProfile()
+    if (taskSourceType.value !== 'imported') return
+    if (taskCredentialMode.value !== 'profile') return
+    if (profiles.value.length === 0) return
+    const id = taskCredentialProfileId.value
+    if (typeof id !== 'number') return
+    void loadListedIssues(id)
+  },
+)
 
 profileBaseUrl.value = applyForgeBaseUrl(profileForge.value, profileBaseUrl.value)
 taskBaseUrl.value = applyForgeBaseUrl(taskForge.value, taskBaseUrl.value)

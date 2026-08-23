@@ -1,15 +1,19 @@
+import { createForgeAdapter } from '@kaola/forge-adapters'
 import { eq } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { getSessionUser, sendUnauthorized } from './auth.ts'
 import type { AppDb } from './db.ts'
 import { type CredentialProfile, credentialProfiles } from './schema.ts'
 import {
+  decryptToken,
   encryptToken,
   insertAuditEvent,
   isVaultUnconfiguredError,
 } from './vault.ts'
 
 const FORGE_REVOKE_MESSAGE = '请同时到 forge 侧撤销该 token。'
+const LIST_TOKEN_INVALID_MESSAGE = 'token 无效或无权读取该 Issue。'
+const LIST_FORGE_UNREACHABLE_MESSAGE = '无法连接 forge 列出 Issue。'
 const FORGES = new Set(['github', 'gitlab', 'gitea'])
 
 function canManageProfiles(user: { status: string; permissionLevel: string }): boolean {
@@ -63,6 +67,30 @@ function parsePositiveInt(raw: string): number | undefined {
   return id
 }
 
+function forgeResponseStatus(err: unknown): number | undefined {
+  if (!(err instanceof Error)) return undefined
+  const match = /responded (\d+)\s*$/u.exec(err.message)
+  if (match == null) return undefined
+  return Number(match[1])
+}
+
+function listForgeFailure(err: unknown): { status: number; body: Record<string, unknown> } {
+  if (forgeResponseStatus(err) === 401) {
+    return {
+      status: 422,
+      body: {
+        error: 'token_check_failed',
+        missing: ['读'],
+        message: LIST_TOKEN_INVALID_MESSAGE,
+      },
+    }
+  }
+  return {
+    status: 502,
+    body: { error: 'forge_unreachable', message: LIST_FORGE_UNREACHABLE_MESSAGE },
+  }
+}
+
 function readCreateBody(body: unknown):
   | { forge: 'github' | 'gitlab' | 'gitea'; baseUrl: string; repoFullName: string; token: string }
   | undefined {
@@ -95,6 +123,51 @@ export function registerCredentialProfiles(app: FastifyInstance, db: AppDb) {
 
     const rows = db.select().from(credentialProfiles).all()
     return reply.send({ profiles: rows.map(publicProfile) })
+  })
+
+  app.get('/api/v1/credential-profiles/:id/issues', async (request, reply) => {
+    const user = getSessionUser(db, request)
+    if (user == null) return sendUnauthorized(request, reply)
+    if (!canManageProfiles(user)) {
+      return reply.code(403).send({ error: 'forbidden' })
+    }
+
+    const id = parsePositiveInt((request.params as { id: string }).id)
+    if (id == null) {
+      return reply.code(404).send({ error: 'not_found' })
+    }
+
+    const profile = db
+      .select()
+      .from(credentialProfiles)
+      .where(eq(credentialProfiles.id, id))
+      .get()
+    if (profile == null) {
+      return reply.code(404).send({ error: 'not_found' })
+    }
+
+    let token: string
+    try {
+      token = decryptToken(profile.tokenEncrypted)
+    } catch (err) {
+      if (isVaultUnconfiguredError(err)) {
+        return reply.code(500).send({ error: 'vault_unconfigured' })
+      }
+      throw err
+    }
+
+    try {
+      const issues = await createForgeAdapter(profile.forge, {
+        baseUrl: profile.baseUrl,
+      }).listIssues(
+        { token },
+        { full_name: profile.repoFullName, base_url: profile.baseUrl },
+      )
+      return reply.send({ issues })
+    } catch (err) {
+      const failure = listForgeFailure(err)
+      return reply.code(failure.status).send(failure.body)
+    }
   })
 
   app.post('/api/v1/credential-profiles', async (request, reply) => {
