@@ -5,6 +5,7 @@ dist/
 *.sqlite
 *.sqlite-journal
 .kw/
+.cursor/agents/
 .DS_Store
 *.tsbuildinfo
 
