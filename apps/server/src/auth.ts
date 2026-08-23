@@ -214,6 +214,27 @@ function loginPageHtml(): string {
 </html>`
 }
 
+function oauthTokenErrorMessage(err: unknown): string | undefined {
+  if (err == null || typeof err !== 'object') return undefined
+  const data = (err as { data?: unknown }).data
+  const payload =
+    data != null && typeof data === 'object' && 'payload' in data
+      ? (data as { payload?: unknown }).payload
+      : data
+  if (payload != null && typeof payload === 'object') {
+    const description = (payload as { error_description?: unknown }).error_description
+    if (typeof description === 'string' && description.length > 0 && description.length < 400) {
+      return description
+    }
+    const error = (payload as { error?: unknown }).error
+    if (typeof error === 'string' && error.length > 0 && error.length < 80) {
+      return error
+    }
+  }
+  const message = (err as { message?: unknown }).message
+  return typeof message === 'string' ? message : undefined
+}
+
 async function completeOAuthLogin(
   app: FastifyInstance,
   db: AppDb,
@@ -223,8 +244,20 @@ async function completeOAuthLogin(
   request: FastifyRequest,
   reply: FastifyReply,
 ) {
-  const { token } = await oauthOf(app, provider).getAccessTokenFromAuthorizationCodeFlow(request)
-  const accessToken = token.access_token
+  let accessToken: string
+  try {
+    const { token } = await oauthOf(app, provider).getAccessTokenFromAuthorizationCodeFlow(
+      request,
+      reply,
+    )
+    accessToken = token.access_token
+  } catch (err) {
+    const detail = oauthTokenErrorMessage(err)
+    return reply.code(502).send({
+      error: 'oauth_token_failed',
+      message: detail ?? '无法向登录提供方换取令牌。',
+    })
+  }
   const response = await fetch(userinfoUrl(provider, gitlabBaseUrl, giteaBaseUrl), {
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -281,6 +314,7 @@ export function registerAuth(app: FastifyInstance, db: AppDb) {
   app.register(oauthPlugin, {
     name: 'gitlabOAuth2',
     scope: ['read_user'],
+    pkce: 'S256',
     credentials: {
       client: { id: gitlabClientId, secret: gitlabClientSecret },
       auth: {
@@ -288,6 +322,9 @@ export function registerAuth(app: FastifyInstance, db: AppDb) {
         authorizePath: '/oauth/authorize',
         tokenHost: gitlabBaseUrl,
         tokenPath: '/oauth/token',
+      },
+      options: {
+        authorizationMethod: 'body',
       },
     },
     startRedirectPath: '/login/gitlab',

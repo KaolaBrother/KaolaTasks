@@ -232,18 +232,68 @@
                 :class="{ 'is-active': workbenchPane === 'publish' }"
               >
                 <n-form data-testid="task-form" label-placement="top" @submit.prevent>
+                  <section data-testid="task-group-credential" class="form-group">
+                    <n-form-item
+                      data-testid="task-credential-feedback"
+                      label="凭证"
+                      :feedback="taskCredentialFeedback || undefined"
+                      :validation-status="taskCredentialFeedback ? 'error' : undefined"
+                    >
+                      <n-space vertical>
+                        <n-select
+                          data-testid="task-credential-mode"
+                          v-model:value="taskCredentialMode"
+                          :options="credentialModeOptions"
+                        />
+                        <n-select
+                          v-if="taskCredentialMode === 'profile'"
+                          data-testid="task-credential-profile"
+                          v-model:value="taskCredentialProfileId"
+                          :options="taskProfileOptions"
+                          placeholder="选择凭证档案"
+                        />
+                        <n-text
+                          v-if="taskCredentialMode === 'profile' && profiles.length === 0"
+                          data-testid="task-profile-empty-hint"
+                        >
+                          暂无凭证档案，请先到钥匙页添加。
+                        </n-text>
+                        <n-input
+                          v-if="taskCredentialMode === 'inline'"
+                          data-testid="task-credential-token"
+                          v-model:value="taskCredentialToken"
+                          type="password"
+                          show-password-on="click"
+                          placeholder="forge token"
+                        />
+                      </n-space>
+                    </n-form-item>
+                  </section>
+                  <section data-testid="task-group-repo" class="form-group">
+                    <n-form-item v-if="taskCredentialMode === 'inline'" label="Forge">
+                      <n-select data-testid="task-forge" v-model:value="taskForge" :options="forgeOptions" />
+                    </n-form-item>
+                    <n-form-item v-if="taskCredentialMode === 'inline'" label="仓库地址">
+                      <n-input data-testid="task-base-url" v-model:value="taskBaseUrl" placeholder="base_url" />
+                    </n-form-item>
+                    <n-form-item v-if="taskCredentialMode === 'inline'" label="仓库">
+                      <n-input data-testid="task-repo" v-model:value="taskRepo" placeholder="owner/repo" />
+                    </n-form-item>
+                    <details data-testid="task-group-advanced" class="form-advanced">
+                      <summary>高级</summary>
+                      <n-form-item label="默认分支（可选）">
+                        <n-input data-testid="task-base-branch" v-model:value="taskBaseBranch" placeholder="留空则由服务端默认" />
+                      </n-form-item>
+                      <n-form-item label="建议目录（可选）">
+                        <n-input
+                          data-testid="task-suggested-dir"
+                          v-model:value="taskSuggestedDir"
+                          placeholder="留空则由服务端默认"
+                        />
+                      </n-form-item>
+                    </details>
+                  </section>
                   <section data-testid="task-group-task" class="form-group">
-                    <n-form-item label="标题">
-                      <n-input data-testid="task-title" v-model:value="taskTitle" placeholder="标题" />
-                    </n-form-item>
-                    <n-form-item label="描述">
-                      <n-input
-                        data-testid="task-description"
-                        type="textarea"
-                        v-model:value="taskDescription"
-                        placeholder="Markdown 描述（可选）"
-                      />
-                    </n-form-item>
                     <n-form-item label="来源">
                       <n-select
                         data-testid="task-source-type"
@@ -251,7 +301,6 @@
                         :options="sourceTypeOptions"
                       />
                     </n-form-item>
-                    <n-text v-if="taskSourceType === 'imported'" data-testid="task-import-source-label">导入内容</n-text>
                     <n-form-item
                       v-if="taskSourceType === 'imported' && taskCredentialMode === 'inline'"
                       label="Issue URL"
@@ -278,30 +327,20 @@
                     >
                       导入
                     </n-button>
-                  </section>
-                  <section data-testid="task-group-repo" class="form-group">
-                    <n-form-item v-if="taskCredentialMode === 'inline'" label="Forge">
-                      <n-select data-testid="task-forge" v-model:value="taskForge" :options="forgeOptions" />
+                    <n-text v-if="taskSourceType === 'imported'" data-testid="task-import-source-label">导入内容</n-text>
+                    <n-form-item :label="taskSourceType === 'imported' ? '标题（来自 Issue）' : '标题'">
+                      <n-input data-testid="task-title" v-model:value="taskTitle" placeholder="标题" />
                     </n-form-item>
-                    <n-form-item v-if="taskCredentialMode === 'inline'" label="仓库地址">
-                      <n-input data-testid="task-base-url" v-model:value="taskBaseUrl" placeholder="base_url" />
+                    <n-form-item :label="taskSourceType === 'imported' ? '描述（Issue 正文）' : '描述'">
+                      <n-input
+                        data-testid="task-description"
+                        type="textarea"
+                        v-model:value="taskDescription"
+                        :placeholder="
+                          taskSourceType === 'imported' ? 'Issue 正文（Markdown）' : 'Markdown 描述（可选）'
+                        "
+                      />
                     </n-form-item>
-                    <n-form-item v-if="taskCredentialMode === 'inline'" label="仓库">
-                      <n-input data-testid="task-repo" v-model:value="taskRepo" placeholder="owner/repo" />
-                    </n-form-item>
-                    <details data-testid="task-group-advanced" class="form-advanced">
-                      <summary>高级</summary>
-                      <n-form-item label="默认分支（可选）">
-                        <n-input data-testid="task-base-branch" v-model:value="taskBaseBranch" placeholder="留空则由服务端默认" />
-                      </n-form-item>
-                      <n-form-item label="建议目录（可选）">
-                        <n-input
-                          data-testid="task-suggested-dir"
-                          v-model:value="taskSuggestedDir"
-                          placeholder="留空则由服务端默认"
-                        />
-                      </n-form-item>
-                    </details>
                   </section>
                   <section data-testid="task-group-acceptance" class="form-group">
                     <n-form-item label="验收标准">
@@ -341,43 +380,6 @@
                         v-model:value="taskTags"
                         placeholder="每行一个"
                       />
-                    </n-form-item>
-                  </section>
-                  <section data-testid="task-group-credential" class="form-group">
-                    <n-form-item
-                      data-testid="task-credential-feedback"
-                      label="凭证"
-                      :feedback="taskCredentialFeedback || undefined"
-                      :validation-status="taskCredentialFeedback ? 'error' : undefined"
-                    >
-                      <n-space vertical>
-                        <n-select
-                          data-testid="task-credential-mode"
-                          v-model:value="taskCredentialMode"
-                          :options="credentialModeOptions"
-                        />
-                        <n-select
-                          v-if="taskCredentialMode === 'profile'"
-                          data-testid="task-credential-profile"
-                          v-model:value="taskCredentialProfileId"
-                          :options="taskProfileOptions"
-                          placeholder="选择凭证档案"
-                        />
-                        <n-text
-                          v-if="taskCredentialMode === 'profile' && profiles.length === 0"
-                          data-testid="task-profile-empty-hint"
-                        >
-                          暂无凭证档案，请先到钥匙页添加。
-                        </n-text>
-                        <n-input
-                          v-if="taskCredentialMode === 'inline'"
-                          data-testid="task-credential-token"
-                          v-model:value="taskCredentialToken"
-                          type="password"
-                          show-password-on="click"
-                          placeholder="forge token"
-                        />
-                      </n-space>
                     </n-form-item>
                   </section>
                   <n-button
