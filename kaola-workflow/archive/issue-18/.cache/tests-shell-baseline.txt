@@ -1,0 +1,228 @@
+be2d963b792fced8360354cfc4530b91387d50ea
+
+ RUN  v4.1.11 /Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-18/apps/web
+
+ ❯ src/App.shell.test.ts (11 tests | 11 failed) 965ms
+     × full+active：workbench-nav 与四项都在，文案含看板/发布/钥匙/审计；pending 与 login 没有 workbench-nav 127ms
+     × claim_only+active：看板/钥匙/审计导航存在，没有 workbench-nav-publish 39ms
+     × 默认面板是看板：workbench-pane-board 与 board 在；full 的 task-form 不点发布也 exists；四块 pane 都在 DOM 83ms
+     × full 用户五个 task-group-* 都在 76ms
+     × task-group-advanced 默认关闭，且分支/目录输入仍在文档 73ms
+     × 凭证档案行有 profile-forge / base-url / repo / token / submit，且 token 是 password 75ms
+     × 空 base_url：github → https://github.com，gitlab → https://gitlab.com，gitea 保持为空 122ms
+     × 用户已输入非空 base_url 时切换 forge 不覆盖 99ms
+     × 发布者+full+待认领：取消存在、重新开放不在；点击发恰好一次 PATCH 已取消；2xx 后详情状态更新；非发布者/claim_only/进行中都没有按钮；无 claim/logout testid 104ms
+     × 发布者+full+已退回：取消与重新开放都在；重新开放恰好一次 PATCH 待认领，2xx 后详情状态更新 86ms
+     × 成员挂载后 :root 或 body 上 --motion-fast 为 120ms，且 --paper / --leaf 有值 79ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 11 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/App.shell.test.ts > Workbench nav > full+active：workbench-nav 与四项都在，文案含看板/发布/钥匙/审计；pending 与 login 没有 workbench-nav
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/App.shell.test.ts:344:58
+    342|   it('full+active：workbench-nav 与四项都在，文案含看板/发布/钥匙/审计；pending 与 login 没…
+    343|     const full = await mountApp(ME_FULL)
+    344|     expect(node(full.wrapper, 'workbench-nav').exists()).toBe(true)
+       |                                                          ^
+    345|     expect(node(full.wrapper, 'workbench-nav-board').exists()).toBe(tr…
+    346|     expect(node(full.wrapper, 'workbench-nav-publish').exists()).toBe(…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/11]⎯
+
+ FAIL  src/App.shell.test.ts > Workbench nav > claim_only+active：看板/钥匙/审计导航存在，没有 workbench-nav-publish
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/App.shell.test.ts:366:53
+    364|   it('claim_only+active：看板/钥匙/审计导航存在，没有 workbench-nav-publish', async …
+    365|     const { wrapper } = await mountApp(ME_CLAIM_ONLY)
+    366|     expect(node(wrapper, 'workbench-nav').exists()).toBe(true)
+       |                                                     ^
+    367|     expect(node(wrapper, 'workbench-nav-board').exists()).toBe(true)
+    368|     expect(node(wrapper, 'workbench-nav-keys').exists()).toBe(true)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/11]⎯
+
+ FAIL  src/App.shell.test.ts > Workbench nav > 默认面板是看板：workbench-pane-board 与 board 在；full 的 task-form 不点发布也 exists；四块 pane 都在 DOM
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/App.shell.test.ts:378:60
+    376|   it('默认面板是看板：workbench-pane-board 与 board 在；full 的 task-form 不点发布也 ex…
+    377|     const { wrapper } = await mountApp(ME_FULL)
+    378|     expect(node(wrapper, 'workbench-pane-board').exists()).toBe(true)
+       |                                                            ^
+    379|     expect(node(wrapper, 'board').exists()).toBe(true)
+    380|     expect(node(wrapper, 'task-form').exists()).toBe(true)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/11]⎯
+
+ FAIL  src/App.shell.test.ts > Form groups > full 用户五个 task-group-* 都在
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/App.shell.test.ts:390:55
+    388|   it('full 用户五个 task-group-* 都在', async () => {
+    389|     const { wrapper } = await mountApp(ME_FULL)
+    390|     expect(node(wrapper, 'task-group-task').exists()).toBe(true)
+       |                                                       ^
+    391|     expect(node(wrapper, 'task-group-repo').exists()).toBe(true)
+    392|     expect(node(wrapper, 'task-group-advanced').exists()).toBe(true)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/11]⎯
+
+ FAIL  src/App.shell.test.ts > Form groups > task-group-advanced 默认关闭，且分支/目录输入仍在文档
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/App.shell.test.ts:400:31
+    398|     const { wrapper } = await mountApp(ME_FULL)
+    399|     const advanced = node(wrapper, 'task-group-advanced')
+    400|     expect(advanced.exists()).toBe(true)
+       |                               ^
+    401|     expect((advanced.element as HTMLDetailsElement).open).toBeFalsy()
+    402|     expect(fieldElement(wrapper, 'task-base-branch').exists()).toBe(tr…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/11]⎯
+
+ FAIL  src/App.shell.test.ts > Credential profile prefills > 凭证档案行有 profile-forge / base-url / repo / token / submit，且 token 是 password
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/App.shell.test.ts:410:53
+    408|   it('凭证档案行有 profile-forge / base-url / repo / token / submit，且 token …
+    409|     const { wrapper } = await mountApp(ME_FULL)
+    410|     expect(node(wrapper, 'profile-forge').exists()).toBe(true)
+       |                                                     ^
+    411|     expect(node(wrapper, 'profile-base-url').exists()).toBe(true)
+    412|     expect(node(wrapper, 'profile-repo').exists()).toBe(true)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/11]⎯
+
+ FAIL  src/App.shell.test.ts > Credential profile prefills > 空 base_url：github → https://github.com，gitlab → https://gitlab.com，gitea 保持为空
+Error: no n-select with data-testid="profile-forge"
+ ❯ selectOf src/App.shell.test.ts:280:28
+    278|     .findAllComponents(NSelect)
+    279|     .find((candidate) => candidate.attributes('data-testid') === testi…
+    280|   if (found == null) throw new Error(`no n-select with data-testid="${…
+       |                            ^
+    281|   return found
+    282| }
+ ❯ setSelect src/App.shell.test.ts:285:3
+ ❯ chooseForgeWithEmptyBaseUrl src/App.shell.test.ts:312:9
+ ❯ src/App.shell.test.ts:421:11
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/11]⎯
+
+ FAIL  src/App.shell.test.ts > Credential profile prefills > 用户已输入非空 base_url 时切换 forge 不覆盖
+Error: no input/textarea under [data-testid="profile-base-url"]
+ ❯ fieldElement src/App.shell.test.ts:264:33
+    262|     `[data-testid="${testid}"] input, [data-testid="${testid}"] textar…
+    263|   )
+    264|   if (found.length === 0) throw new Error(`no input/textarea under [da…
+       |                                 ^
+    265|   return found[0]
+    266| }
+ ❯ setField src/App.shell.test.ts:269:9
+ ❯ src/App.shell.test.ts:436:11
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/11]⎯
+
+ FAIL  src/App.shell.test.ts > Poster PATCH > 发布者+full+待认领：取消存在、重新开放不在；点击发恰好一次 PATCH 已取消；2xx 后详情状态更新；非发布者/claim_only/进行中都没有按钮；无 claim/logout testid
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/App.shell.test.ts:452:64
+    450|     await openDetail(mine.wrapper, TASK_MINE_OPEN.id)
+    451|
+    452|     expect(node(mine.wrapper, 'board-detail-cancel').exists()).toBe(tr…
+       |                                                                ^
+    453|     expect(node(mine.wrapper, 'board-detail-reopen').exists()).toBe(fa…
+    454|     expect(textOf(mine.wrapper, 'board-detail-cancel')).toContain('取消')
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/11]⎯
+
+ FAIL  src/App.shell.test.ts > Poster PATCH > 发布者+full+已退回：取消与重新开放都在；重新开放恰好一次 PATCH 待认领，2xx 后详情状态更新
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/App.shell.test.ts:499:59
+    497|     await openDetail(wrapper, TASK_MINE_RETURNED.id)
+    498|
+    499|     expect(node(wrapper, 'board-detail-cancel').exists()).toBe(true)
+       |                                                           ^
+    500|     expect(node(wrapper, 'board-detail-reopen').exists()).toBe(true)
+    501|     expect(textOf(wrapper, 'board-detail-cancel')).toContain('取消')
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/11]⎯
+
+ FAIL  src/App.shell.test.ts > Theme tokens loaded > 成员挂载后 :root 或 body 上 --motion-fast 为 120ms，且 --paper / --leaf 有值
+AssertionError: expected '' to be '120ms' // Object.is equality
+
+- Expected
++ Received
+
+- 120ms
+
+ ❯ src/App.shell.test.ts:521:39
+    519|   it('成员挂载后 :root 或 body 上 --motion-fast 为 120ms，且 --paper / --leaf 有值…
+    520|     await mountApp(ME_FULL)
+    521|     expect(tokenVar('--motion-fast')).toBe('120ms')
+       |                                       ^
+    522|     expect(tokenVar('--paper')).not.toBe('')
+    523|     expect(tokenVar('--leaf')).not.toBe('')
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/11]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  11 failed (11)
+   Start at  01:09:47
+   Duration  1.44s (transform 81ms, setup 0ms, import 342ms, tests 965ms, environment 85ms)
+
+undefined
+/Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-18/apps/web:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run src/App.shell.test.ts
+EXIT:1
