@@ -1,8 +1,10 @@
 # Documentation Index
 
+- [User guide](../README.md) — how to log in, publish tasks, and connect an Agent
 - [Design (source of truth)](DESIGN.md)
 - [Architecture](architecture.md)
 - [API](api.md)
 - [Conventions](conventions.md)
 - [Decisions](decisions/)
 - [Changelog](../CHANGELOG.md)
+- [Live smoke log](smoke-test.md) — local end-to-end progress; **配合** steps wait for the human

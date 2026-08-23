@@ -112,6 +112,7 @@ added or changed it in this file, is yours.
 - `docs/api.md` — APIs, schemas, events, and external contracts.
 - `docs/conventions.md` — coding, testing, Git, and review rules.
 - `docs/decisions/` — architecture decision records.
+- `docs/smoke-test.md` — live local smoke log. Steps marked **配合** need the human (browser session, OAuth consent, one-time tokens, clicking 导入/发布); do those together, never solo-guess, and do not write that progress into GitHub issues.
 
 ## Documentation Update Checklist
 

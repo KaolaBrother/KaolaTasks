@@ -27,9 +27,11 @@ HTML 200 (`text/html; charset=utf-8`). Links to `/login/github`, `/login/gitlab`
 
 ### OAuth start (`@fastify/oauth2` `startRedirectPath`)
 
-- `GET /login/github`
-- `GET /login/gitlab`
-- `GET /login/gitea`
+- `GET /login/github` — authorize `scope` is `read:user`
+- `GET /login/gitlab` — authorize `scope` is `read_user`
+- `GET /login/gitea` — authorize `scope` is `read:user`
+
+Omitted `scope` on `@fastify/oauth2` becomes the literal query value `undefined`, which GitLab rejects (`The requested scope is invalid, unknown, or malformed.`).
 
 ### OAuth callbacks
 

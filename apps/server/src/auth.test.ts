@@ -186,6 +186,7 @@ describe('login start paths', () => {
     const res = await app.inject({ method: 'GET', url: PROVIDERS.github.startPath })
     assert.equal(res.statusCode, 302, `GET ${PROVIDERS.github.startPath}: ${res.statusCode}`)
     assert.match(String(res.headers.location), /https:\/\/github\.com\/login\/oauth\/authorize/)
+    assert.match(String(res.headers.location), /(?:^|[?&])scope=read%3Auser(?:&|$)/)
   })
 
   test('GET /login/gitlab redirects to the configured GitLab authorize URL', async (t) => {
@@ -193,6 +194,7 @@ describe('login start paths', () => {
     const res = await app.inject({ method: 'GET', url: PROVIDERS.gitlab.startPath })
     assert.equal(res.statusCode, 302, `GET ${PROVIDERS.gitlab.startPath}: ${res.statusCode}`)
     assert.match(String(res.headers.location), /https:\/\/gitlab\.example\.test\/oauth\/authorize/)
+    assert.match(String(res.headers.location), /(?:^|[?&])scope=read_user(?:&|$)/)
   })
 
   test('GET /login/gitea redirects to the configured Gitea authorize URL', async (t) => {
@@ -200,6 +202,7 @@ describe('login start paths', () => {
     const res = await app.inject({ method: 'GET', url: PROVIDERS.gitea.startPath })
     assert.equal(res.statusCode, 302, `GET ${PROVIDERS.gitea.startPath}: ${res.statusCode}`)
     assert.match(String(res.headers.location), /https:\/\/gitea\.example\.test\/login\/oauth\/authorize/)
+    assert.match(String(res.headers.location), /(?:^|[?&])scope=read%3Auser(?:&|$)/)
   })
 })
 

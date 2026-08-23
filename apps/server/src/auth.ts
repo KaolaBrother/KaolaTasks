@@ -269,6 +269,7 @@ export function registerAuth(app: FastifyInstance, db: AppDb) {
 
   app.register(oauthPlugin, {
     name: 'githubOAuth2',
+    scope: ['read:user'],
     credentials: {
       client: { id: githubClientId, secret: githubClientSecret },
       auth: githubAuthConfig,
@@ -279,6 +280,7 @@ export function registerAuth(app: FastifyInstance, db: AppDb) {
   })
   app.register(oauthPlugin, {
     name: 'gitlabOAuth2',
+    scope: ['read_user'],
     credentials: {
       client: { id: gitlabClientId, secret: gitlabClientSecret },
       auth: {
@@ -294,6 +296,7 @@ export function registerAuth(app: FastifyInstance, db: AppDb) {
   })
   app.register(oauthPlugin, {
     name: 'giteaOAuth2',
+    scope: ['read:user'],
     credentials: {
       client: { id: giteaClientId, secret: giteaClientSecret },
       auth: {
