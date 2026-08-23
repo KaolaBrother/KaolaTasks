@@ -198,6 +198,12 @@ const REPO_FULL_ACCESS = {
   private: true,
 }
 
+const EXTRA_HEADER_BY_FORGE = {
+  github: { name: 'Authorization', value_pattern: 'Bearer ${token}' },
+  gitlab: { name: 'Authorization', value_pattern: 'Bearer ${token}' },
+  gitea: { name: 'Authorization', value_pattern: 'token ${token}' },
+}
+
 function allowForgeToken(stub, token, descriptor = { repo: REPO_FULL_ACCESS }) {
   stub.forge.set(token, descriptor)
 }
@@ -551,6 +557,35 @@ function assertClaimRevealToken(body, forgePlaintext) {
   }
 }
 
+function expectedCloneRemoteUrl(repo) {
+  return `${String(repo.base_url).replace(/\/+$/u, '')}/${repo.full_name}.git`
+}
+
+function assertCloneRecipe(clone, { suggestedDir, repo, forgePlaintext }) {
+  assert.equal(typeof clone, 'object')
+  assert.ok(clone)
+  assert.deepEqual(Object.keys(clone).sort(), ['extra_header', 'remote_url', 'suggested_dir', 'token_usage'])
+  assert.equal(clone.suggested_dir, suggestedDir)
+  assert.equal(clone.suggested_dir, repo.suggested_dir)
+  assert.equal(clone.token_usage, CLONE_TOKEN_USAGE)
+  assert.equal(clone.remote_url, expectedCloneRemoteUrl(repo))
+  assert.equal(clone.remote_url.includes(forgePlaintext), false, `remote_url leaked forge plaintext: ${clone.remote_url}`)
+  assert.equal(clone.remote_url.includes('@'), false, `remote_url must not embed credentials: ${clone.remote_url}`)
+  assert.equal(clone.remote_url.includes('api.github.com'), false, `remote_url must not use api.github.com: ${clone.remote_url}`)
+  assert.equal(clone.remote_url.includes('%2F'), false, `remote_url must not use GitLab API %2F: ${clone.remote_url}`)
+  assert.equal(clone.remote_url.includes('%2f'), false, `remote_url must not use GitLab API %2f: ${clone.remote_url}`)
+  const extra = clone.extra_header
+  assert.equal(typeof extra, 'object')
+  assert.ok(extra)
+  assert.deepEqual(Object.keys(extra).sort(), ['name', 'value_pattern'])
+  const expectedHeader = EXTRA_HEADER_BY_FORGE[repo.forge]
+  assert.ok(expectedHeader, `unknown forge ${repo.forge}`)
+  assert.equal(extra.name, expectedHeader.name)
+  assert.equal(extra.value_pattern, expectedHeader.value_pattern)
+  assert.equal(extra.value_pattern.includes('${token}'), true, `value_pattern must keep literal \${token}: ${extra.value_pattern}`)
+  assert.equal(extra.value_pattern.includes(forgePlaintext), false, `value_pattern leaked forge plaintext: ${extra.value_pattern}`)
+}
+
 function assertClaim201(res, { forgeToken, suggestedDir, nowUnix }) {
   assert.equal(res.statusCode, 201, `POST claim: ${res.statusCode} ${res.body}`)
   const body = jsonBody(res)
@@ -563,9 +598,11 @@ function assertClaim201(res, { forgeToken, suggestedDir, nowUnix }) {
   assert.deepEqual(Object.keys(body.lease).sort(), ['expires_at', 'ttl_seconds'])
   assert.equal(body.lease.ttl_seconds, TTL_SECONDS)
   assert.equal(body.lease.expires_at, expiresAtIso(nowUnix))
-  assert.deepEqual(Object.keys(body.clone).sort(), ['suggested_dir', 'token_usage'])
-  assert.equal(body.clone.suggested_dir, suggestedDir)
-  assert.equal(body.clone.token_usage, CLONE_TOKEN_USAGE)
+  assertCloneRecipe(body.clone, {
+    suggestedDir,
+    repo: body.task.repo,
+    forgePlaintext: forgeToken,
+  })
   return body
 }
 
@@ -576,6 +613,7 @@ function assertPending202(res, { secretPlaintexts = [] } = {}) {
   assert.equal(typeof body.message, 'string')
   assert.ok(body.message.length > 0, 'pending message must be non-empty Chinese copy')
   assert.equal(Object.hasOwn(body, 'token'), false, 'pending body must omit token')
+  assert.equal(Object.hasOwn(body, 'clone'), false, 'pending body must omit clone')
   assertNoForgeSecretMaterial(res, ...secretPlaintexts)
   return body
 }
@@ -814,9 +852,11 @@ function assertClaimEnvelope(body, { forgeToken, suggestedDir, nowUnix }) {
   assert.deepEqual(Object.keys(body.lease).sort(), ['expires_at', 'ttl_seconds'])
   assert.equal(body.lease.ttl_seconds, TTL_SECONDS)
   assert.equal(body.lease.expires_at, expiresAtIso(nowUnix))
-  assert.deepEqual(Object.keys(body.clone).sort(), ['suggested_dir', 'token_usage'])
-  assert.equal(body.clone.suggested_dir, suggestedDir)
-  assert.equal(body.clone.token_usage, CLONE_TOKEN_USAGE)
+  assertCloneRecipe(body.clone, {
+    suggestedDir,
+    repo: body.task.repo,
+    forgePlaintext: forgeToken,
+  })
 }
 
 // ------------------------------------------------------------------------------------------
@@ -968,6 +1008,7 @@ describe('issue #16 claim-confirmation for autonomous polling agents', { concurr
       assert.equal(body.pending, true)
       assert.equal(body.error, 'confirmation_required')
       assert.equal(Object.hasOwn(body, 'token'), false)
+      assert.equal(Object.hasOwn(body, 'clone'), false)
       assertNoForgeSecretValue(body, JSON.stringify(called.result), INLINE_TOKEN)
       assertNoForgeSecretMaterial(called.res, INLINE_TOKEN)
     })

@@ -1,4 +1,4 @@
-// Oracle for the 发布任务 form in App.vue (issue #7, import #12, publish picker #19).
+// Oracle for the 发布任务 form in App.vue (issue #7, import #12, publish picker #19, publish wizard #21).
 //
 // The wire format asserted here is the one apps/server/src/tasks.ts actually implements:
 // snake_case bodies, a request-side credential union of { profile_id } XOR { token } (which is
@@ -73,6 +73,34 @@ const LISTED_ISSUE_5 = {
   number: 12,
   title: '账单对账失败重试',
   issue_url: 'https://gitlab.example.test/team/billing/-/issues/12',
+}
+
+const KAOLA_EXTRA_TESTIDS = [
+  'task-group-acceptance',
+  'task-acceptance-criteria',
+  'task-test-command',
+  'task-allowed-paths',
+  'task-forbidden-paths',
+  'task-priority',
+  'task-tags',
+] as const
+
+const KAOLA_EXTRA_BODY_KEYS = [
+  'acceptance_criteria',
+  'test_command',
+  'constraints',
+  'priority',
+  'tags',
+] as const
+
+const IMPORT_TITLE = '从 Issue 导入的标题'
+const IMPORT_DESCRIPTION = '从 Issue 导入的正文'
+const IMPORT_ISSUE_URL = LISTED_ISSUE_87.issue_url
+const IMPORT_DRAFT = {
+  title: IMPORT_TITLE,
+  description_md: IMPORT_DESCRIPTION,
+  source: { type: 'imported', issue_url: IMPORT_ISSUE_URL },
+  repo: { forge: 'gitea', base_url: FORGE_BASE_URL, full_name: 'team/orders' },
 }
 
 const CREATED_ID = 'kt-2026-0042'
@@ -320,25 +348,34 @@ async function fillRequired(wrapper: VueWrapper, overrides: { title?: string } =
   await settle()
 }
 
-async function fillEverything(wrapper: VueWrapper) {
-  await setField(wrapper, 'task-title', '为订单导出接口增加分页')
-  await setField(wrapper, 'task-description', '……（Markdown 详述）')
-  await setSelect(wrapper, 'task-source-type', 'imported')
-  await setSelect(wrapper, 'task-credential-profile', 3)
-  await settle()
-  await selectListedIssue(wrapper, 87)
-  await setField(wrapper, 'task-base-branch', 'develop')
-  await setField(wrapper, 'task-suggested-dir', 'orders')
-  await setField(
-    wrapper,
-    'task-acceptance-criteria',
-    'GET /api/orders/export 支持 page/page_size 参数\n新增单元测试覆盖分页边界',
+function expectNoKaolaExtraFields(wrapper: VueWrapper) {
+  for (const testid of KAOLA_EXTRA_TESTIDS) {
+    expect({ testid, exists: node(wrapper, testid).exists() }).toEqual({ testid, exists: false })
+  }
+}
+
+function expectOmittedExtraBodyKeys(body: Record<string, unknown>) {
+  for (const key of KAOLA_EXTRA_BODY_KEYS) {
+    expect(Object.keys(body)).not.toContain(key)
+  }
+  expect(body).toEqual(
+    expect.objectContaining({
+      title: expect.any(String),
+      description_md: expect.any(String),
+      source: expect.any(Object),
+      repo: expect.any(Object),
+      credential: expect.any(Object),
+    }),
   )
-  await setField(wrapper, 'task-test-command', 'pnpm test')
-  await setField(wrapper, 'task-allowed-paths', 'src/api/**\ntests/**')
-  await setField(wrapper, 'task-forbidden-paths', 'migrations/**')
-  await setSelect(wrapper, 'task-priority', 'P1')
-  await setField(wrapper, 'task-tags', 'backend\napi')
+}
+
+function importCardAnchor(wrapper: VueWrapper) {
+  const found = node(wrapper, 'task-import-card-url')
+  if (!found.exists()) throw new Error('missing [data-testid="task-import-card-url"]')
+  if (found.element.tagName === 'A') return found
+  const inner = found.find('a')
+  if (!inner.exists()) throw new Error('task-import-card-url has no <a href>')
+  return inner
 }
 
 // =============================================================================================
@@ -364,15 +401,21 @@ describe('发布任务表单 — 可见性（DESIGN §11）', () => {
 })
 
 describe('发布任务表单 — 请求线格式', () => {
-  it('完整填写后提交，请求体精确匹配服务端的 snake_case 契约', async () => {
-    const { wrapper, calls } = await mountApp()
-    await fillEverything(wrapper)
+  it('导入成功后发布：请求体含 title / description_md / source / repo / credential，省略验收等附加键', async () => {
+    const { wrapper, calls, routes } = await mountApp()
+    routes.set('POST /api/v1/tasks/import', () => jsonResponse(200, IMPORT_DRAFT))
+    await fillImportPrereqs(wrapper)
+    await clickImport(wrapper)
+    await setField(wrapper, 'task-base-branch', 'develop')
+    await setField(wrapper, 'task-suggested-dir', 'orders')
     await submit(wrapper)
 
-    expect(createBody(calls)).toEqual({
-      title: '为订单导出接口增加分页',
-      description_md: '……（Markdown 详述）',
-      source: { type: 'imported', issue_url: `${FORGE_BASE_URL}/team/orders/issues/87` },
+    const body = createBody(calls)
+    expectOmittedExtraBodyKeys(body)
+    expect(body).toEqual({
+      title: IMPORT_TITLE,
+      description_md: IMPORT_DESCRIPTION,
+      source: { type: 'imported', issue_url: IMPORT_ISSUE_URL },
       repo: {
         forge: 'gitea',
         base_url: FORGE_BASE_URL,
@@ -380,21 +423,13 @@ describe('发布任务表单 — 请求线格式', () => {
         base_branch: 'develop',
         suggested_dir: 'orders',
       },
-      acceptance_criteria: [
-        'GET /api/orders/export 支持 page/page_size 参数',
-        '新增单元测试覆盖分页边界',
-      ],
-      test_command: 'pnpm test',
-      constraints: { allowed_paths: ['src/api/**', 'tests/**'], forbidden_paths: ['migrations/**'] },
-      priority: 'P1',
-      tags: ['backend', 'api'],
       credential: { profile_id: 3 },
     })
   })
 
   it('平台自有字段 id / pr_convention / poster / status / created_at 不出现在请求体里', async () => {
     const { wrapper, calls } = await mountApp()
-    await fillEverything(wrapper)
+    await fillRequired(wrapper)
     await submit(wrapper)
 
     const body = createBody(calls)
@@ -403,7 +438,7 @@ describe('发布任务表单 — 请求线格式', () => {
     }
   })
 
-  it('未填写的 base_branch 与 suggested_dir 被省略，而不是发送空字符串', async () => {
+  it('未填写的 base_branch 与 suggested_dir 被省略，且不发送验收等附加键', async () => {
     // 服务端 readRepo 对空字符串直接 400 invalid_body，只有 undefined 才会套用默认值。
     const { wrapper, calls } = await mountApp()
     await fillRequired(wrapper)
@@ -416,30 +451,13 @@ describe('发布任务表单 — 请求线格式', () => {
       full_name: 'team/orders',
     })
     expect(body.source).toEqual({ type: 'native' })
-    expect(body.priority).toBe('P2')
+    expect(body.title).toBe('为订单导出接口增加分页')
     expect(body.description_md).toBe('')
-    expect(body.test_command).toBe('')
-    expect(body.acceptance_criteria).toEqual([])
-    expect(body.tags).toEqual([])
-    expect(body.constraints).toEqual({ allowed_paths: [], forbidden_paths: [] })
-  })
-
-  it('四个 string[] 字段按行拆分：逐行去空白并丢弃空行', async () => {
-    const { wrapper, calls } = await mountApp()
-    await fillRequired(wrapper)
-    await setField(wrapper, 'task-acceptance-criteria', '  第一条  \n\n第二条\n')
-    await setField(wrapper, 'task-tags', 'backend\n\n  api  \n')
-    await setField(wrapper, 'task-allowed-paths', '\nsrc/api/**\n\n  tests/**\n')
-    await setField(wrapper, 'task-forbidden-paths', 'migrations/**\n   \n')
-    await submit(wrapper)
-
-    const body = createBody(calls)
-    expect(body.acceptance_criteria).toEqual(['第一条', '第二条'])
-    expect(body.tags).toEqual(['backend', 'api'])
-    expect(body.constraints).toEqual({
-      allowed_paths: ['src/api/**', 'tests/**'],
-      forbidden_paths: ['migrations/**'],
-    })
+    expect(body.credential).toEqual({ profile_id: 3 })
+    expectOmittedExtraBodyKeys(body)
+    expect(Object.keys(body).sort()).toEqual(
+      ['credential', 'description_md', 'repo', 'source', 'title'].sort(),
+    )
   })
 
   it('创建请求是 POST /api/v1/tasks，带 Content-Type: application/json', async () => {
@@ -455,9 +473,11 @@ describe('发布任务表单 — 请求线格式', () => {
 
   it('每一个 fetch 都带 credentials: include 与 Accept: application/json', async () => {
     // Accept 是承重的：没有它，服务端的 sendUnauthorized 会 302 到 /login 而不是回 401 JSON。
-    // fillEverything goes through imported+profile so the loop also covers GET .../issues.
-    const { wrapper, calls } = await mountApp()
-    await fillEverything(wrapper)
+    // imported+profile covers GET .../issues; import then publish covers POST /import and POST /tasks.
+    const { wrapper, calls, routes } = await mountApp()
+    routes.set('POST /api/v1/tasks/import', () => jsonResponse(200, IMPORT_DRAFT))
+    await fillImportPrereqs(wrapper)
+    await clickImport(wrapper)
     await submit(wrapper)
 
     expect(createCalls(calls)).toHaveLength(1)
@@ -686,16 +706,7 @@ describe('发布任务表单 — 发布成功', () => {
 })
 
 // Issue #12 — pre-publish Issue import + 「导入内容」来源标记. Do not weaken the cases above.
-
-const IMPORT_TITLE = '从 Issue 导入的标题'
-const IMPORT_DESCRIPTION = '从 Issue 导入的正文'
-const IMPORT_ISSUE_URL = LISTED_ISSUE_87.issue_url
-const IMPORT_DRAFT = {
-  title: IMPORT_TITLE,
-  description_md: IMPORT_DESCRIPTION,
-  source: { type: 'imported', issue_url: IMPORT_ISSUE_URL },
-  repo: { forge: 'gitea', base_url: FORGE_BASE_URL, full_name: 'team/orders' },
-}
+// Issue #21 — successful import shows a read-only card; title/description are not n-inputs.
 
 function importCalls(calls: FetchCall[]): FetchCall[] {
   return calls.filter((call) => call.method === 'POST' && call.url === '/api/v1/tasks/import')
@@ -715,6 +726,38 @@ async function fillImportPrereqs(wrapper: VueWrapper) {
   await selectListedIssue(wrapper, 87)
 }
 
+describe('发布任务表单 — 发布向导不再收集附加字段（issue #21）', () => {
+  it('native 来源仍有标题/描述输入，没有导入卡片，也没有验收分组与附加字段', async () => {
+    const { wrapper } = await mountApp()
+    expect(node(wrapper, 'task-title').exists()).toBe(true)
+    expect(node(wrapper, 'task-description').exists()).toBe(true)
+    expect(node(wrapper, 'task-import-card').exists()).toBe(false)
+    expectNoKaolaExtraFields(wrapper)
+  })
+
+  it('imported 来源在导入成功前后都没有验收分组与附加字段', async () => {
+    const { wrapper, routes } = await mountApp()
+    routes.set('POST /api/v1/tasks/import', () => jsonResponse(200, IMPORT_DRAFT))
+    await setSelect(wrapper, 'task-source-type', 'imported')
+    expectNoKaolaExtraFields(wrapper)
+    await fillImportPrereqs(wrapper)
+    await clickImport(wrapper)
+    expectNoKaolaExtraFields(wrapper)
+  })
+
+  it('native 发布把手填标题写入请求体，仍省略附加键', async () => {
+    const { wrapper, calls } = await mountApp()
+    await fillRequired(wrapper)
+    await setField(wrapper, 'task-description', '手填 Markdown 描述')
+    await submit(wrapper)
+    const body = createBody(calls)
+    expect(body.title).toBe('为订单导出接口增加分页')
+    expect(body.description_md).toBe('手填 Markdown 描述')
+    expect(body.source).toEqual({ type: 'native' })
+    expectOmittedExtraBodyKeys(body)
+  })
+})
+
 describe('发布任务表单 — Issue 导入（issue #12）', () => {
   it('来源为 imported 时显示导入按钮，文案是「导入」；native 时不渲染', async () => {
     const { wrapper } = await mountApp()
@@ -728,16 +771,17 @@ describe('发布任务表单 — Issue 导入（issue #12）', () => {
     expect(node(wrapper, 'task-import').exists()).toBe(false)
   })
 
-  it('来源标记 task-import-source-label 仅在 imported 可见，文案恰好是「导入内容」', async () => {
+  it('导入成功前不渲染 task-import-card；native 来源也没有该卡片', async () => {
     const { wrapper } = await mountApp()
+    expect(node(wrapper, 'task-import-card').exists()).toBe(false)
     expect(node(wrapper, 'task-import-source-label').exists()).toBe(false)
 
     await setSelect(wrapper, 'task-source-type', 'imported')
-    expect(node(wrapper, 'task-import-source-label').exists()).toBe(true)
-    expect(textOf(wrapper, 'task-import-source-label').trim()).toBe('导入内容')
+    expect(node(wrapper, 'task-import-card').exists()).toBe(false)
+    expect(node(wrapper, 'task-import-source-label').exists()).toBe(false)
 
     await setSelect(wrapper, 'task-source-type', 'native')
-    expect(node(wrapper, 'task-import-source-label').exists()).toBe(false)
+    expect(node(wrapper, 'task-import-card').exists()).toBe(false)
   })
 
   it('点击导入：POST /api/v1/tasks/import，Accept + credentials，snake_case 体来自当前表单', async () => {
@@ -777,20 +821,23 @@ describe('发布任务表单 — Issue 导入（issue #12）', () => {
     })
   })
 
-  it('200 后填入标题、描述、仓库 full_name，并保持来源为 imported', async () => {
+  it('200 后渲染只读 Issue 卡片，不再有 task-title / task-description 输入', async () => {
     const { wrapper, routes } = await mountApp()
     routes.set('POST /api/v1/tasks/import', () => jsonResponse(200, IMPORT_DRAFT))
     await fillImportPrereqs(wrapper)
-    await setField(wrapper, 'task-title', '旧标题')
-    await setField(wrapper, 'task-description', '旧描述')
+    expect(node(wrapper, 'task-import-card').exists()).toBe(false)
     await clickImport(wrapper)
 
-    expect(fieldValue(wrapper, 'task-title')).toBe(IMPORT_TITLE)
-    expect(fieldValue(wrapper, 'task-description')).toBe(IMPORT_DESCRIPTION)
+    expect(node(wrapper, 'task-import-card').exists()).toBe(true)
+    expect(textOf(wrapper, 'task-import-card-title')).toContain(IMPORT_TITLE)
+    expect(node(wrapper, 'task-import-card-title').find('input').exists()).toBe(false)
+    expect(node(wrapper, 'task-import-card-title').find('textarea').exists()).toBe(false)
+    expect(textOf(wrapper, 'task-import-card-body')).toContain(IMPORT_DESCRIPTION)
+    expect(importCardAnchor(wrapper).attributes('href')).toBe(IMPORT_ISSUE_URL)
+    expect(node(wrapper, 'task-title').exists()).toBe(false)
+    expect(node(wrapper, 'task-description').exists()).toBe(false)
     expect(selectOf(wrapper, 'task-source-type').props('value')).toBe('imported')
     expect(node(wrapper, 'task-issue-url').exists()).toBe(false)
-    expect(node(wrapper, 'task-import-source-label').exists()).toBe(true)
-    expect(textOf(wrapper, 'task-import-source-label').trim()).toBe('导入内容')
   })
 
   it('失败时展示服务端 message；没有 message 时用「导入失败（status）」且不改写发布失败文案', async () => {

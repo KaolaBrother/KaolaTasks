@@ -56,7 +56,7 @@ GitHub 账号谁都能注册，而认领会揭示仓库令牌，所以 GitHub �
 
 1. 登录后进入工作台。
 2. 在「钥匙」栏的「凭证档案」里按 forge + 仓库地址 + 仓库全名保存加密令牌（推荐），或在单条任务里临时贴令牌。GitHub / GitLab 的仓库地址会预填；Gitea 留空自填。
-3. 「发布」栏：填标题、说明、验收标准等。凭证选共享档案时，仓库由档案带出（不再手填 Forge / 仓库地址 / 仓库）；来源为导入时从下拉选择 Issue。凭证选一次性 token 时仍手填仓库，并粘贴 Issue URL。点「导入」带出标题和正文，再点「发布」。分支和目录在「高级」里。
+3. 「发布」栏：平台自有填标题、说明；从 Issue 导入则点「导入」，成功后只读卡片展示标题/正文/URL（不收集验收标准等附加项）。凭证选共享档案时，仓库由档案带出（不再手填 Forge / 仓库地址 / 仓库）；来源为导入时从下拉选择 Issue。凭证选一次性 token 时仍手填仓库，并粘贴 Issue URL。分支和目录在「高级」里。
 4. 在「看板」里用列表 / 看板查看进度（可按状态、标签、Forge 筛选）。自己发的任务可在详情「取消」，或把已退回的「重新开放」。
 5. 「审计」栏看审计日志和团队统计。
 
@@ -101,7 +101,7 @@ Cursor 可在 MCP 设置里增加类似配置（把 Key 换成你自己的，不
 | `release_task` | 放弃，任务回到待认领 |
 | `submit_pr` | 提交 PR 地址，任务变为待验收 |
 
-clone 时请把令牌放在环境变量或 `git -c http.extraHeader` 里按次传递，**不要写进 remote URL**（会落到 `.git/config`）。
+认领成功信封里的 `clone` 用 `clone.extra_header` + `clone.remote_url` 克隆，目录是 `clone.suggested_dir`。clone 时请把令牌放在环境变量或 `git -c http.extraHeader` 里按次传递，**不要写进 remote URL**（会落到 `.git/config`）。
 
 没有 MCP 的脚本可以用同一把 Key 调 REST：`POST /api/v1/tasks/:id/claim`、`…/progress`、`…/release`。提交 PR 只有 MCP 的 `submit_pr`。
 

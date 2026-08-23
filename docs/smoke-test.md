@@ -40,7 +40,7 @@
 | 10 | 生成 Agent Key | **配合** | 未做 | 用**已经登录的** GitLab 用户 `KaolaBrother`（`active` + `full`）在「钥匙」页生成。认领**不必**再登 GitHub，也**不必**再为完成任务走一遍网页登录。明文 `ktk_…` 只出现一次。写入 `.env` 的 `KAOLA_AGENT_KEY=`，聊天只说「写好了」 |
 | 11 | 本机 Cursor CLI 配考拉 MCP | **配合** | 未做 | 全局 `~/.cursor/mcp.json`（或项目 `.cursor/mcp.json`，**不要提交 Key**）：`url` `http://localhost:31415/api/mcp`，`headers.Authorization` `Bearer ktk_…`。用**本机** CLI / 本机 Agent；Cloud Agent Runtime 打不到 localhost |
 | 12 | `list_tasks`，人确认做哪条 | **配合** | 未做 | Agent 列出待认领。人指定 `kt-2026-0001`（`smoke: append a line to README`）。`get_task_brief` **不含** token。`repo`：`gitlab` / `https://gitlab.com` / `KaolaBrother/kaola-tasks-smoke`，`suggested_dir` `kaola-tasks-smoke` |
-| 13 | 指示认领 `claim_task` | 自动（MCP 已配） | 未做 | 只传 `task_id`，**不要** `autonomous`。成功：看板 `进行中`；返回顶层 `token`（发布者的 GitLab PAT）和 `clone.suggested_dir`。网页始终没有认领按钮 |
+| 13 | 指示认领 `claim_task` | 自动（MCP 已配） | 未做 | 只传 `task_id`，**不要** `autonomous`。成功：看板 `进行中`；返回顶层 `token`（发布者的 GitLab PAT）和 `clone` 四键（用 `clone.remote_url` + `clone.extra_header`，目录 `clone.suggested_dir`）。网页始终没有认领按钮 |
 | 14 | 本机 clone GitLab，改 README | **配合** | 未做 | remote：`https://gitlab.com/KaolaBrother/kaola-tasks-smoke.git`。token 用环境变量或 `git -c http.extraHeader`，**不要**写进 remote URL。目录用 `kaola-tasks-smoke`。在 `README.md` 末尾加一行 `Smoke test OK.` |
 | 15 | 推分支、开 MR，再 `submit_pr` | **配合** | 未做 | 同一 token 推分支、用 GitLab API 开 MR（认领者不必在该仓有自己的 GitLab 账号）。MCP `submit_pr` 交 `pr_url`；任务应变 `待验收` |
 | 16 | 合并 MR，看任务变已完成 | **配合** | 未做 | 人在 GitLab 点 Merge。默认约 60s 轮询；导入型应给源 Issue `#1` 回写评论 |
@@ -49,7 +49,7 @@
 
 **#1–#9 完成。** 板上有 `kt-2026-0001` / `待认领` / 导入自 GitLab Issue #1。发布这条已经测过。
 
-**下一步是 #10**，不是 GitHub 登录。接单闭环约定如下（现设计就能走；#20 / #21 是后续产品改动，**不挡**本轮冒烟）：
+**下一步是 #10**，不是 GitHub 登录。接单闭环约定如下（现设计就能走；clone 用 `clone.remote_url` + `clone.extra_header`（#20），**不挡**本轮冒烟；步骤状态仍全部未做，未重跑）：
 
 ```
 网页看板（只看）
@@ -66,8 +66,8 @@
 
 | 项 | 记在哪 | 和冒烟的关系 |
 |----|--------|----------------|
-| clone 信封加 `remote_url` + 按 forge 的 `extra_header` | GitHub [#20](https://github.com/KaolaBrother/KaolaTasks/issues/20) | 本轮 Agent 自己用 `forge`/`base_url`/`full_name` 拼 clone；配方加厚是下一轮 |
-| 发布页导入后只读展示 Issue，去掉验收/路径/优先级等表单项 | GitHub [#21](https://github.com/KaolaBrother/KaolaTasks/issues/21) | 本轮已用旧表单发布成功；UI 改版另做 |
+| clone 信封四键含 `remote_url` + 按 forge 的 `extra_header` | GitHub [#20](https://github.com/KaolaBrother/KaolaTasks/issues/20) | 代码已落地；冒烟仍用 `clone.remote_url` + `clone.extra_header`。本表步骤未重跑 |
+| 发布页导入后只读展示 Issue，去掉验收/路径/优先级等表单项 | GitHub [#21](https://github.com/KaolaBrother/KaolaTasks/issues/21) | 代码已落地；本轮冒烟发布步骤未重跑 |
 
 ## 坑（续测别踩）
 
@@ -76,7 +76,7 @@
 - GitLab 新 UI 常把 Issue 显示成 `/-/work_items/N`；考拉只解析 `/-/issues/N`（以及遗留 `/issues/N`）。
 - 网页没有「认领」按钮；认领只走 Agent Key（MCP 或 Bearer REST）。口头让 Agent 去领时不要带 `autonomous`。
 - Cloud Agent / 云端 Runtime 访问不了 `localhost:31415`。接单用本机 Cursor CLI / 本机 Agent。
-- clone 不要把 token 写进 remote URL。现契约只有 `clone.suggested_dir` + 卫生句；GitLab 地址由 brief 的 `repo.*` 拼。
+- clone 不要把 token 写进 remote URL。用 `clone.remote_url` + `clone.extra_header`（gitea `token ${token}`，GitLab `Bearer ${token}`），目录 `clone.suggested_dir`。
 - 会话在 Fastify 内存里，不在 SQLite。换进程后要重新登录才能生成 Agent Key（又是 **配合**）。
 - GitLab 回调若出现 `Response Error: 400 Bad Request`：是 `/oauth/token` 被拒（常为未走 PKCE，或 secret 用 HTTP Basic 编码失败）。从首页重新点登录，不要刷新回调 URL。GitLab 应用回调必须是 `http://localhost:31415/login/gitlab/callback`。
 

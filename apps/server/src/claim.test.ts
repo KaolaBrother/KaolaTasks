@@ -14,9 +14,15 @@ const VAULT_MASTER_KEY_HEX = 'cd'.repeat(32)
 
 const FORGE_BASE_URL = 'https://gitea.forge.example.test'
 const REPO_FULL_NAME = 'team/orders'
+const GITHUB_FORGE_BASE_URL = 'https://github.com'
+const GITHUB_REPO_FULL_NAME = 'octo/widget'
+const GITLAB_FORGE_BASE_URL = 'https://gitlab.forge.example.test'
+const GITLAB_SUBGROUP_FULL_NAME = 'group/subgroup/app'
 
 const INLINE_TOKEN = 'gitea-INLINE-ONE-OFF-TOKEN-zzq7'
 const PROFILE_TOKEN = 'gitea-PROFILE-SHARED-TOKEN-vv31'
+const GITHUB_FORGE_TOKEN = 'github-INLINE-ONE-OFF-TOKEN-gh01'
+const GITLAB_FORGE_TOKEN = 'gitlab-INLINE-ONE-OFF-TOKEN-gl01'
 
 const PENDING_CLAIM_MESSAGE = '你的账号待正式成员批准后方可认领任务。'
 const TASK_ALREADY_CLAIMED_MESSAGE = '任务已被认领。'
@@ -193,6 +199,22 @@ const REPO_FULL_ACCESS = {
   permissions: { pull: true, push: true, admin: false },
   has_pull_requests: true,
   private: true,
+}
+
+const GITLAB_REPO_ACCESS = {
+  permissions: {
+    project_access: { access_level: 40 },
+    group_access: { access_level: 0 },
+  },
+  repository_access_level: 'enabled',
+  can_create_merge_request_in: true,
+  merge_requests_access_level: 'enabled',
+}
+
+const EXTRA_HEADER_BY_FORGE = {
+  github: { name: 'Authorization', value_pattern: 'Bearer ${token}' },
+  gitlab: { name: 'Authorization', value_pattern: 'Bearer ${token}' },
+  gitea: { name: 'Authorization', value_pattern: 'token ${token}' },
 }
 
 function allowForgeToken(stub, token, descriptor = { repo: REPO_FULL_ACCESS }) {
@@ -557,6 +579,35 @@ function assertNoForgeSecretMaterial(res, ...plaintexts) {
   }
 }
 
+function expectedCloneRemoteUrl(repo) {
+  return `${String(repo.base_url).replace(/\/+$/u, '')}/${repo.full_name}.git`
+}
+
+function assertCloneRecipe(clone, { suggestedDir, repo, forgePlaintext }) {
+  assert.equal(typeof clone, 'object')
+  assert.ok(clone)
+  assert.deepEqual(Object.keys(clone).sort(), ['extra_header', 'remote_url', 'suggested_dir', 'token_usage'])
+  assert.equal(clone.suggested_dir, suggestedDir)
+  assert.equal(clone.suggested_dir, repo.suggested_dir)
+  assert.equal(clone.token_usage, CLONE_TOKEN_USAGE)
+  assert.equal(clone.remote_url, expectedCloneRemoteUrl(repo))
+  assert.equal(clone.remote_url.includes(forgePlaintext), false, `remote_url leaked forge plaintext: ${clone.remote_url}`)
+  assert.equal(clone.remote_url.includes('@'), false, `remote_url must not embed credentials: ${clone.remote_url}`)
+  assert.equal(clone.remote_url.includes('api.github.com'), false, `remote_url must not use api.github.com: ${clone.remote_url}`)
+  assert.equal(clone.remote_url.includes('%2F'), false, `remote_url must not use GitLab API %2F: ${clone.remote_url}`)
+  assert.equal(clone.remote_url.includes('%2f'), false, `remote_url must not use GitLab API %2f: ${clone.remote_url}`)
+  const extra = clone.extra_header
+  assert.equal(typeof extra, 'object')
+  assert.ok(extra)
+  assert.deepEqual(Object.keys(extra).sort(), ['name', 'value_pattern'])
+  const expectedHeader = EXTRA_HEADER_BY_FORGE[repo.forge]
+  assert.ok(expectedHeader, `unknown forge ${repo.forge}`)
+  assert.equal(extra.name, expectedHeader.name)
+  assert.equal(extra.value_pattern, expectedHeader.value_pattern)
+  assert.equal(extra.value_pattern.includes('${token}'), true, `value_pattern must keep literal \${token}: ${extra.value_pattern}`)
+  assert.equal(extra.value_pattern.includes(forgePlaintext), false, `value_pattern leaked forge plaintext: ${extra.value_pattern}`)
+}
+
 // Claim 201 is allowed to have a top-level `token` equal to the fixture forge plaintext.
 function assertClaimRevealToken(body, forgePlaintext) {
   assert.equal(body.token, forgePlaintext)
@@ -589,10 +640,11 @@ function assertClaim201(res, { forgeToken, suggestedDir, nowUnix }) {
   assert.deepEqual(Object.keys(body.lease).sort(), ['expires_at', 'ttl_seconds'])
   assert.equal(body.lease.ttl_seconds, TTL_SECONDS)
   assert.equal(body.lease.expires_at, expiresAtIso(nowUnix))
-  assert.deepEqual(Object.keys(body.clone).sort(), ['suggested_dir', 'token_usage'])
-  assert.equal(body.clone.suggested_dir, suggestedDir)
-  assert.equal(body.clone.suggested_dir, body.task.repo.suggested_dir)
-  assert.equal(body.clone.token_usage, CLONE_TOKEN_USAGE)
+  assertCloneRecipe(body.clone, {
+    suggestedDir,
+    repo: body.task.repo,
+    forgePlaintext: forgeToken,
+  })
   return body
 }
 
@@ -856,6 +908,108 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       assert.deepEqual(body.task.credential, { profile_id: String(profile.id) })
     })
 
+    test('claiming a github task returns Bearer extra_header and a web-origin remote_url, not api.github.com', async (t) => {
+      const clock = freezeNow(t)
+      const { app, stub } = await boot(t)
+      allowForgeToken(stub, GITHUB_FORGE_TOKEN)
+      const poster = await loginGitea(app, stub, 'claim-github-clone')
+      const { brief } = await createTaskOk(
+        app,
+        poster.cookies,
+        taskPayload({
+          title: 'github clone recipe',
+          repo: {
+            forge: 'github',
+            base_url: GITHUB_FORGE_BASE_URL,
+            full_name: GITHUB_REPO_FULL_NAME,
+            base_branch: 'main',
+            suggested_dir: 'widget',
+          },
+          credential: { token: GITHUB_FORGE_TOKEN },
+        }),
+      )
+      const key = await mintAgentKey(app, poster.cookies, 'github-bot')
+      const res = await claimTask(app, { token: key.token, publicId: brief.id })
+      const body = assertClaim201(res, {
+        forgeToken: GITHUB_FORGE_TOKEN,
+        suggestedDir: 'widget',
+        nowUnix: clock.unix(),
+      })
+      assert.equal(body.task.repo.forge, 'github')
+      assert.equal(body.clone.remote_url, 'https://github.com/octo/widget.git')
+      assert.equal(body.clone.extra_header.name, 'Authorization')
+      assert.equal(body.clone.extra_header.value_pattern, 'Bearer ${token}')
+    })
+
+    test('claiming a gitlab subgroup task keeps slashes in remote_url and uses Bearer extra_header', async (t) => {
+      const clock = freezeNow(t)
+      const { app, stub } = await boot(t)
+      allowForgeToken(stub, GITLAB_FORGE_TOKEN, { repo: GITLAB_REPO_ACCESS })
+      const poster = await loginGitea(app, stub, 'claim-gitlab-clone')
+      const { brief } = await createTaskOk(
+        app,
+        poster.cookies,
+        taskPayload({
+          title: 'gitlab subgroup clone recipe',
+          repo: {
+            forge: 'gitlab',
+            base_url: GITLAB_FORGE_BASE_URL,
+            full_name: GITLAB_SUBGROUP_FULL_NAME,
+            base_branch: 'main',
+            suggested_dir: 'app',
+          },
+          credential: { token: GITLAB_FORGE_TOKEN },
+        }),
+      )
+      const key = await mintAgentKey(app, poster.cookies, 'gitlab-bot')
+      const res = await claimTask(app, { token: key.token, publicId: brief.id })
+      const body = assertClaim201(res, {
+        forgeToken: GITLAB_FORGE_TOKEN,
+        suggestedDir: 'app',
+        nowUnix: clock.unix(),
+      })
+      assert.equal(body.task.repo.forge, 'gitlab')
+      assert.equal(body.task.repo.full_name, GITLAB_SUBGROUP_FULL_NAME)
+      assert.equal(body.clone.remote_url, 'https://gitlab.forge.example.test/group/subgroup/app.git')
+      assert.equal(body.clone.extra_header.name, 'Authorization')
+      assert.equal(body.clone.extra_header.value_pattern, 'Bearer ${token}')
+    })
+
+    test('claim remote_url strips trailing slashes from stored repo.base_url', async (t) => {
+      const clock = freezeNow(t)
+      const { app, stub } = await boot(t)
+      const poster = await loginGitea(app, stub, 'claim-slash-clone')
+      const created = await postTask(
+        app,
+        poster.cookies,
+        taskPayload({
+          title: 'trailing slash base_url',
+          repo: {
+            forge: 'gitea',
+            base_url: `${FORGE_BASE_URL}/`,
+            full_name: REPO_FULL_NAME,
+            base_branch: 'main',
+            suggested_dir: 'orders',
+          },
+        }),
+      )
+      if (created.statusCode !== 201) {
+        return
+      }
+      const brief = jsonBody(created)
+      assertBriefShape(brief)
+      assert.equal(brief.repo.base_url.endsWith('/'), true, 'this case only pins strip when publish stores a trailing slash')
+      const key = await mintAgentKey(app, poster.cookies, 'slash-bot')
+      const res = await claimTask(app, { token: key.token, publicId: brief.id })
+      const body = assertClaim201(res, {
+        forgeToken: INLINE_TOKEN,
+        suggestedDir: brief.repo.suggested_dir,
+        nowUnix: clock.unix(),
+      })
+      assert.equal(body.clone.remote_url, 'https://gitea.forge.example.test/team/orders.git')
+      assert.equal(body.clone.remote_url.includes('//team/'), false)
+    })
+
     test('session GET list and GET one after a successful claim still omit forge token and secret keys', async (t) => {
       const { app, stub } = await boot(t)
       const poster = await loginGitea(app, stub, 'never-token-get')
@@ -871,12 +1025,14 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       assert.equal(jsonBody(listed).tasks.length, 1)
       assert.equal(jsonBody(listed).tasks[0].status, '进行中')
       assertBriefShape(jsonBody(listed).tasks[0])
+      assert.equal(Object.hasOwn(jsonBody(listed).tasks[0], 'clone'), false)
       assertNoForgeSecretMaterial(listed, INLINE_TOKEN)
 
       const fetched = await getTask(app, poster.cookies, brief.id)
       assert.equal(fetched.statusCode, 200, `GET one: ${fetched.statusCode} ${fetched.body}`)
       assert.equal(jsonBody(fetched).status, '进行中')
       assertBriefShape(jsonBody(fetched))
+      assert.equal(Object.hasOwn(jsonBody(fetched), 'clone'), false)
       assertNoForgeSecretMaterial(fetched, INLINE_TOKEN)
     })
   })

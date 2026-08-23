@@ -143,7 +143,7 @@ Session cookie. Gate: `status === 'active'` AND `permission_level === 'full'` (s
 
 Wire is snake_case. Request `credential` is `{ profile_id }` XOR `{ token }` (`profile_id` integer or numeric string). That is not the brief-side union (`{ profile_id: string }` | `{ inline: true }`); a request of `{ inline: true }` with no token is `400` `{ error: 'invalid_body' }`. Sending both `profile_id` and `token` is `400`. Client-supplied `id` / `pr_convention` / `poster` / `status` / `created_at` are ignored (server-owned).
 
-Required: non-empty `title`; `repo.forge` `github` | `gitlab` | `gitea`; non-empty `repo.base_url` and `repo.full_name`; `credential`. Defaults when omitted: `description_md` `''`; `source` `{ type: 'native' }`; `repo.base_branch` `'main'`; `repo.suggested_dir` last path segment of `full_name`; `acceptance_criteria` `[]`; `test_command` `''`; `constraints` `{ allowed_paths: [], forbidden_paths: [] }`; `priority` `'P2'`; `tags` `[]`. `source.type` `imported` requires non-empty `issue_url`. Generic parse failure → `400` `{ error: 'invalid_body' }` (no `message`).
+Required: non-empty `title`; `repo.forge` `github` | `gitlab` | `gitea`; non-empty `repo.base_url` and `repo.full_name`; `credential`. Defaults when omitted: `description_md` `''`; `source` `{ type: 'native' }`; `repo.base_branch` `'main'`; `repo.suggested_dir` last path segment of `full_name`; `acceptance_criteria` `[]`; `test_command` `''`; `constraints` `{ allowed_paths: [], forbidden_paths: [] }`; `priority` `'P2'`; `tags` `[]`. `@kaola/web` 发布向导省略后五项（验收标准 / 测试命令 / 路径约束 / 优先级 / 标签），由上述缺省补齐；请求/响应形状不变。`source.type` `imported` requires non-empty `issue_url`. Generic parse failure → `400` `{ error: 'invalid_body' }` (no `message`).
 
 `repo.base_url` must parse as `http:` or `https:` with a non-empty hostname; else `400` `{ error: 'invalid_body', message: '仓库地址不是合法的 http 或 https 地址。' }` (before any forge fetch).
 
@@ -188,7 +188,7 @@ Body `{ autonomous?: boolean }` (#16). Missing body, non-object body, or a non-b
 When `autonomous === true` **and** the claiming Agent's user has `trusted_automation !== true` — checked *after* the `待批准` `403` gate below, *before* the resource/lease logic that produces `201` — the claim does not reveal a token:
 
 - An existing `claim_confirmations` row in state `'approved'` for this exact `(task, user, agent_key)` triple is consumed (row deleted — one-time use, so a later `release` + re-claim cannot ride the same approval again) and the claim proceeds to the normal `201` flow below.
-- Otherwise: a `'pending'` row for that triple is inserted (or, if one already exists, reused as-is — a repeated pending request is idempotent and does not duplicate the row or the event), `events.type` `认领待确认` is written (`details` `{ task_id, agent_key_id }`, `actor_user_id` the claiming user), and the response is `202` `{ error: 'confirmation_required', message: '该任务的自动认领需要你先在网页端确认，请到「待确认认领」列表批准或拒绝。', pending: true }`. No `token`, no `token 揭示` event, no lease inserted, task status stays `待认领`.
+- Otherwise: a `'pending'` row for that triple is inserted (or, if one already exists, reused as-is — a repeated pending request is idempotent and does not duplicate the row or the event), `events.type` `认领待确认` is written (`details` `{ task_id, agent_key_id }`, `actor_user_id` the claiming user), and the response is `202` `{ error: 'confirmation_required', message: '该任务的自动认领需要你先在网页端确认，请到「待确认认领」列表批准或拒绝。', pending: true }`. No `token`, no `clone`, no `token 揭示` event, no lease inserted, task status stays `待认领`.
 
 `autonomous: true` from a user with `trusted_automation === true` skips the confirmation gate entirely and always reaches the normal `201` flow (same as an instructed claim). `trusted_automation` defaults `false` — every user needs an explicit `PUT /api/v1/me/settings` before an autonomous claim can go straight through.
 
@@ -197,9 +197,21 @@ When `autonomous === true` **and** the claiming Agent's user has `trusted_automa
 - `task` — existing 15-key Task Brief (`parseTaskBrief`); `status` `进行中`; `credential` remains `{ profile_id }` or `{ inline: true }` (no token inside `task`)
 - `token` — forge plaintext (one of two reveal channels; the other is MCP `claim_task` success `token`)
 - `lease` — `{ expires_at, ttl_seconds }` with `ttl_seconds` the number `86400` (`LEASE_TTL_SECONDS`). `expires_at` is ISO-8601 from unix `(now + 86400) * 1000`
-- `clone` — `{ suggested_dir, token_usage }` where `suggested_dir` equals `task.repo.suggested_dir` and `token_usage` is exactly `token 请通过环境变量或 git -c http.extraHeader 按次传递，不要写入 remote URL（会落盘到 .git/config）。`
+- `clone` — exactly four keys `suggested_dir`, `token_usage`, `remote_url`, `extra_header`:
+  - `suggested_dir` equals `task.repo.suggested_dir` (relative dir name)
+  - `token_usage` is exactly `token 请通过环境变量或 git -c http.extraHeader 按次传递，不要写入 remote URL（会落盘到 .git/config）。`
+  - `remote_url` is the HTTPS git remote with **no** username/password/token: strip trailing slashes from `task.repo.base_url`, then `'/'` + `task.repo.full_name` + `'.git'`. GitLab subgroup `full_name` keeps slashes (`https://host/group/subgroup/app.git`). Do not use the GitLab API `%2F` project path. Do not use `api.github.com`.
+  - `extra_header` is `{ name, value_pattern }`. `value_pattern` contains the literal characters `${token}` and must **not** contain the revealed forge token.
 
-Do not put forge plaintext inside `task` / `lease` / `clone`. Nested objects must not contain keys `token` / `token_encrypted` / `inline_token_encrypted` / `access_token`.
+  | forge | `name` | `value_pattern` |
+  |-------|--------|-----------------|
+  | github | Authorization | Bearer ${token} |
+  | gitlab | Authorization | Bearer ${token} |
+  | gitea | Authorization | token ${token} |
+
+  Agent substitutes top-level `token` into `value_pattern`, equivalent to `git -c http.extraHeader="<name>: <value>" clone <remote_url> <suggested_dir>`. Server does not run git.
+
+Do not put forge plaintext inside `task` / `lease` / `clone`. Nested objects must not contain the plaintext or secret key names `token` / `token_encrypted` / `inline_token_encrypted` / `access_token` (`value_pattern` may contain the placeholder `${token}`, not the revealed secret). Outer `201` keys stay `clone`, `lease`, `task`, `token`.
 
 Pending `users.status === '待批准'` → `403` `{ error: 'forbidden', message: '你的账号待正式成员批准后方可认领任务。' }` (no forge token; no `token 揭示`) — checked before the #16 autonomous/confirmation gate above, so a pending user gets `403` even with `autonomous: true`. Unknown `publicId` or numeric PK with a valid Bearer → `404` `{ error: 'not_found' }`. Second claim while `进行中` → `409` `{ error: 'conflict', message: '任务已被认领。' }`. Claim when status is not `待认领` (and not the `进行中` conflict above) → `409` `{ error: 'illegal_transition', message: '任务状态不允许从「${from}」变更为「进行中」。' }`. Missing/invalid `VAULT_MASTER_KEY` on decrypt → `500` `{ error: 'vault_unconfigured' }`. Unauthenticated / wrong / non-Bearer / session-cookie-only → `401` `{ error: 'unauthorized' }` + `WWW-Authenticate: Bearer`.
 
@@ -253,7 +265,7 @@ Six `registerTool` names:
 |------|--------|------------------------------|
 | `list_tasks` | `status?` `tags?` `forge?` (optional strings) | `{ tasks: [<brief>, ...] }` ordered by integer PK `id`. Filters: `status` exact, `tags` membership of one tag (`brief.tags.includes`), `forge` exact `repo.forge`. Never a token. |
 | `get_task_brief` | `task_id` | top-level brief (not wrapped). Missing or numeric PK such as `"1"` → `isError` `{ error: 'not_found' }`. Never a token. Description in source: never includes a forge token. |
-| `claim_task` | `task_id`, `autonomous?` (boolean, #16) | Success: same envelope as REST claim `201` — keys `clone`, `lease`, `task`, `token`. Tool description includes `CLONE_TOKEN_USAGE` (`token 请通过环境变量或 git -c http.extraHeader 按次传递，不要写入 remote URL（会落盘到 .git/config）。`) and explains `autonomous`. `autonomous: true` from a non-`trusted_automation` user is **not** an error result — `isError` is `false`/absent and `structuredContent` is `{ error: 'confirmation_required', message, pending: true }` (same body as REST `202`; no `token`). |
+| `claim_task` | `task_id`, `autonomous?` (boolean, #16) | Success: same envelope as REST claim `201` — keys `clone`, `lease`, `task`, `token`. `clone` is the same four keys (`suggested_dir`, `token_usage`, `remote_url`, `extra_header`; `remote_url` / `extra_header` table as REST `201` above). Nested `clone` must not contain forge plaintext or secret key names. Tool description includes `CLONE_TOKEN_USAGE` (`token 请通过环境变量或 git -c http.extraHeader 按次传递，不要写入 remote URL（会落盘到 .git/config）。`) and explains `autonomous`. `autonomous: true` from a non-`trusted_automation` user is **not** an error result — `isError` is `false`/absent and `structuredContent` is `{ error: 'confirmation_required', message, pending: true }` (same body as REST `202`; no `token`, no `clone`). |
 | `report_progress` | `task_id`, `note?` | `{ task, lease }` (no `token`). Omit `note` → event `note` `''`. |
 | `release_task` | `task_id`, `reason?` | `{ task }` with `status` `待认领` (no `token`, no `lease`). Omit `reason` → event details have no `reason` key. |
 | `submit_pr` | `task_id`, `pr_url`, `summary` | `{ task, pr_url, summary }` with `task.status` `待验收` (no `token`). Inserts `submissions` (`pr_state` `'open'`), marks the live lease `'released'`. `submitPr` (`claim.ts`) is `async` and, after its `状态迁移` write, `await`s `attemptWriteback(db, updated, '提交PR', auth.user.id, prUrl)` (#14; no-op for a native task) before returning — the response shape is unaffected. |

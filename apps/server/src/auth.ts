@@ -12,6 +12,7 @@ const PENDING_CLAIM_MESSAGE = '你的账号待正式成员批准后方可认领�
 type OAuth2Decorator = {
   getAccessTokenFromAuthorizationCodeFlow: (
     request: FastifyRequest,
+    reply?: FastifyReply,
   ) => Promise<{ token: { access_token: string } }>
 }
 

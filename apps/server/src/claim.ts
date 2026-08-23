@@ -83,7 +83,12 @@ type ClaimSuccessBody = {
   task: ReturnType<typeof taskBrief>
   token: string
   lease: ReturnType<typeof leaseEnvelope>
-  clone: { suggested_dir: string; token_usage: string }
+  clone: {
+    suggested_dir: string
+    token_usage: string
+    remote_url: string
+    extra_header: { name: string; value_pattern: string }
+  }
 }
 
 type ClaimPendingBody = { error: 'confirmation_required'; message: string; pending: true }
@@ -219,6 +224,11 @@ export async function claimTask(
       clone: {
         suggested_dir: brief.repo.suggested_dir,
         token_usage: CLONE_TOKEN_USAGE,
+        remote_url: `${brief.repo.base_url.replace(/\/+$/u, '')}/${brief.repo.full_name}.git`,
+        extra_header:
+          brief.repo.forge === 'gitea'
+            ? { name: 'Authorization', value_pattern: 'token ${token}' }
+            : { name: 'Authorization', value_pattern: 'Bearer ${token}' },
       },
     },
   }

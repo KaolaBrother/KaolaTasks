@@ -327,60 +327,31 @@
                     >
                       导入
                     </n-button>
-                    <n-text v-if="taskSourceType === 'imported'" data-testid="task-import-source-label">导入内容</n-text>
-                    <n-form-item :label="taskSourceType === 'imported' ? '标题（来自 Issue）' : '标题'">
-                      <n-input data-testid="task-title" v-model:value="taskTitle" placeholder="标题" />
-                    </n-form-item>
-                    <n-form-item :label="taskSourceType === 'imported' ? '描述（Issue 正文）' : '描述'">
-                      <n-input
-                        data-testid="task-description"
-                        type="textarea"
-                        v-model:value="taskDescription"
-                        :placeholder="
-                          taskSourceType === 'imported' ? 'Issue 正文（Markdown）' : 'Markdown 描述（可选）'
-                        "
-                      />
-                    </n-form-item>
-                  </section>
-                  <section data-testid="task-group-acceptance" class="form-group">
-                    <n-form-item label="验收标准">
-                      <n-input
-                        data-testid="task-acceptance-criteria"
-                        type="textarea"
-                        v-model:value="taskAcceptanceCriteria"
-                        placeholder="每行一条"
-                      />
-                    </n-form-item>
-                    <n-form-item label="测试命令">
-                      <n-input data-testid="task-test-command" v-model:value="taskTestCommand" placeholder="例如 pnpm test" />
-                    </n-form-item>
-                    <n-form-item label="允许路径">
-                      <n-input
-                        data-testid="task-allowed-paths"
-                        type="textarea"
-                        v-model:value="taskAllowedPaths"
-                        placeholder="每行一条"
-                      />
-                    </n-form-item>
-                    <n-form-item label="禁止路径">
-                      <n-input
-                        data-testid="task-forbidden-paths"
-                        type="textarea"
-                        v-model:value="taskForbiddenPaths"
-                        placeholder="每行一条"
-                      />
-                    </n-form-item>
-                    <n-form-item label="优先级">
-                      <n-select data-testid="task-priority" v-model:value="taskPriority" :options="priorityOptions" />
-                    </n-form-item>
-                    <n-form-item label="标签">
-                      <n-input
-                        data-testid="task-tags"
-                        type="textarea"
-                        v-model:value="taskTags"
-                        placeholder="每行一个"
-                      />
-                    </n-form-item>
+                    <div v-if="showImportedIssueCard" data-testid="task-import-card">
+                      <n-text data-testid="task-import-source-label">导入内容</n-text>
+                      <div data-testid="task-import-card-title">{{ taskTitle }}</div>
+                      <div data-testid="task-import-card-body">{{ taskDescription }}</div>
+                      <div data-testid="task-import-card-url">
+                        <a
+                          v-if="importedIssueUrlIsHttp"
+                          :href="taskImportIssueUrl"
+                        >{{ taskImportIssueUrl }}</a>
+                        <template v-else>{{ taskImportIssueUrl }}</template>
+                      </div>
+                    </div>
+                    <template v-else>
+                      <n-form-item label="标题">
+                        <n-input data-testid="task-title" v-model:value="taskTitle" placeholder="标题" />
+                      </n-form-item>
+                      <n-form-item label="描述">
+                        <n-input
+                          data-testid="task-description"
+                          type="textarea"
+                          v-model:value="taskDescription"
+                          placeholder="Markdown 描述（可选）"
+                        />
+                      </n-form-item>
+                    </template>
                   </section>
                   <n-button
                     data-testid="task-submit"
@@ -772,12 +743,8 @@ const taskBaseUrl = ref('')
 const taskBaseBranch = ref('')
 const taskSuggestedDir = ref('')
 const taskRepo = ref('')
-const taskAcceptanceCriteria = ref('')
-const taskTestCommand = ref('')
-const taskAllowedPaths = ref('')
-const taskForbiddenPaths = ref('')
-const taskPriority = ref<'P0' | 'P1' | 'P2' | 'P3'>('P2')
-const taskTags = ref('')
+const taskImportReady = ref(false)
+const taskImportIssueUrl = ref('')
 const taskCredentialMode = ref<'profile' | 'inline'>('profile')
 const taskCredentialProfileId = ref<number | null>(null)
 const taskCredentialToken = ref('')
@@ -822,13 +789,6 @@ const forgeOptions = [
 const sourceTypeOptions = [
   { label: '平台自有', value: 'native' },
   { label: '从 Issue 导入', value: 'imported' },
-]
-
-const priorityOptions = [
-  { label: 'P0', value: 'P0' },
-  { label: 'P1', value: 'P1' },
-  { label: 'P2', value: 'P2' },
-  { label: 'P3', value: 'P3' },
 ]
 
 const credentialModeOptions = [
@@ -899,6 +859,12 @@ const listedIssueOptions = computed(() =>
     value: issue.issue_url,
   })),
 )
+
+const showImportedIssueCard = computed(
+  () => taskSourceType.value === 'imported' && taskImportReady.value,
+)
+
+const importedIssueUrlIsHttp = computed(() => urlLooksHttp(taskImportIssueUrl.value))
 
 const boardTagFilterOptions = computed(() => {
   const seen = new Set<string>()
@@ -1053,12 +1019,20 @@ async function loadListedIssues(profileId: number) {
   }
 }
 
+function clearImportedIssueCard() {
+  taskImportReady.value = false
+  taskImportIssueUrl.value = ''
+}
+
 watch(
   [taskSourceType, taskCredentialMode, taskCredentialProfileId],
   () => {
     resetListedIssues()
     applySelectedProfile()
-    if (taskSourceType.value !== 'imported') return
+    if (taskSourceType.value !== 'imported') {
+      clearImportedIssueCard()
+      return
+    }
     if (taskCredentialMode.value !== 'profile') return
     if (profiles.value.length === 0) return
     const id = taskCredentialProfileId.value
@@ -1066,6 +1040,10 @@ watch(
     void loadListedIssues(id)
   },
 )
+
+watch(taskIssueUrl, () => {
+  clearImportedIssueCard()
+})
 
 profileBaseUrl.value = applyForgeBaseUrl(profileForge.value, profileBaseUrl.value)
 taskBaseUrl.value = applyForgeBaseUrl(taskForge.value, taskBaseUrl.value)
@@ -1140,18 +1118,15 @@ function boardIssueUrl(task: BoardTask): string | null {
   return task.source.type === 'imported' ? task.source.issue_url : null
 }
 
-function boardIssueUrlIsHttp(task: BoardTask): boolean {
-  const url = boardIssueUrl(task)
-  if (url == null) return false
+function urlLooksHttp(url: string): boolean {
   const lower = url.trim().toLowerCase()
   return lower.startsWith('https:') || lower.startsWith('http:')
 }
 
-function splitLines(text: string): string[] {
-  return text
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
+function boardIssueUrlIsHttp(task: BoardTask): boolean {
+  const url = boardIssueUrl(task)
+  if (url == null) return false
+  return urlLooksHttp(url)
 }
 
 function toDatetimeLocalValue(iso: string): string {
@@ -1699,14 +1674,6 @@ async function createTask() {
         description_md: taskDescription.value,
         source,
         repo,
-        acceptance_criteria: splitLines(taskAcceptanceCriteria.value),
-        test_command: taskTestCommand.value,
-        constraints: {
-          allowed_paths: splitLines(taskAllowedPaths.value),
-          forbidden_paths: splitLines(taskForbiddenPaths.value),
-        },
-        priority: taskPriority.value,
-        tags: splitLines(taskTags.value),
         credential,
       }),
     })
@@ -1781,6 +1748,17 @@ async function importTask() {
       if (typeof fullName === 'string') taskRepo.value = fullName
     }
     taskSourceType.value = 'imported'
+    const importedSource = body?.source
+    if (
+      importedSource != null &&
+      typeof importedSource === 'object' &&
+      typeof (importedSource as { issue_url?: unknown }).issue_url === 'string'
+    ) {
+      taskImportIssueUrl.value = (importedSource as { issue_url: string }).issue_url
+    } else {
+      taskImportIssueUrl.value = taskIssueUrl.value.trim()
+    }
+    taskImportReady.value = true
   } catch {
     taskMessage.value = '导入请求失败'
   }

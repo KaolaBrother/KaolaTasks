@@ -385,13 +385,23 @@ describe('Workbench nav', () => {
 })
 
 describe('Form groups', () => {
-  it('full 用户五个 task-group-* 都在', async () => {
+  it('full 用户四个 task-group-* 都在，且没有验收分组与附加字段', async () => {
     const { wrapper } = await mountApp(ME_FULL)
     expect(node(wrapper, 'task-group-task').exists()).toBe(true)
     expect(node(wrapper, 'task-group-repo').exists()).toBe(true)
     expect(node(wrapper, 'task-group-advanced').exists()).toBe(true)
-    expect(node(wrapper, 'task-group-acceptance').exists()).toBe(true)
     expect(node(wrapper, 'task-group-credential').exists()).toBe(true)
+    expect(node(wrapper, 'task-group-acceptance').exists()).toBe(false)
+    for (const testid of [
+      'task-acceptance-criteria',
+      'task-test-command',
+      'task-allowed-paths',
+      'task-forbidden-paths',
+      'task-priority',
+      'task-tags',
+    ]) {
+      expect({ testid, exists: node(wrapper, testid).exists() }).toEqual({ testid, exists: false })
+    }
   })
 
   it('task-group-advanced 默认关闭，且分支/目录输入仍在文档', async () => {
