@@ -1,0 +1,602 @@
+▶ issue #16 claim-confirmation for autonomous polling agents
+  ▶ instructed claims stay MVP 认领即授权 (comment overrides the issue body)
+    ✖ no body and explicit autonomous:false both still return 201 with a token (assertClaim201 shape unchanged) (50.187959ms)
+    ✖ MCP claim_task without autonomous still returns the token envelope (16.550292ms)
+    ✖ instructed claim ignores a leftover rejected confirmation row for the same (task, user, key) (15.554459ms)
+  ✖ instructed claims stay MVP 认领即授权 (comment overrides the issue body) (82.673042ms)
+  ▶ autonomous claim gate — 待批准 first
+    ✔ 待批准 users are still 403 before the autonomous gate, even with autonomous:true (13.21425ms)
+  ✔ autonomous claim gate — 待批准 first (13.304917ms)
+  ▶ autonomous claim gate — automation off (default)
+    ✔ autonomous + off + unconfirmed → 202 confirmation_required; no token; no token 揭示; task stays 待认领; writes 认领待确认 (14.442084ms)
+    ✔ MCP claim_task autonomous:true pending is isError false, structuredContent { pending:true, error:confirmation_required }, no token (8.82225ms)
+    ✔ idempotent re-request while pending returns 202 again and reuses one pending row (14.945416ms)
+  ✔ autonomous claim gate — automation off (default) (38.348417ms)
+  ▶ settings — trusted_automation
+    ✖ GET /api/v1/me defaults trusted_automation false; PUT settings true unlocks 直通 201; PUT false again reinstates 202 (11.894042ms)
+    ✔ trusted_automation persists across a new buildApp on the same sqlite file path (16.387042ms)
+  ✖ settings — trusted_automation (28.377583ms)
+  ▶ approve / reject a pending claim confirmation (session, not Bearer)
+    ✖ approve consumes the pending row: agent retry succeeds; approve itself reveals no token, inserts no lease, flips no status (16.287834ms)
+    ✖ MCP: approve a pending confirmation then retry claim_task succeeds with a token (8.763583ms)
+    ✔ reject sets state rejected; retry of autonomous claim starts a fresh pending, still no token (32.806833ms)
+    ✔ approve/reject on another user's confirmation id is 404; GET list only shows the current user's rows (15.309ms)
+  ✖ approve / reject a pending claim confirmation (session, not Bearer) (73.308417ms)
+  ▶ authentication sanity around the new surfaces
+    ✔ an unauthenticated session cannot read or act on claim-confirmations, and Bearer alone does not authorize them (5.240375ms)
+  ✔ authentication sanity around the new surfaces (5.291875ms)
+✖ issue #16 claim-confirmation for autonomous polling agents (241.623167ms)
+▶ issue #9 lease-based claiming
+  ▶ authentication — Bearer only
+    ✔ unauthenticated claim, progress, and release are 401 unauthorized with WWW-Authenticate Bearer (46.941583ms)
+    ✔ wrong and non-Bearer credentials are 401 with WWW-Authenticate Bearer (6.756416ms)
+    ✔ a session cookie without Bearer does not authorize claim, progress, or release (6.095583ms)
+    ✔ unknown publicId with a valid Bearer key is 404 not_found (6.097542ms)
+    ✔ numeric PK in the path with a valid Bearer key is 404 not_found (6.3475ms)
+  ✔ authentication — Bearer only (72.66725ms)
+  ▶ POST /api/v1/tasks/:publicId/claim — 201 envelope
+    ✖ claiming an inline task returns 201 with task, forge token, lease TTL, and clone guidance (7.157542ms)
+    ✖ claiming a profile task returns 201; credential stays { profile_id }; token is the profile forge plaintext (7.481333ms)
+    ✖ claiming a github task returns Bearer extra_header and a web-origin remote_url, not api.github.com (5.622708ms)
+    ✖ claiming a gitlab subgroup task keeps slashes in remote_url and uses Bearer extra_header (9.865208ms)
+    ✖ claim remote_url strips trailing slashes from stored repo.base_url (10.015583ms)
+    ✔ session GET list and GET one after a successful claim still omit forge token and secret keys (5.694792ms)
+  ✖ POST /api/v1/tasks/:publicId/claim — 201 envelope (46.116083ms)
+  ▶ AuthZ
+    ✔ pending 待批准 seeded Agent Key is 403, does not reveal the forge token, and writes no token 揭示 (13.485125ms)
+    ✖ approved GitHub claim_only can claim (5.732875ms)
+    ✖ active full can claim (4.943625ms)
+  ✖ AuthZ (24.289792ms)
+  ▶ conflicts / illegal states
+    ✔ second claim while 进行中 is 409 conflict, no token, and no second reveal (15.676333ms)
+    ✔ claiming a 已取消 task is 409 illegal_transition (4.378125ms)
+    ✔ claiming a 待验收 task is 409 illegal_transition (10.5255ms)
+    ✔ progress and release by a non-holder are 403 forbidden (6.057875ms)
+    ✔ progress and release with no live lease are 409 conflict 任务未被认领 (4.50575ms)
+    ✔ progress and release after the holder released are 409 任务未被认领 (5.734583ms)
+  ✔ conflicts / illegal states (47.042166ms)
+  ▶ heartbeat
+    ✖ omitted note still renews expires_at from heartbeat time and writes 心跳 with note empty string (27.808208ms)
+    ✔ a progress note is persisted on the 心跳 event; empty note still renews (20.717833ms)
+  ✖ heartbeat (48.6115ms)
+  ▶ release
+    ✔ holder release returns 200 { task } 待认领, marks the lease released, and writes 状态迁移 without reason (16.264459ms)
+    ✔ release with reason stores reason on the 状态迁移 event (13.597709ms)
+  ✔ release (29.940916ms)
+  ▶ expiry
+    ✔ check-on-read: after TTL, session GET list and GET one show 待认领, lease expired, actor_user_id null, reveal rows unchanged (15.43125ms)
+    ✔ check-on-write: after TTL, progress sweeps then returns 409 任务未被认领 (12.649375ms)
+    ✖ after expiry a different Agent Key can claim again and writes a second token 揭示 (18.005791ms)
+  ✖ expiry (46.225291ms)
+  ▶ reveal audit
+    ✔ inline claim writes token 揭示 { task_id, agent_key_id, credential: inline } and 状态迁移 待认领→进行中 (12.14125ms)
+    ✔ profile claim writes token 揭示 with credential profile and integer profile_id; no plaintext or ciphertext (11.98575ms)
+  ✔ reveal audit (24.188541ms)
+  ▶ leases table
+    ✔ successful claim inserts one active lease keyed by tasks.id PK; at most one active row per task (12.585ms)
+  ✔ leases table (12.631167ms)
+✖ issue #9 lease-based claiming (352.06075ms)
+▶ issue #10 MCP server
+  ▶ authentication — Bearer only, HTTP 401 before JSON-RPC
+    ✔ unauthenticated POST /api/mcp (missing Authorization) is 401 unauthorized with WWW-Authenticate Bearer (34.7095ms)
+    ✔ Token scheme, Basic, and wrong Bearer on POST /api/mcp are 401 with WWW-Authenticate Bearer (13.36775ms)
+    ✔ a session cookie without Bearer does not authorize POST /api/mcp (5.597708ms)
+    ✔ authenticated tools/list includes the six tools and claim_task describes token hygiene (14.6525ms)
+  ✔ authentication — Bearer only, HTTP 401 before JSON-RPC (68.679625ms)
+  ▶ list_tasks / get_task_brief
+    ✔ list_tasks returns { tasks } briefs that parse and never contain forge secrets (14.238625ms)
+    ✔ list_tasks filters by exact status, tag membership of one tag, and exact repo.forge (17.497708ms)
+    ✔ list_tasks and get_task_brief apply sweepExpiredLeases so an expired 进行中 task shows as 待认领 (14.500167ms)
+    ✔ a pending 待批准 Agent Key may list_tasks (15.235667ms)
+    ✔ get_task_brief returns a top-level brief; missing and numeric ids are isError not_found (13.29125ms)
+  ✔ list_tasks / get_task_brief (75.025875ms)
+  ▶ claim_task
+    ✖ claim_task success envelope keys are exactly task, token, lease, clone with the REST clone pin (9.908041ms)
+    ✖ claim_task on a github task returns Bearer extra_header and github.com remote_url, not api.github.com (7.427333ms)
+    ✖ claim_task on a gitlab task returns Bearer extra_header and keeps slashes in remote_url (6.509125ms)
+    ✔ pending claim_task is isError matching REST 403, reveals no token, and writes no token 揭示 (12.827083ms)
+    ✔ second claim_task is conflict; list_tasks and get_task_brief still omit the forge token (39.918542ms)
+  ✖ claim_task (76.962042ms)
+  ▶ report_progress / release_task
+    ✔ report_progress wraps REST: optional note (omit → empty string), envelope { task, lease }, no token (20.872208ms)
+    ✔ release_task wraps REST: optional reason, envelope { task } 待认领, no token (23.958042ms)
+    ✔ non-holder report_progress and release_task are isError forbidden with no message (6.800542ms)
+    ✔ report_progress and release_task with no live lease are isError 任务未被认领 (6.401542ms)
+  ✔ report_progress / release_task (58.173292ms)
+  ▶ submit_pr
+    ✔ submit_pr success is { task, pr_url, summary } 待验收, persists submissions, clears the lease, writes 状态迁移 (17.657334ms)
+    ✔ submit_pr fails for non-holder, no lease, and not 进行中 (21.440792ms)
+  ✔ submit_pr (39.189583ms)
+✖ issue #10 MCP server (318.278125ms)
+ℹ tests 64
+ℹ suites 23
+ℹ pass 46
+ℹ fail 18
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 674.243583
+
+✖ failing tests:
+
+test at apps/server/src/claim-confirm.test.ts:866:5
+✖ no body and explicit autonomous:false both still return 201 with a token (assertClaim201 shape unchanged) (50.187959ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    [
+  -   'extra_header',
+  -   'remote_url',
+      'suggested_dir',
+      'token_usage'
+    ]
+  
+      at assertCloneRecipe (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim-confirm.test.ts:567:10)
+      at assertClaim201 (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim-confirm.test.ts:601:3)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim-confirm.test.ts:875:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [ 'suggested_dir', 'token_usage' ],
+    expected: [ 'extra_header', 'remote_url', 'suggested_dir', 'token_usage' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-confirm.test.ts:893:5
+✖ MCP claim_task without autonomous still returns the token envelope (16.550292ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    [
+  -   'extra_header',
+  -   'remote_url',
+      'suggested_dir',
+      'token_usage'
+    ]
+  
+      at assertCloneRecipe (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim-confirm.test.ts:567:10)
+      at assertClaimEnvelope (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim-confirm.test.ts:855:3)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim-confirm.test.ts:903:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [ 'suggested_dir', 'token_usage' ],
+    expected: [ 'extra_header', 'remote_url', 'suggested_dir', 'token_usage' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-confirm.test.ts:910:5
+✖ instructed claim ignores a leftover rejected confirmation row for the same (task, user, key) (15.554459ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    [
+  -   'extra_header',
+  -   'remote_url',
+      'suggested_dir',
+      'token_usage'
+    ]
+  
+      at assertCloneRecipe (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim-confirm.test.ts:567:10)
+      at assertClaim201 (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim-confirm.test.ts:601:3)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim-confirm.test.ts:930:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [ 'suggested_dir', 'token_usage' ],
+    expected: [ 'extra_header', 'remote_url', 'suggested_dir', 'token_usage' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-confirm.test.ts:1040:5
+✖ GET /api/v1/me defaults trusted_automation false; PUT settings true unlocks 直通 201; PUT false again reinstates 202 (11.894042ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    [
+  -   'extra_header',
+  -   'remote_url',
+      'suggested_dir',
+      'token_usage'
+    ]
+  
+      at assertCloneRecipe (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim-confirm.test.ts:567:10)
+      at assertClaim201 (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim-confirm.test.ts:601:3)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim-confirm.test.ts:1066:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [ 'suggested_dir', 'token_usage' ],
+    expected: [ 'extra_header', 'remote_url', 'suggested_dir', 'token_usage' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-confirm.test.ts:1113:5
+✖ approve consumes the pending row: agent retry succeeds; approve itself reveals no token, inserts no lease, flips no status (16.287834ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    [
+  -   'extra_header',
+  -   'remote_url',
+      'suggested_dir',
+      'token_usage'
+    ]
+  
+      at assertCloneRecipe (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim-confirm.test.ts:567:10)
+      at assertClaim201 (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim-confirm.test.ts:601:3)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim-confirm.test.ts:1146:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [ 'suggested_dir', 'token_usage' ],
+    expected: [ 'extra_header', 'remote_url', 'suggested_dir', 'token_usage' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-confirm.test.ts:1167:5
+✖ MCP: approve a pending confirmation then retry claim_task succeeds with a token (8.763583ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    [
+  -   'extra_header',
+  -   'remote_url',
+      'suggested_dir',
+      'token_usage'
+    ]
+  
+      at assertCloneRecipe (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim-confirm.test.ts:567:10)
+      at assertClaimEnvelope (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim-confirm.test.ts:855:3)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim-confirm.test.ts:1188:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [ 'suggested_dir', 'token_usage' ],
+    expected: [ 'extra_header', 'remote_url', 'suggested_dir', 'token_usage' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim.test.ts:872:5
+✖ claiming an inline task returns 201 with task, forge token, lease TTL, and clone guidance (7.157542ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    [
+  -   'extra_header',
+  -   'remote_url',
+      'suggested_dir',
+      'token_usage'
+    ]
+  
+      at assertCloneRecipe (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim.test.ts:589:10)
+      at assertClaim201 (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim.test.ts:643:3)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim.test.ts:881:20)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [ 'suggested_dir', 'token_usage' ],
+    expected: [ 'extra_header', 'remote_url', 'suggested_dir', 'token_usage' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim.test.ts:890:5
+✖ claiming a profile task returns 201; credential stays { profile_id }; token is the profile forge plaintext (7.481333ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    [
+  -   'extra_header',
+  -   'remote_url',
+      'suggested_dir',
+      'token_usage'
+    ]
+  
+      at assertCloneRecipe (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim.test.ts:589:10)
+      at assertClaim201 (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim.test.ts:643:3)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim.test.ts:903:20)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [ 'suggested_dir', 'token_usage' ],
+    expected: [ 'extra_header', 'remote_url', 'suggested_dir', 'token_usage' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim.test.ts:911:5
+✖ claiming a github task returns Bearer extra_header and a web-origin remote_url, not api.github.com (5.622708ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    [
+  -   'extra_header',
+  -   'remote_url',
+      'suggested_dir',
+      'token_usage'
+    ]
+  
+      at assertCloneRecipe (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim.test.ts:589:10)
+      at assertClaim201 (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim.test.ts:643:3)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim.test.ts:933:20)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [ 'suggested_dir', 'token_usage' ],
+    expected: [ 'extra_header', 'remote_url', 'suggested_dir', 'token_usage' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim.test.ts:944:5
+✖ claiming a gitlab subgroup task keeps slashes in remote_url and uses Bearer extra_header (9.865208ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    [
+  -   'extra_header',
+  -   'remote_url',
+      'suggested_dir',
+      'token_usage'
+    ]
+  
+      at assertCloneRecipe (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim.test.ts:589:10)
+      at assertClaim201 (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim.test.ts:643:3)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim.test.ts:966:20)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [ 'suggested_dir', 'token_usage' ],
+    expected: [ 'extra_header', 'remote_url', 'suggested_dir', 'token_usage' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim.test.ts:978:5
+✖ claim remote_url strips trailing slashes from stored repo.base_url (10.015583ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    [
+  -   'extra_header',
+  -   'remote_url',
+      'suggested_dir',
+      'token_usage'
+    ]
+  
+      at assertCloneRecipe (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim.test.ts:589:10)
+      at assertClaim201 (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim.test.ts:643:3)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim.test.ts:1004:20)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [ 'suggested_dir', 'token_usage' ],
+    expected: [ 'extra_header', 'remote_url', 'suggested_dir', 'token_usage' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim.test.ts:1074:5
+✖ approved GitHub claim_only can claim (5.732875ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    [
+  -   'extra_header',
+  -   'remote_url',
+      'suggested_dir',
+      'token_usage'
+    ]
+  
+      at assertCloneRecipe (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim.test.ts:589:10)
+      at assertClaim201 (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim.test.ts:643:3)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim.test.ts:1092:20)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [ 'suggested_dir', 'token_usage' ],
+    expected: [ 'extra_header', 'remote_url', 'suggested_dir', 'token_usage' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim.test.ts:1100:5
+✖ active full can claim (4.943625ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    [
+  -   'extra_header',
+  -   'remote_url',
+      'suggested_dir',
+      'token_usage'
+    ]
+  
+      at assertCloneRecipe (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim.test.ts:589:10)
+      at assertClaim201 (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim.test.ts:643:3)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim.test.ts:1110:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [ 'suggested_dir', 'token_usage' ],
+    expected: [ 'extra_header', 'remote_url', 'suggested_dir', 'token_usage' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim.test.ts:1250:5
+✖ omitted note still renews expires_at from heartbeat time and writes 心跳 with note empty string (27.808208ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    [
+  -   'extra_header',
+  -   'remote_url',
+      'suggested_dir',
+      'token_usage'
+    ]
+  
+      at assertCloneRecipe (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim.test.ts:589:10)
+      at assertClaim201 (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim.test.ts:643:3)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim.test.ts:1261:27)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [ 'suggested_dir', 'token_usage' ],
+    expected: [ 'extra_header', 'remote_url', 'suggested_dir', 'token_usage' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim.test.ts:1473:5
+✖ after expiry a different Agent Key can claim again and writes a second token 揭示 (18.005791ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    [
+  -   'extra_header',
+  -   'remote_url',
+      'suggested_dir',
+      'token_usage'
+    ]
+  
+      at assertCloneRecipe (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim.test.ts:589:10)
+      at assertClaim201 (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim.test.ts:643:3)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/claim.test.ts:1490:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [ 'suggested_dir', 'token_usage' ],
+    expected: [ 'extra_header', 'remote_url', 'suggested_dir', 'token_usage' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/mcp.test.ts:1083:5
+✖ claim_task success envelope keys are exactly task, token, lease, clone with the REST clone pin (9.908041ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    [
+  -   'extra_header',
+  -   'remote_url',
+      'suggested_dir',
+      'token_usage'
+    ]
+  
+      at assertCloneRecipe (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/mcp.test.ts:795:10)
+      at assertClaimEnvelope (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/mcp.test.ts:827:3)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/mcp.test.ts:1093:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [ 'suggested_dir', 'token_usage' ],
+    expected: [ 'extra_header', 'remote_url', 'suggested_dir', 'token_usage' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/mcp.test.ts:1100:5
+✖ claim_task on a github task returns Bearer extra_header and github.com remote_url, not api.github.com (7.427333ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    [
+  -   'extra_header',
+  -   'remote_url',
+      'suggested_dir',
+      'token_usage'
+    ]
+  
+      at assertCloneRecipe (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/mcp.test.ts:795:10)
+      at assertClaimEnvelope (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/mcp.test.ts:827:3)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/mcp.test.ts:1123:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [ 'suggested_dir', 'token_usage' ],
+    expected: [ 'extra_header', 'remote_url', 'suggested_dir', 'token_usage' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/mcp.test.ts:1134:5
+✖ claim_task on a gitlab task returns Bearer extra_header and keeps slashes in remote_url (6.509125ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    [
+  -   'extra_header',
+  -   'remote_url',
+      'suggested_dir',
+      'token_usage'
+    ]
+  
+      at assertCloneRecipe (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/mcp.test.ts:795:10)
+      at assertClaimEnvelope (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/mcp.test.ts:827:3)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/bundle-20-21/apps/server/src/mcp.test.ts:1157:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [ 'suggested_dir', 'token_usage' ],
+    expected: [ 'extra_header', 'remote_url', 'suggested_dir', 'token_usage' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
