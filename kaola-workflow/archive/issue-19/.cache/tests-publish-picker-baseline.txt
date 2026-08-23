@@ -1,0 +1,469 @@
+baseline: 41e1e01ff4ec58e4651bb6825ee1bcfa7c158c3d
+cwd: /Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19
+command: pnpm --filter @kaola/web test
+
+$ vitest run
+
+ RUN  v4.1.11 /Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/apps/web
+
+ ❯ src/App.form.test.ts (40 tests | 27 failed) 4771ms
+     × 完整填写后提交，请求体精确匹配服务端的 snake_case 契约 172ms
+     × 平台自有字段 id / pr_convention / poster / status / created_at 不出现在请求体里 151ms
+     × 未填写的 base_branch 与 suggested_dir 被省略，而不是发送空字符串 119ms
+     × 四个 string[] 字段按行拆分：逐行去空白并丢弃空行 144ms
+     × 创建请求是 POST /api/v1/tasks，带 Content-Type: application/json 144ms
+     × 每一个 fetch 都带 credentials: include 与 Accept: application/json 176ms
+     × 档案路径发送 credential: { profile_id }，且不带任何 token 键 128ms
+     × 档案下拉复用已加载的 profiles，不再发一次 GET /api/v1/credential-profiles 124ms
+     × 标题为空时不发请求；补上标题后才发 119ms
+     × 422 缺少 推 与 PR：凭证字段旁点名两项能力 92ms
+     × 422 只缺少 PR：文案只点名 PR，说明它不是写死的字符串 91ms
+     × 422 连 读 都缺失：显示 token 无效文案，而不是权限不足文案 112ms
+     × 502 forge 不可达是另一种结局：提交级消息，且不落在凭证字段旁 90ms
+     × 400 所选凭证档案不存在：原样显示服务端的中文消息 89ms
+     × 400 invalid_body 且没有 message：回落到通用中文提示 89ms
+     × 500 vault_unconfigured：沿用凭证档案那套文案 88ms
+     × 201 之后提交级消息带上服务端生成的任务 id 88ms
+     × 点击导入：POST /api/v1/tasks/import，Accept + credentials，snake_case 体来自当前表单 100ms
+     × 200 后填入标题、描述、仓库 full_name，并保持来源为 imported 105ms
+     × 失败时展示服务端 message；没有 message 时用「导入失败（status）」且不改写发布失败文案 99ms
+     × 档案选项文案恰好是 `{forge} {repo_full_name}`，值仍是档案 id 89ms
+     × 档案模式隐藏手填仓库字段；切到内联后才显示 92ms
+     × imported 下选档案 3 发一次 GET .../3/issues；改选 5 再发 .../5/issues 143ms
+     × Issue 选项是 `#{number} {title}`；选中不发 POST /import 105ms
+     × 档案+imported 没有粘贴 URL；导入 POST 用列表里的 issue_url 与 profile 凭证 111ms
+     × 无档案：选项为空、提示去钥匙，来源 imported 也不发 issues GET 84ms
+     × native+档案：无 Issue 下拉；发布 repo 来自档案，无需手填仓库 92ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 27 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 请求线格式 > 完整填写后提交，请求体精确匹配服务端的 snake_case 契约
+Error: no n-select with data-testid="task-issue-select"
+ ❯ selectOf src/App.form.test.ts:265:28
+    263|     .findAllComponents(NSelect)
+    264|     .find((candidate) => candidate.attributes('data-testid') === testi…
+    265|   if (found == null) throw new Error(`no n-select with data-testid="${…
+       |                            ^
+    266|   return found
+    267| }
+ ❯ selectListedIssue src/App.form.test.ts:301:19
+ ❯ fillEverything src/App.form.test.ts:329:9
+ ❯ src/App.form.test.ts:369:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 请求线格式 > 平台自有字段 id / pr_convention / poster / status / created_at 不出现在请求体里
+Error: no n-select with data-testid="task-issue-select"
+ ❯ selectOf src/App.form.test.ts:265:28
+    263|     .findAllComponents(NSelect)
+    264|     .find((candidate) => candidate.attributes('data-testid') === testi…
+    265|   if (found == null) throw new Error(`no n-select with data-testid="${…
+       |                            ^
+    266|   return found
+    267| }
+ ❯ selectListedIssue src/App.form.test.ts:301:19
+ ❯ fillEverything src/App.form.test.ts:329:9
+ ❯ src/App.form.test.ts:397:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 请求线格式 > 未填写的 base_branch 与 suggested_dir 被省略，而不是发送空字符串
+Error: expected exactly 1 POST /api/v1/tasks, saw 0: GET /api/v1/me, GET /api/v1/tasks, GET /api/v1/events, GET /api/v1/stats, GET /api/v1/agent-keys, GET /api/v1/claim-confirmations, GET /api/v1/credential-profiles
+ ❯ createBody src/App.form.test.ts:289:11
+    287|   if (posts.length !== 1) {
+    288|     const seen = calls.map((call) => `${call.method} ${call.url}`)
+    289|     throw new Error(`expected exactly 1 POST /api/v1/tasks, saw ${post…
+       |           ^
+    290|   }
+    291|   return posts[0].body as Record<string, unknown>
+ ❯ src/App.form.test.ts:412:18
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 请求线格式 > 四个 string[] 字段按行拆分：逐行去空白并丢弃空行
+Error: expected exactly 1 POST /api/v1/tasks, saw 0: GET /api/v1/me, GET /api/v1/tasks, GET /api/v1/events, GET /api/v1/stats, GET /api/v1/agent-keys, GET /api/v1/claim-confirmations, GET /api/v1/credential-profiles
+ ❯ createBody src/App.form.test.ts:289:11
+    287|   if (posts.length !== 1) {
+    288|     const seen = calls.map((call) => `${call.method} ${call.url}`)
+    289|     throw new Error(`expected exactly 1 POST /api/v1/tasks, saw ${post…
+       |           ^
+    290|   }
+    291|   return posts[0].body as Record<string, unknown>
+ ❯ src/App.form.test.ts:436:18
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 请求线格式 > 创建请求是 POST /api/v1/tasks，带 Content-Type: application/json
+TypeError: Cannot read properties of undefined (reading 'method')
+ ❯ src/App.form.test.ts:451:17
+    449|
+    450|     const post = createCalls(calls)[0]
+    451|     expect(post.method).toBe('POST')
+       |                 ^
+    452|     expect(post.url).toBe('/api/v1/tasks')
+    453|     expect(post.headers['content-type']).toBe('application/json')
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 请求线格式 > 每一个 fetch 都带 credentials: include 与 Accept: application/json
+Error: no n-select with data-testid="task-issue-select"
+ ❯ selectOf src/App.form.test.ts:265:28
+    263|     .findAllComponents(NSelect)
+    264|     .find((candidate) => candidate.attributes('data-testid') === testi…
+    265|   if (found == null) throw new Error(`no n-select with data-testid="${…
+       |                            ^
+    266|   return found
+    267| }
+ ❯ selectListedIssue src/App.form.test.ts:301:19
+ ❯ fillEverything src/App.form.test.ts:329:9
+ ❯ src/App.form.test.ts:460:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 两条凭证路径（{profile_id} XOR {token}） > 档案路径发送 credential: { profile_id }，且不带任何 token 键
+Error: expected exactly 1 POST /api/v1/tasks, saw 0: GET /api/v1/me, GET /api/v1/tasks, GET /api/v1/events, GET /api/v1/stats, GET /api/v1/agent-keys, GET /api/v1/claim-confirmations, GET /api/v1/credential-profiles
+ ❯ createBody src/App.form.test.ts:289:11
+    287|   if (posts.length !== 1) {
+    288|     const seen = calls.map((call) => `${call.method} ${call.url}`)
+    289|     throw new Error(`expected exactly 1 POST /api/v1/tasks, saw ${post…
+       |           ^
+    290|   }
+    291|   return posts[0].body as Record<string, unknown>
+ ❯ src/App.form.test.ts:499:12
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 两条凭证路径（{profile_id} XOR {token}） > 档案下拉复用已加载的 profiles，不再发一次 GET /api/v1/credential-profiles
+AssertionError: expected '#3 gitea team/orders（https://gitea.fo…' to be 'gitea team/orders' // Object.is equality
+
+Expected: "gitea team/orders"
+Received: "#3 gitea team/orders（https://gitea.forge.example.test）"
+
+ ❯ src/App.form.test.ts:520:40
+    518|     expect(options).toHaveLength(2)
+    519|     expect(options?.map((option) => option.value)).toEqual([3, 5])
+    520|     expect(String(options?.[0].label)).toBe('gitea team/orders')
+       |                                        ^
+    521|     expect(String(options?.[1].label)).toBe('gitlab team/billing')
+    522|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 提交前校验 > 标题为空时不发请求；补上标题后才发
+AssertionError: expected [] to have a length of 1 but got +0
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ src/App.form.test.ts:556:32
+    554|     await setField(wrapper, 'task-title', '为订单导出接口增加分页')
+    555|     await submit(wrapper)
+    556|     expect(createCalls(calls)).toHaveLength(1)
+       |                                ^
+    557|   })
+    558|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 发布即校验的两种失败（DESIGN §5） > 422 缺少 推 与 PR：凭证字段旁点名两项能力
+AssertionError: expected '凭证共享档案#3 gitea team/orders（https://gi…' to contain 'token 权限不足：缺少 推、PR 权限，任务未发布。'
+
+Expected: "token 权限不足：缺少 推、PR 权限，任务未发布。"
+Received: "凭证共享档案#3 gitea team/orders（https://gitea.forge.example.test）"
+
+ ❯ src/App.form.test.ts:603:57
+    601|       message: tokenInsufficientMessage(missing),
+    602|     })
+    603|     expect(textOf(wrapper, 'task-credential-feedback')).toContain(
+       |                                                         ^
+    604|       'token 权限不足：缺少 推、PR 权限，任务未发布。',
+    605|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 发布即校验的两种失败（DESIGN §5） > 422 只缺少 PR：文案只点名 PR，说明它不是写死的字符串
+AssertionError: expected '凭证共享档案#3 gitea team/orders（https://gi…' to contain 'token 权限不足：缺少 PR 权限，任务未发布。'
+
+Expected: "token 权限不足：缺少 PR 权限，任务未发布。"
+Received: "凭证共享档案#3 gitea team/orders（https://gitea.forge.example.test）"
+
+ ❯ src/App.form.test.ts:616:22
+    614|     })
+    615|     const feedback = textOf(wrapper, 'task-credential-feedback')
+    616|     expect(feedback).toContain('token 权限不足：缺少 PR 权限，任务未发布。')
+       |                      ^
+    617|     expect(feedback).not.toContain('推')
+    618|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 发布即校验的两种失败（DESIGN §5） > 422 连 读 都缺失：显示 token 无效文案，而不是权限不足文案
+AssertionError: expected '凭证共享档案#3 gitea team/orders（https://gi…' to contain 'token 无效或无权访问该仓库，任务未发布。'
+
+Expected: "token 无效或无权访问该仓库，任务未发布。"
+Received: "凭证共享档案#3 gitea team/orders（https://gitea.forge.example.test）"
+
+ ❯ src/App.form.test.ts:627:22
+    625|     })
+    626|     const feedback = textOf(wrapper, 'task-credential-feedback')
+    627|     expect(feedback).toContain(TOKEN_INVALID_MESSAGE)
+       |                      ^
+    628|     expect(feedback).not.toContain('权限不足')
+    629|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 发布即校验的两种失败（DESIGN §5） > 502 forge 不可达是另一种结局：提交级消息，且不落在凭证字段旁
+Error: missing [data-testid="task-message"]
+ ❯ textOf src/App.form.test.ts:236:30
+    234| function textOf(wrapper: VueWrapper, testid: string): string {
+    235|   const found = node(wrapper, testid)
+    236|   if (!found.exists()) throw new Error(`missing [data-testid="${testid…
+       |                              ^
+    237|   return found.text()
+    238| }
+ ❯ src/App.form.test.ts:636:12
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 发布即校验的两种失败（DESIGN §5） > 400 所选凭证档案不存在：原样显示服务端的中文消息
+AssertionError: expected '考拉任务工作台张伟 · GitLab · 正式成员看板发布钥匙审计任务看板…' to contain '所选凭证档案不存在。'
+
+Expected: "所选凭证档案不存在。"
+Received: "考拉任务工作台张伟 · GitLab · 正式成员看板发布钥匙审计任务看板列表看板状态全部标签全部Forge全部暂无任务。待认领进行中待验收已完成已退回已取消标题描述Markdown 描述（可选）来源平台自有ForgeGitLab仓库地址仓库owner/repo高级默认分支（可选）留空则由服务端默认建议目录（可选）留空则由服务端默认验收标准每行一条测试命令例如 pnpm test允许路径每行一条禁止路径每行一条优先级P2标签每行一个凭证共享档案#3 gitea team/orders（https://gitea.forge.example.test） 发布 受信自动化 开启后，你的 Agent 自主发起（autonomous）的认领将直接生效；关闭时，每次自主认领都需要你在下方待确认认领列表中批准。 受信自动化待确认认领暂无待确认认领。Agent Key自助生成与吊销个人 Agent API Key。明文仅在创建时显示一次，服务端只存哈希。备注（可选）生成 Agent Key暂无 Agent Key。凭证档案按 forge + 仓库保存可复用 token，团队共享。删除档案后请到 forge 侧撤销该 token。GitLabowner/repoforge token添加档案 #3 gitea team/orders（https://gitea.forge.example.test） 删除 #5 gitlab team/billing（https://gitlab.example.test） 删除批准 GitHub 用户GitHub 用户数字 id批准审计日志审计日志类型全部人全部任务任务编号时间起始时间（ISO-8601）结束时间（ISO-8601）暂无审计记录。团队统计团队统计 完成数：0暂无完成记录。"
+
+ ❯ src/App.form.test.ts:648:28
+    646|       message: PROFILE_MISSING_MESSAGE,
+    647|     })
+    648|     expect(wrapper.text()).toContain(PROFILE_MISSING_MESSAGE)
+       |                            ^
+    649|   })
+    650|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 发布即校验的两种失败（DESIGN §5） > 400 invalid_body 且没有 message：回落到通用中文提示
+Error: missing [data-testid="task-message"]
+ ❯ textOf src/App.form.test.ts:236:30
+    234| function textOf(wrapper: VueWrapper, testid: string): string {
+    235|   const found = node(wrapper, testid)
+    236|   if (!found.exists()) throw new Error(`missing [data-testid="${testid…
+       |                              ^
+    237|   return found.text()
+    238| }
+ ❯ src/App.form.test.ts:653:12
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[15/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 发布即校验的两种失败（DESIGN §5） > 500 vault_unconfigured：沿用凭证档案那套文案
+Error: missing [data-testid="task-message"]
+ ❯ textOf src/App.form.test.ts:236:30
+    234| function textOf(wrapper: VueWrapper, testid: string): string {
+    235|   const found = node(wrapper, testid)
+    236|   if (!found.exists()) throw new Error(`missing [data-testid="${testid…
+       |                              ^
+    237|   return found.text()
+    238| }
+ ❯ src/App.form.test.ts:658:12
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[16/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 发布成功 > 201 之后提交级消息带上服务端生成的任务 id
+Error: missing [data-testid="task-message"]
+ ❯ textOf src/App.form.test.ts:236:30
+    234| function textOf(wrapper: VueWrapper, testid: string): string {
+    235|   const found = node(wrapper, testid)
+    236|   if (!found.exists()) throw new Error(`missing [data-testid="${testid…
+       |                              ^
+    237|   return found.text()
+    238| }
+ ❯ src/App.form.test.ts:684:12
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[17/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — Issue 导入（issue #12） > 点击导入：POST /api/v1/tasks/import，Accept + credentials，snake_case 体来自当前表单
+Error: no n-select with data-testid="task-issue-select"
+ ❯ selectOf src/App.form.test.ts:265:28
+    263|     .findAllComponents(NSelect)
+    264|     .find((candidate) => candidate.attributes('data-testid') === testi…
+    265|   if (found == null) throw new Error(`no n-select with data-testid="${…
+       |                            ^
+    266|   return found
+    267| }
+ ❯ selectListedIssue src/App.form.test.ts:301:19
+ ❯ fillImportPrereqs src/App.form.test.ts:715:9
+ ❯ src/App.form.test.ts:746:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[18/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — Issue 导入（issue #12） > 200 后填入标题、描述、仓库 full_name，并保持来源为 imported
+Error: no n-select with data-testid="task-issue-select"
+ ❯ selectOf src/App.form.test.ts:265:28
+    263|     .findAllComponents(NSelect)
+    264|     .find((candidate) => candidate.attributes('data-testid') === testi…
+    265|   if (found == null) throw new Error(`no n-select with data-testid="${…
+       |                            ^
+    266|   return found
+    267| }
+ ❯ selectListedIssue src/App.form.test.ts:301:19
+ ❯ fillImportPrereqs src/App.form.test.ts:715:9
+ ❯ src/App.form.test.ts:783:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[19/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — Issue 导入（issue #12） > 失败时展示服务端 message；没有 message 时用「导入失败（status）」且不改写发布失败文案
+Error: no n-select with data-testid="task-issue-select"
+ ❯ selectOf src/App.form.test.ts:265:28
+    263|     .findAllComponents(NSelect)
+    264|     .find((candidate) => candidate.attributes('data-testid') === testi…
+    265|   if (found == null) throw new Error(`no n-select with data-testid="${…
+       |                            ^
+    266|   return found
+    267| }
+ ❯ selectListedIssue src/App.form.test.ts:301:19
+ ❯ fillImportPrereqs src/App.form.test.ts:715:9
+ ❯ src/App.form.test.ts:801:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[20/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 档案下拉选仓库与 Issue（issue #19） > 档案选项文案恰好是 `{forge} {repo_full_name}`，值仍是档案 id
+AssertionError: expected [ …(2) ] to deeply equal [ 'gitea team/orders', …(1) ]
+
+- Expected
++ Received
+
+  [
+-   "gitea team/orders",
+-   "gitlab team/billing",
++   "#3 gitea team/orders（https://gitea.forge.example.test）",
++   "#5 gitlab team/billing（https://gitlab.example.test）",
+  ]
+
+ ❯ src/App.form.test.ts:822:60
+    820|     const options = selectOf(wrapper, 'task-credential-profile').props…
+    821|     expect(options?.map((option) => option.value)).toEqual([3, 5])
+    822|     expect(options?.map((option) => String(option.label))).toEqual([
+       |                                                            ^
+    823|       'gitea team/orders',
+    824|       'gitlab team/billing',
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[21/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 档案下拉选仓库与 Issue（issue #19） > 档案模式隐藏手填仓库字段；切到内联后才显示
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ src/App.form.test.ts:830:50
+    828|   it('档案模式隐藏手填仓库字段；切到内联后才显示', async () => {
+    829|     const { wrapper } = await mountApp()
+    830|     expect(node(wrapper, 'task-forge').exists()).toBe(false)
+       |                                                  ^
+    831|     expect(node(wrapper, 'task-base-url').exists()).toBe(false)
+    832|     expect(node(wrapper, 'task-repo').exists()).toBe(false)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[22/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 档案下拉选仓库与 Issue（issue #19） > imported 下选档案 3 发一次 GET .../3/issues；改选 5 再发 .../5/issues
+AssertionError: expected [] to deeply equal [ Array(1) ]
+
+- Expected
++ Received
+
+- [
+-   "/api/v1/credential-profiles/3/issues",
+- ]
++ []
+
+ ❯ src/App.form.test.ts:855:59
+    853|     await setSelect(wrapper, 'task-credential-profile', 3)
+    854|     await settle()
+    855|     expect(issueListCalls(calls).map((call) => call.url)).toEqual([
+       |                                                           ^
+    856|       '/api/v1/credential-profiles/3/issues',
+    857|     ])
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[23/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 档案下拉选仓库与 Issue（issue #19） > Issue 选项是 `#{number} {title}`；选中不发 POST /import
+Error: no n-select with data-testid="task-issue-select"
+ ❯ selectOf src/App.form.test.ts:265:28
+    263|     .findAllComponents(NSelect)
+    264|     .find((candidate) => candidate.attributes('data-testid') === testi…
+    265|   if (found == null) throw new Error(`no n-select with data-testid="${…
+       |                            ^
+    266|   return found
+    267| }
+ ❯ src/App.form.test.ts:874:21
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[24/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 档案下拉选仓库与 Issue（issue #19） > 档案+imported 没有粘贴 URL；导入 POST 用列表里的 issue_url 与 profile 凭证
+Error: no n-select with data-testid="task-issue-select"
+ ❯ selectOf src/App.form.test.ts:265:28
+    263|     .findAllComponents(NSelect)
+    264|     .find((candidate) => candidate.attributes('data-testid') === testi…
+    265|   if (found == null) throw new Error(`no n-select with data-testid="${…
+       |                            ^
+    266|   return found
+    267| }
+ ❯ selectListedIssue src/App.form.test.ts:301:19
+ ❯ fillImportPrereqs src/App.form.test.ts:715:9
+ ❯ src/App.form.test.ts:888:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[25/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 档案下拉选仓库与 Issue（issue #19） > 无档案：选项为空、提示去钥匙，来源 imported 也不发 issues GET
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/App.form.test.ts:903:63
+    901|     const { wrapper, calls } = await mountApp(ME_FULL, { profiles: [] …
+    902|     expect(selectOf(wrapper, 'task-credential-profile').props('options…
+    903|     expect(node(wrapper, 'task-profile-empty-hint').exists()).toBe(tru…
+       |                                                               ^
+    904|     expect(textOf(wrapper, 'task-profile-empty-hint')).toContain('钥匙')
+    905|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[26/27]⎯
+
+ FAIL  src/App.form.test.ts > 发布任务表单 — 档案下拉选仓库与 Issue（issue #19） > native+档案：无 Issue 下拉；发布 repo 来自档案，无需手填仓库
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ src/App.form.test.ts:929:50
+    927|     expect(node(wrapper, 'task-issue-select').exists()).toBe(false)
+    928|     expect(node(wrapper, 'task-import').exists()).toBe(false)
+    929|     expect(node(wrapper, 'task-forge').exists()).toBe(false)
+       |                                                  ^
+    930|     expect(node(wrapper, 'task-repo').exists()).toBe(false)
+    931|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[27/27]⎯
+
+
+ Test Files  1 failed | 4 passed (5)
+      Tests  27 failed | 66 passed (93)
+   Start at  15:16:20
+   Duration  5.65s (transform 615ms, setup 0ms, import 3.17s, tests 12.39s, environment 736ms)
+
+/Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/apps/web:
+[ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL] @kaola/web@0.0.0 test: `vitest run`
+Exit status 1

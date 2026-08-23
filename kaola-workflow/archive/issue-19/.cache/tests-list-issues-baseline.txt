@@ -1,0 +1,472 @@
+▶ listIssues shared spec
+  ▶ github
+    ✖ GETs the open-issues list with importIssue-style auth headers and returns ListedIssue[] (0.775708ms)
+    ✖ trailing slash on repo.base_url is stripped when constructing issue_url (0.083708ms)
+    ✖ non-OK HTTP 401 rejects after fetch with listIssues: github responded 401 (0.2955ms)
+    ✖ non-OK HTTP 500 rejects after fetch with listIssues: github responded 500 (0.074916ms)
+    ✖ a network rejection from fetch rejects the listIssues promise (0.102083ms)
+    ✖ keeps JSON array order and does not re-sort (0.056125ms)
+  ✖ github (1.692166ms)
+  ▶ gitlab
+    ✖ GETs the open-issues list with importIssue-style auth headers and returns ListedIssue[] (0.104667ms)
+    ✖ trailing slash on repo.base_url is stripped when constructing issue_url (0.073ms)
+    ✖ non-OK HTTP 401 rejects after fetch with listIssues: gitlab responded 401 (0.092ms)
+    ✖ non-OK HTTP 500 rejects after fetch with listIssues: gitlab responded 500 (0.08675ms)
+    ✖ a network rejection from fetch rejects the listIssues promise (0.06325ms)
+    ✖ keeps JSON array order and does not re-sort (0.042792ms)
+  ✖ gitlab (0.571667ms)
+  ▶ gitea
+    ✖ GETs the open-issues list with importIssue-style auth headers and returns ListedIssue[] (0.078125ms)
+    ✖ trailing slash on repo.base_url is stripped when constructing issue_url (0.079042ms)
+    ✖ non-OK HTTP 401 rejects after fetch with listIssues: gitea responded 401 (0.110833ms)
+    ✖ non-OK HTTP 500 rejects after fetch with listIssues: gitea responded 500 (0.064ms)
+    ✖ a network rejection from fetch rejects the listIssues promise (0.051334ms)
+    ✖ keeps JSON array order and does not re-sort (0.028ms)
+  ✖ gitea (0.476208ms)
+  ✖ github: always calls api.github.com even with constructor baseUrl and a different repo.base_url (0.054291ms)
+  ✖ github: drops an item with a pull_request object; a following real issue remains; html_url is not copied (0.052583ms)
+  ✖ gitlab: API origin is constructor baseUrl, never repo.base_url, never JSON web_url host (0.052625ms)
+  ✖ gitlab: maps iid not id; constructs canonical /-/issues/; parseIssueUrl round-trip; does not copy work_items web_url (0.043542ms)
+  ✖ gitlab: a nested-group namespace is encodeURIComponent-ed as a single :id segment (0.04225ms)
+  ✖ gitea: API origin is constructor baseUrl, never repo.base_url (0.056375ms)
+  ✖ gitea: maps number not id; does not copy html_url; query uses type=issues and limit not per_page (0.054917ms)
+✖ listIssues shared spec (3.390166ms)
+ℹ tests 25
+ℹ suites 4
+ℹ pass 0
+ℹ fail 25
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 62.240416
+
+✖ failing tests:
+
+test at packages/forge-adapters/src/list-issues.shared.test.ts:220:7
+✖ GETs the open-issues list with importIssue-style auth headers and returns ListedIssue[] (0.775708ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:228:16)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.start (node:internal/test_runner/test:1015:17)
+      at node:internal/test_runner/test:1531:71
+      at node:internal/per_context/primordials:466:82
+      at new Promise (<anonymous>)
+      at new SafePromise (node:internal/per_context/primordials:435:3)
+      at node:internal/per_context/primordials:466:9
+      at Array.map (<anonymous>) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/list-issues.shared.test.ts:254:7
+✖ trailing slash on repo.base_url is stripped when constructing issue_url (0.083708ms)
+  TypeError: adapter.listIssues is not a function
+      at callListIssues (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:57:71)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:258:30)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Promise.all (index 0)
+
+test at packages/forge-adapters/src/list-issues.shared.test.ts:265:9
+✖ non-OK HTTP 401 rejects after fetch with listIssues: github responded 401 (0.2955ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /listIssues: github responded 401/. Input:
+  
+  'adapter.listIssues is not a function'
+  
+      at Object.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:274:22)
+      at expectedException (node:assert:578:17)
+      at expectsError (node:assert:703:21)
+      at strict.rejects (node:assert:769:3)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:268:11)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'adapter.listIssues is not a function',
+    expected: /listIssues: github responded 401/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/list-issues.shared.test.ts:265:9
+✖ non-OK HTTP 500 rejects after fetch with listIssues: github responded 500 (0.074916ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /listIssues: github responded 500/. Input:
+  
+  'adapter.listIssues is not a function'
+  
+      at Object.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:274:22)
+      at expectedException (node:assert:578:17)
+      at expectsError (node:assert:703:21)
+      at strict.rejects (node:assert:769:3)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:268:11)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'adapter.listIssues is not a function',
+    expected: /listIssues: github responded 500/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/list-issues.shared.test.ts:287:7
+✖ a network rejection from fetch rejects the listIssues promise (0.102083ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /network down/. Input:
+  
+  'adapter.listIssues is not a function'
+  
+      at Object.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:298:20)
+      at expectedException (node:assert:578:17)
+      at expectsError (node:assert:703:21)
+      at strict.rejects (node:assert:769:3)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:292:9)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'adapter.listIssues is not a function',
+    expected: /network down/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/list-issues.shared.test.ts:305:7
+✖ keeps JSON array order and does not re-sort (0.056125ms)
+  TypeError: adapter.listIssues is not a function
+      at callListIssues (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:57:71)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:313:30)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/list-issues.shared.test.ts:220:7
+✖ GETs the open-issues list with importIssue-style auth headers and returns ListedIssue[] (0.104667ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:228:16)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.start (node:internal/test_runner/test:1015:17)
+      at node:internal/test_runner/test:1531:71
+      at node:internal/per_context/primordials:466:82
+      at new Promise (<anonymous>)
+      at new SafePromise (node:internal/per_context/primordials:435:3)
+      at node:internal/per_context/primordials:466:9
+      at Array.map (<anonymous>) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/list-issues.shared.test.ts:254:7
+✖ trailing slash on repo.base_url is stripped when constructing issue_url (0.073ms)
+  TypeError: adapter.listIssues is not a function
+      at callListIssues (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:57:71)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:258:30)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/list-issues.shared.test.ts:265:9
+✖ non-OK HTTP 401 rejects after fetch with listIssues: gitlab responded 401 (0.092ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /listIssues: gitlab responded 401/. Input:
+  
+  'adapter.listIssues is not a function'
+  
+      at Object.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:274:22)
+      at expectedException (node:assert:578:17)
+      at expectsError (node:assert:703:21)
+      at strict.rejects (node:assert:769:3)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:268:11)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'adapter.listIssues is not a function',
+    expected: /listIssues: gitlab responded 401/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/list-issues.shared.test.ts:265:9
+✖ non-OK HTTP 500 rejects after fetch with listIssues: gitlab responded 500 (0.08675ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /listIssues: gitlab responded 500/. Input:
+  
+  'adapter.listIssues is not a function'
+  
+      at Object.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:274:22)
+      at expectedException (node:assert:578:17)
+      at expectsError (node:assert:703:21)
+      at strict.rejects (node:assert:769:3)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:268:11)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'adapter.listIssues is not a function',
+    expected: /listIssues: gitlab responded 500/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/list-issues.shared.test.ts:287:7
+✖ a network rejection from fetch rejects the listIssues promise (0.06325ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /network down/. Input:
+  
+  'adapter.listIssues is not a function'
+  
+      at Object.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:298:20)
+      at expectedException (node:assert:578:17)
+      at expectsError (node:assert:703:21)
+      at strict.rejects (node:assert:769:3)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:292:9)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'adapter.listIssues is not a function',
+    expected: /network down/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/list-issues.shared.test.ts:305:7
+✖ keeps JSON array order and does not re-sort (0.042792ms)
+  TypeError: adapter.listIssues is not a function
+      at callListIssues (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:57:71)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:313:30)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/list-issues.shared.test.ts:220:7
+✖ GETs the open-issues list with importIssue-style auth headers and returns ListedIssue[] (0.078125ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:228:16)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.start (node:internal/test_runner/test:1015:17)
+      at node:internal/test_runner/test:1531:71
+      at node:internal/per_context/primordials:466:82
+      at new Promise (<anonymous>)
+      at new SafePromise (node:internal/per_context/primordials:435:3)
+      at node:internal/per_context/primordials:466:9
+      at Array.map (<anonymous>) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/list-issues.shared.test.ts:254:7
+✖ trailing slash on repo.base_url is stripped when constructing issue_url (0.079042ms)
+  TypeError: adapter.listIssues is not a function
+      at callListIssues (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:57:71)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:258:30)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/list-issues.shared.test.ts:265:9
+✖ non-OK HTTP 401 rejects after fetch with listIssues: gitea responded 401 (0.110833ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /listIssues: gitea responded 401/. Input:
+  
+  'adapter.listIssues is not a function'
+  
+      at Object.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:274:22)
+      at expectedException (node:assert:578:17)
+      at expectsError (node:assert:703:21)
+      at strict.rejects (node:assert:769:3)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:268:11)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'adapter.listIssues is not a function',
+    expected: /listIssues: gitea responded 401/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/list-issues.shared.test.ts:265:9
+✖ non-OK HTTP 500 rejects after fetch with listIssues: gitea responded 500 (0.064ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /listIssues: gitea responded 500/. Input:
+  
+  'adapter.listIssues is not a function'
+  
+      at Object.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:274:22)
+      at expectedException (node:assert:578:17)
+      at expectsError (node:assert:703:21)
+      at strict.rejects (node:assert:769:3)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:268:11)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'adapter.listIssues is not a function',
+    expected: /listIssues: gitea responded 500/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/list-issues.shared.test.ts:287:7
+✖ a network rejection from fetch rejects the listIssues promise (0.051334ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /network down/. Input:
+  
+  'adapter.listIssues is not a function'
+  
+      at Object.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:298:20)
+      at expectedException (node:assert:578:17)
+      at expectsError (node:assert:703:21)
+      at strict.rejects (node:assert:769:3)
+      at async TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:292:9)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'adapter.listIssues is not a function',
+    expected: /network down/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at packages/forge-adapters/src/list-issues.shared.test.ts:305:7
+✖ keeps JSON array order and does not re-sort (0.028ms)
+  TypeError: adapter.listIssues is not a function
+      at callListIssues (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:57:71)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:313:30)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/list-issues.shared.test.ts:327:3
+✖ github: always calls api.github.com even with constructor baseUrl and a different repo.base_url (0.054291ms)
+  TypeError: adapter.listIssues is not a function
+      at callListIssues (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:57:71)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:333:26)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Suite.postRun (node:internal/test_runner/test:1247:19)
+      at Suite.run (node:internal/test_runner/test:1548:10)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/list-issues.shared.test.ts:348:3
+✖ github: drops an item with a pull_request object; a following real issue remains; html_url is not copied (0.052583ms)
+  TypeError: adapter.listIssues is not a function
+      at callListIssues (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:57:71)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:371:26)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/list-issues.shared.test.ts:397:3
+✖ gitlab: API origin is constructor baseUrl, never repo.base_url, never JSON web_url host (0.052625ms)
+  TypeError: adapter.listIssues is not a function
+      at callListIssues (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:57:71)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:412:26)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/list-issues.shared.test.ts:434:3
+✖ gitlab: maps iid not id; constructs canonical /-/issues/; parseIssueUrl round-trip; does not copy work_items web_url (0.043542ms)
+  TypeError: adapter.listIssues is not a function
+      at callListIssues (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:57:71)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:448:26)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/list-issues.shared.test.ts:465:3
+✖ gitlab: a nested-group namespace is encodeURIComponent-ed as a single :id segment (0.04225ms)
+  TypeError: adapter.listIssues is not a function
+      at callListIssues (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:57:71)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:479:26)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/list-issues.shared.test.ts:495:3
+✖ gitea: API origin is constructor baseUrl, never repo.base_url (0.056375ms)
+  TypeError: adapter.listIssues is not a function
+      at callListIssues (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:57:71)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:502:26)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)
+
+test at packages/forge-adapters/src/list-issues.shared.test.ts:520:3
+✖ gitea: maps number not id; does not copy html_url; query uses type=issues and limit not per_page (0.054917ms)
+  TypeError: adapter.listIssues is not a function
+      at callListIssues (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:57:71)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/packages/forge-adapters/src/list-issues.shared.test.ts:534:26)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7)

@@ -1,0 +1,295 @@
+baseline: 41e1e01ff4ec58e4651bb6825ee1bcfa7c158c3d
+cwd: /Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19
+command: node --experimental-strip-types --test apps/server/src/credential-profile-issues.test.ts
+
+▶ issue #19 GET /api/v1/credential-profiles/:id/issues
+  ▶ authentication and permission gate (same as credential-profile CRUD)
+    ✖ unauthenticated JSON GET returns 401 unauthorized (same oracle as GET /api/v1/me) (33.586834ms)
+    ✖ browser-like GET without a session redirects to /login (4.16175ms)
+    ✖ 待批准 GitHub user gets 403 forbidden with no message (6.818ms)
+    ✖ approved GitHub claim_only still gets 403 forbidden with no message (11.423125ms)
+  ✖ authentication and permission gate (same as credential-profile CRUD) (56.356334ms)
+  ▶ missing profile or bad :id
+    ✖ missing row is 404 not_found (3.618958ms)
+    ✖ non-positive / non-integer :id (abc, 0, -1) is 404 not_found (3.319ms)
+  ✖ missing profile or bad :id (7.063916ms)
+  ▶ success lists open issues from the profile row
+    ✖ Gitea 200 maps number/title, constructs issue_url, pins list URL, omits secrets, does not write token 揭示 (8.052ms)
+    ✖ GitLab 200 maps iid not id and constructs /-/issues/{iid} on the profile base_url (3.515416ms)
+  ✖ success lists open issues from the profile row (11.6845ms)
+  ▶ error mapping
+    ✖ unset or invalid VAULT_MASTER_KEY after profile exists is 500 vault_unconfigured (3.689625ms)
+    ✖ forge HTTP 401 is 422 token_check_failed with missing 读 (3.466958ms)
+    ✖ forge HTTP 500 is 502 forge_unreachable with 列出 Issue copy (2.745041ms)
+    ✖ fetch/network throw is 502 forge_unreachable with 列出 Issue copy (6.731458ms)
+    ✖ forge HTTP 404 (and 410) is 502 列出, not issue_not_found (3.06475ms)
+  ✖ error mapping (19.836083ms)
+✖ issue #19 GET /api/v1/credential-profiles/:id/issues (95.170084ms)
+ℹ tests 13
+ℹ suites 5
+ℹ pass 0
+ℹ fail 13
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 424.338333
+
+✖ failing tests:
+
+test at apps/server/src/credential-profile-issues.test.ts:424:5
+✖ unauthenticated JSON GET returns 401 unauthorized (same oracle as GET /api/v1/me) (33.586834ms)
+  AssertionError [ERR_ASSERTION]: GET issues: 404 {"message":"Route GET:/api/v1/credential-profiles/1/issues not found","error":"Not Found","statusCode":404}
+  
+  404 !== 401
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/apps/server/src/credential-profile-issues.test.ts:435:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 401,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/credential-profile-issues.test.ts:441:5
+✖ browser-like GET without a session redirects to /login (4.16175ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  404 !== 302
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/apps/server/src/credential-profile-issues.test.ts:448:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 302,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/credential-profile-issues.test.ts:452:5
+✖ 待批准 GitHub user gets 403 forbidden with no message (6.818ms)
+  AssertionError [ERR_ASSERTION]: expected 403 forbidden, got 404 {"message":"Route GET:/api/v1/credential-profiles/1/issues not found","error":"Not Found","statusCode":404}
+  
+  404 !== 403
+  
+      at assertForbidden (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/apps/server/src/credential-profile-issues.test.ts:405:10)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/apps/server/src/credential-profile-issues.test.ts:461:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 403,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/credential-profile-issues.test.ts:465:5
+✖ approved GitHub claim_only still gets 403 forbidden with no message (11.423125ms)
+  AssertionError [ERR_ASSERTION]: expected 403 forbidden, got 404 {"message":"Route GET:/api/v1/credential-profiles/1/issues not found","error":"Not Found","statusCode":404}
+  
+  404 !== 403
+  
+      at assertForbidden (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/apps/server/src/credential-profile-issues.test.ts:405:10)
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/apps/server/src/credential-profile-issues.test.ts:484:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 403,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/credential-profile-issues.test.ts:490:5
+✖ missing row is 404 not_found (3.618958ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    {
+  +   error: 'Not Found',
+  +   message: 'Route GET:/api/v1/credential-profiles/999999/issues not found',
+  +   statusCode: 404
+  -   error: 'not_found'
+    }
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/apps/server/src/credential-profile-issues.test.ts:498:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: { message: 'Route GET:/api/v1/credential-profiles/999999/issues not found', error: 'Not Found', statusCode: 404 },
+    expected: { error: 'not_found' },
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/credential-profile-issues.test.ts:502:5
+✖ non-positive / non-integer :id (abc, 0, -1) is 404 not_found (3.319ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    {
+  +   error: 'Not Found',
+  +   message: 'Route GET:/api/v1/credential-profiles/abc/issues not found',
+  +   statusCode: 404
+  -   error: 'not_found'
+    }
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/apps/server/src/credential-profile-issues.test.ts:511:16)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: { message: 'Route GET:/api/v1/credential-profiles/abc/issues not found', error: 'Not Found', statusCode: 404 },
+    expected: { error: 'not_found' },
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/credential-profile-issues.test.ts:518:5
+✖ Gitea 200 maps number/title, constructs issue_url, pins list URL, omits secrets, does not write token 揭示 (8.052ms)
+  AssertionError [ERR_ASSERTION]: GET issues: 404 {"message":"Route GET:/api/v1/credential-profiles/1/issues not found","error":"Not Found","statusCode":404}
+  
+  404 !== 200
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/apps/server/src/credential-profile-issues.test.ts:528:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/credential-profile-issues.test.ts:571:5
+✖ GitLab 200 maps iid not id and constructs /-/issues/{iid} on the profile base_url (3.515416ms)
+  AssertionError [ERR_ASSERTION]: GET issues: 404 {"message":"Route GET:/api/v1/credential-profiles/1/issues not found","error":"Not Found","statusCode":404}
+  
+  404 !== 200
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/apps/server/src/credential-profile-issues.test.ts:585:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/credential-profile-issues.test.ts:615:5
+✖ unset or invalid VAULT_MASTER_KEY after profile exists is 500 vault_unconfigured (3.689625ms)
+  AssertionError [ERR_ASSERTION]: unset vault: 404 {"message":"Route GET:/api/v1/credential-profiles/1/issues not found","error":"Not Found","statusCode":404}
+  
+  404 !== 500
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/apps/server/src/credential-profile-issues.test.ts:629:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1533:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 500,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/credential-profile-issues.test.ts:642:5
+✖ forge HTTP 401 is 422 token_check_failed with missing 读 (3.466958ms)
+  AssertionError [ERR_ASSERTION]: GET issues: 404 {"message":"Route GET:/api/v1/credential-profiles/1/issues not found","error":"Not Found","statusCode":404}
+  
+  404 !== 422
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/apps/server/src/credential-profile-issues.test.ts:649:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 422,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/credential-profile-issues.test.ts:658:5
+✖ forge HTTP 500 is 502 forge_unreachable with 列出 Issue copy (2.745041ms)
+  AssertionError [ERR_ASSERTION]: GET issues: 404 {"message":"Route GET:/api/v1/credential-profiles/1/issues not found","error":"Not Found","statusCode":404}
+  
+  404 !== 502
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/apps/server/src/credential-profile-issues.test.ts:665:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 502,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/credential-profile-issues.test.ts:671:5
+✖ fetch/network throw is 502 forge_unreachable with 列出 Issue copy (6.731458ms)
+  AssertionError [ERR_ASSERTION]: GET issues: 404 {"message":"Route GET:/api/v1/credential-profiles/1/issues not found","error":"Not Found","statusCode":404}
+  
+  404 !== 502
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/apps/server/src/credential-profile-issues.test.ts:678:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 502,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/credential-profile-issues.test.ts:683:5
+✖ forge HTTP 404 (and 410) is 502 列出, not issue_not_found (3.06475ms)
+  AssertionError [ERR_ASSERTION]: forge 404: 404 {"message":"Route GET:/api/v1/credential-profiles/1/issues not found","error":"Not Found","statusCode":404}
+  
+  404 !== 502
+  
+      at TestContext.<anonymous> (file:///Users/ylpromax5/Workspace/KaolaTasks/.kw/worktrees/issue-19/apps/server/src/credential-profile-issues.test.ts:692:16)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 502,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
