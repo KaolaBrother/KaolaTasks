@@ -4,7 +4,7 @@ import { homedir } from 'node:os'
 import { hostname } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
-import type { Writable } from 'node:stream'
+import type { Readable, Writable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import { deviceProofCanonical } from '@kaola/shared'
 
@@ -127,6 +127,16 @@ function writeStderr(stderr: Writable | undefined, line: string): void {
   process.stderr.write(`${line}\n`)
 }
 
+function writeJsonRpcLine(stdout: Writable, out: unknown): Promise<void> {
+  const line = `${JSON.stringify(out)}\n`
+  return new Promise((resolve, reject) => {
+    stdout.write(line, (err) => {
+      if (err) reject(err)
+      else resolve()
+    })
+  })
+}
+
 export async function forwardMcpRequest(input: {
   kaolaHome: string
   url: string
@@ -134,6 +144,7 @@ export async function forwardMcpRequest(input: {
   stdout?: Writable
   stderr?: Writable
   sessionId?: string
+  onSessionId?: (sessionId: string) => void
 }): Promise<unknown> {
   const device = await ensureDeviceIdentity(input.kaolaHome)
   const origin = stripTrailingSlash(input.url)
@@ -148,6 +159,11 @@ export async function forwardMcpRequest(input: {
     headers,
     body: bodyBuf,
   })
+
+  const fromHeader = res.headers.get('mcp-session-id')?.trim()
+  if (fromHeader) {
+    input.onSessionId?.(fromHeader)
+  }
 
   const text = await res.text()
   let parsed: unknown
@@ -180,20 +196,30 @@ export async function forwardMcpRequest(input: {
   return jsonRpcError(rpcId(input.body), `http_${res.status}`)
 }
 
+export type StdioBridgeIo = {
+  stdin: Readable
+  stdout: Writable
+  stderr: Writable
+}
+
 export async function runStdioBridge(
   argv: readonly string[] = process.argv.slice(2),
   env: NodeJS.ProcessEnv = process.env,
+  io?: StdioBridgeIo,
 ): Promise<void> {
   const url = resolveKaolaUrl(argv, env as Record<string, string | undefined>)
   const kaolaHome = kaolaHomeFromEnv(env)
   await ensureDeviceIdentity(kaolaHome)
+  const stdin = io?.stdin ?? process.stdin
+  const stdout = io?.stdout ?? process.stdout
+  const stderr = io?.stderr ?? process.stderr
 
   if (url.startsWith('http:') && !/^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/i.test(`${url}/`)) {
-    writeStderr(process.stderr, 'KAOLA url is http (not localhost); prefer https')
+    writeStderr(stderr, 'KAOLA url is http (not localhost); prefer https')
   }
 
   let sessionId: string | undefined
-  const rl = createInterface({ input: process.stdin, crlfDelay: Infinity })
+  const rl = createInterface({ input: stdin, crlfDelay: Infinity })
   for await (const line of rl) {
     const trimmed = line.trim()
     if (trimmed.length === 0) continue
@@ -201,17 +227,20 @@ export async function runStdioBridge(
     try {
       body = JSON.parse(trimmed)
     } catch {
-      writeStderr(process.stderr, 'ignored non-JSON stdin line')
+      writeStderr(stderr, 'ignored non-JSON stdin line')
       continue
     }
     const out = await forwardMcpRequest({
       kaolaHome,
       url,
       body,
-      stderr: process.stderr,
+      stderr,
       sessionId,
+      onSessionId: (id) => {
+        sessionId = id
+      },
     })
-    process.stdout.write(`${JSON.stringify(out)}\n`)
+    await writeJsonRpcLine(stdout, out)
   }
 }
 

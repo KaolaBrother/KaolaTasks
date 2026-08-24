@@ -10,7 +10,7 @@
 
 | 标记 | 谁做 | 规则 |
 |------|------|------|
-| **自动** | Agent 可单独做 | 测命令、起服务、查 SQLite、调不需要浏览器 cookie 的 API、用已写入 `.env` 且 gitignore 的令牌调 GitLab API、用已配对的本机 MCP 再查一轮 |
+| **自动** | Agent 可单独做 | 测命令、起服务、查 SQLite、调不需要浏览器 cookie 的 API、用已写入 `.env` 且 gitignore 的令牌调 GitLab / Gitea API、用已配对的本机 MCP 再查一轮 |
 | **配合** | 人和 Agent **当场一起做** | 浏览器登录、在页面里贴仓库令牌、点导入/发布、GitLab Authorize、**管理员在网页把待授权电脑绑到人并批准**。人操作页面；Agent 报下一步填什么、事后核 SQLite / 网络响应。令牌只进 `.env` 或页面输入框 |
 
 `.env` 已 gitignore。需要 PAT 时，人把值写进本地 `.env`，聊天里只说「写好了」。
@@ -22,6 +22,7 @@
 - SQLite：`SQLITE_PATH` → `kaola-dev.sqlite`（不要用默认内存库）
 - 登录身份：GitLab.com OAuth → 用户 `KaolaBrother`，`active` + `full`（本轮既是发布者，也是批准电脑的管理员）
 - 本轮目标仓：GitLab 私有项目 [KaolaBrother/kaola-tasks-smoke](https://gitlab.com/KaolaBrother/kaola-tasks-smoke)（早先垫过的 GitHub 同名仓**不用**）
+- **Gitea 发布轮（G1–G4 完成）**：实例 `https://gitea.com`。**不要**点「使用 Gitea 登录」——OAuth 仍是 `unused`，发任务用已登录的 GitLab `KaolaBrother`。仓库 [KaolaBrother/kaola-tasks-smoke](https://gitea.com/KaolaBrother/kaola-tasks-smoke)，token 在 `.env` 的 `GITEA_TOKEN`。任务 `kt-2026-0002` 从 [Issue #1](https://gitea.com/KaolaBrother/kaola-tasks-smoke/issues/1) 导入，`待认领`。Issue URL 形如 `https://gitea.com/KaolaBrother/kaola-tasks-smoke/issues/1`（不是 GitLab 的 `/-/issues/`）
 - 导入：#19 已落地。来源选「从 Issue 导入」、凭证选「共享档案」后，下拉选仓库档案再下拉选 Issue，点「导入」预览，再「发布」。不要粘贴 GitLab 页面上的 `/-/work_items/…`。inline token 回退才需要手填 URL，那条必须是：
 
   `https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/issues/1`
@@ -60,12 +61,16 @@
 | 16 | 本机 clone GitLab，改 README | 自动（人确认任务后） | 完成 | 目录 `/tmp/kaola-smoke-work/kaola-tasks-smoke`。**GitLab.com git HTTP 不接受信封里的 `Authorization: Bearer ${token}`**（401，`WWW-Authenticate: Basic`）。API 用 Bearer 为 200。clone/push 改用 extraHeader `Authorization: Basic`（oauth2:token），**未**写入 remote URL；`.git/config` 无 token。`README.md` 末行 `Smoke test OK.` |
 | 17 | 推分支、开 MR，再 `submit_pr` | **配合** | 完成 | 分支 `kaola/kt-2026-0001-smoke`；GitLab API 开 [MR !1](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/merge_requests/1)；MCP `submit_pr` 后任务 `待验收`，又一条 `回写` |
 | 18 | 合并 MR，看任务变已完成 | **配合** | 完成 | 2026-08-24 07:59Z：人 Merge 后轮询把任务打成 `已完成`（`actor_user_id` 空）；`submissions.pr_state` `merged`。源 Issue #1 三条回写：认领 / 提交PR / 完成（完成评论含 `kt-2026-0001` 与 MR !1） |
+| G1 | 注册 gitea.com 并写入 `GITEA_TOKEN` | **配合** | 完成 | 2026-08-24：账号 `KaolaBrother`。首把 token 缺 `read:user`/`write:user` 建仓 403；换一把勾 `read:user`+`write:user`+`write:repository`+`write:issue` 后 `GET /user` 200 |
+| G2 | 建 Gitea 私有仓并开 Issue | 自动 | 完成 | 私有仓 [KaolaBrother/kaola-tasks-smoke](https://gitea.com/KaolaBrother/kaola-tasks-smoke)。#1 `smoke: append a line to README`（导入这条）；#2 `.gitignore`、#3 LICENSE 留在 Gitea |
+| G3 | 工作台添加 Gitea 凭证档案 | **配合** | 完成 | SQLite `credential_profiles` id=2：`gitea` / `https://gitea.com` / `KaolaBrother/kaola-tasks-smoke`；`events` `变更` create。Gitea 选中后 base_url 不会自动从 gitlab.com 改掉，须手填 |
+| G4 | 从 Gitea Issue 导入并发布 | **配合** | 完成 | 任务 `kt-2026-0002`：标题 `smoke: append a line to README`，`imported` / `gitea` / `KaolaBrother/kaola-tasks-smoke`，源 `https://gitea.com/KaolaBrother/kaola-tasks-smoke/issues/1`，档案 id=2，状态 `待认领`，无租约。导入与发布各一条 `token 揭示` outcome ok（不含明文） |
 
 ## 当前停在哪
 
-**本轮冒烟 #1–#18 完成（#10 取消）。** 板上 `kt-2026-0001` / `已完成`。闭环：发布 → 电脑配对 → claim 揭示仓库 token → clone/MR → 合并 → 回写。
+**GitLab 闭环 #1–#18 完成。Gitea 发布 G1–G4 完成**（`kt-2026-0002` 待认领）。本轮没有跑 Gitea 认领 / clone / PR。
 
-收尾见文末「测完可收」。旧库 `leases` 重建已进 `createDb`。GitLab git extraHeader Bearer 与实测不符，本轮未改信封。
+若要接着测 Gitea 认领：本机设备已配对，可对 `kt-2026-0002` 走 MCP `claim_task`（不要 `autonomous`）。不要点「使用 Gitea 登录」。
 
 **不要**生成 Agent Key，**不要**配 `KAOLA_AGENT_KEY`，**不要**重开或改 #22。
 
@@ -88,11 +93,13 @@
 - 待批准窗口 **1 天**，同一公钥在 pending 内重复询问不续期。超时须重新走 #12。
 - Cloud Agent / 云端 Runtime 访问不了 `localhost:31415`。接单用本机 Cursor / 本机 Claude Code / 本机 Codex。
 - clone 不要把 token 写进 remote URL。目录 `clone.suggested_dir`。GitHub/Gitea 按信封 `extra_header`。**GitLab.com git HTTP 实测要 Basic（`oauth2:token`），信封里的 `Authorization: Bearer ${token}` 会被 401**；同一 token 调 GitLab **API** 用 Bearer 是成功的。
+- gitea.com 的 Access Token **不能只勾仓库/Issue**：`POST /user/repos` 实测要求 `write:user`，`GET /user` 要求 `read:user`。冒烟至少勾 `read:user` + `write:user` + `write:repository` + `write:issue`。
 - 会话在 Fastify 内存里，不在 SQLite。换进程后要重新登录才能在网页批准电脑（又是 **配合**）。
 - GitLab 回调若出现 `Response Error: 400 Bad Request`：是 `/oauth/token` 被拒（常为未走 PKCE，或 secret 用 HTTP Basic 编码失败）。从首页重新点登录，不要刷新回调 URL。GitLab 应用回调必须是 `http://localhost:31415/login/gitlab/callback`。
 
 ## 测完可收
 
 - GitLab：Personal access tokens 里 revoke `kaola-smoke`；项目 `kaola-tasks-smoke` 可删。
+- Gitea：Access Token 与项目 `kaola-tasks-smoke` 同样可删。
 - 工作台：删掉对应凭证档案；**解除这台电脑的授权**（不要再走「吊销 Agent Key」当收尾）。
 - GitHub 上早先的 `KaolaBrother/kaola-tasks-smoke` 若还在、且确认不用，可删。

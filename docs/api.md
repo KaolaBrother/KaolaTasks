@@ -99,7 +99,7 @@ Required on `POST /api/mcp`, `GET /api/v1/agent/whoami`, and `POST /api/v1/tasks
 
 Missing/invalid/skewed/replayed → `401` `{ error: 'unauthorized' }` + `WWW-Authenticate: Kaola-Device`. Valid signature for an unknown or `pending` fingerprint upserts `devices.status` `'pending'` (`pending_expires_at` = now + `86400`) and returns **`202`** `{ error: 'authorization_required', pending: true, expires_at }` (ISO-8601). No forge token, no lease. `revoked` → `403` `{ error: 'forbidden' }`. Past `expires_at` or idle → `403` `{ error: 'device_expired' }`.
 
-stdio bridge `kaola-mcp --url <origin>` (`apps/mcp/src/main.ts`, env `KAOLA_URL`, identity `~/.kaola/device.json`) sends those headers on `POST {origin}/api/mcp`. Committed example `apps/mcp/examples/mcp.json` is command + `--url` only (no `ktk_`, no forge token).
+stdio bridge `kaola-mcp --url <origin>` (`apps/mcp/src/main.ts`, env `KAOLA_URL`, identity `~/.kaola/device.json`) sends those headers on `POST {origin}/api/mcp`. After `initialize` it reads the HTTP `mcp-session-id` response header (case-insensitive) and replays it on later stdin JSON-RPC lines; the session id is HTTP-only and is not added to the stdout JSON-RPC body. Without that replay, `tools/list` is `400` JSON-RPC `-32000` `Bad Request: No valid session ID provided` (Cursor live tool discovery fails). Committed example `apps/mcp/examples/mcp.json` is command + `--url` only (no `ktk_`, no forge token).
 
 ### `GET /api/v1/devices/pending`, `GET /api/v1/devices`, `GET /api/v1/me/devices` (#23)
 
@@ -283,7 +283,7 @@ There is no REST `POST /api/v1/tasks/:publicId/submit_pr`. `submit_pr` is MCP-on
 
 ### `POST /api/mcp`
 
-Device proof only (`addDeviceProofHook` from `device-proof.ts`, registered in the `mcp.ts` child plugin; session cookie does not authorize; leftover `ktk_` Bearer is `401` + `WWW-Authenticate: Kaola-Device`). Streamable HTTP via `@modelcontextprotocol/sdk` `1.30.0` `StreamableHTTPServerTransport` (`enableJsonResponse: true`; session header `mcp-session-id`). Tests initialize with `protocolVersion` `2025-11-25`. `McpServer` `{ name: 'kaola-tasks', version: '0.0.0' }`.
+Device proof only (`addDeviceProofHook` from `device-proof.ts`, registered in the `mcp.ts` child plugin; session cookie does not authorize; leftover `ktk_` Bearer is `401` + `WWW-Authenticate: Kaola-Device`). Streamable HTTP via `@modelcontextprotocol/sdk` `1.30.0` `StreamableHTTPServerTransport` (`enableJsonResponse: true`; session header `mcp-session-id`). Tests initialize with `protocolVersion` `2025-11-25`. `McpServer` `{ name: 'kaola-tasks', version: '0.0.0' }`. stdio `kaola-mcp` replays `mcp-session-id` after initialize (see Device proof above).
 
 Unauthenticated / wrong / leftover `ktk_` / session-cookie-only → `401` `{ error: 'unauthorized' }` + `WWW-Authenticate: Kaola-Device` (before JSON-RPC). Valid unbound signature → HTTP **`202`** `{ error: 'authorization_required', pending: true, expires_at }` (stdio bridge maps this to JSON-RPC error `-32000`). `GET /api/mcp` and `DELETE /api/mcp` → `405` JSON-RPC `{ jsonrpc: '2.0', error: { code: -32000, message: 'Method not allowed.' }, id: null }`. Non-initialize POST without a session → `400` JSON-RPC `-32000` `Bad Request: No valid session ID provided`. Unknown `mcp-session-id` → `404` JSON-RPC `-32001` `Session not found`.
 

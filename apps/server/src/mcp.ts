@@ -92,7 +92,7 @@ function createKaolaMcpServer(db: AppDb, authHolder: AuthHolder): McpServer {
     'list_tasks',
     {
       description:
-        'List task briefs. Optional filters: status (exact), tags (membership of one tag), forge (exact repo.forge).',
+        'List Kaola task briefs. Optional filters: status (exact, e.g. 待认领 for claimable work), tags (membership of one tag), forge (exact repo.forge). Never includes a forge token.',
       inputSchema: {
         status: z.string().optional(),
         tags: z.string().optional(),
@@ -114,7 +114,7 @@ function createKaolaMcpServer(db: AppDb, authHolder: AuthHolder): McpServer {
   server.registerTool(
     'claim_task',
     {
-      description: `Claim a task and receive a one-shot forge token. ${CLONE_TOKEN_USAGE} Set autonomous: true when the Agent discovered and initiated this claim itself (not on human instruction) — an untrusted user may then need to confirm it in the web UI before a token is issued.`,
+      description: `Claim a task and receive a one-shot forge token. ${CLONE_TOKEN_USAGE} When the human instructed this claim, omit autonomous. Set autonomous: true when the Agent discovered and initiated this claim itself (not on human instruction) — an untrusted user may then need to confirm it in the web UI before a token is issued.`,
       inputSchema: { task_id: z.string(), autonomous: z.boolean().optional() },
     },
     async (args) => toToolResult(await claimTask(db, authHolder.auth, args.task_id, args.autonomous)),
@@ -147,7 +147,8 @@ function createKaolaMcpServer(db: AppDb, authHolder: AuthHolder): McpServer {
   server.registerTool(
     'submit_pr',
     {
-      description: 'Submit a PR for a claimed in-progress task and move it to 待验收.',
+      description:
+        'After a PR or MR exists on the forge, submit its URL for a claimed in-progress task and move it to 待验收.',
       inputSchema: {
         task_id: z.string(),
         pr_url: z.string(),

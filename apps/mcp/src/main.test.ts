@@ -134,6 +134,134 @@ function hasTokenKey(value) {
   return Object.values(value).some(hasTokenKey)
 }
 
+function assertRpcBodyHasNoSession(rpc, sessionId, label) {
+  assert.equal(
+    JSON.stringify(rpc).includes(sessionId),
+    false,
+    `${label} JSON-RPC body must not include mcp-session-id (session is HTTP-only)`,
+  )
+  if (rpc != null && typeof rpc === 'object' && !Array.isArray(rpc)) {
+    for (const key of ['sessionId', 'session_id', 'mcp-session-id', 'mcpSessionId']) {
+      assert.equal(Object.hasOwn(rpc, key), false, `${label} must not add JSON field ${key}`)
+    }
+  }
+}
+
+function assertKaolaHomeHasNoForgeToken(home) {
+  for (const path of walkFiles(home)) {
+    assert.equal(readFileSync(path, 'utf8').includes(FORGE_TOKEN), false, `${path} must not persist FORGE_TOKEN`)
+  }
+}
+
+function parseJsonRpcStdout(text) {
+  const out = []
+  for (const line of String(text).split(/\r?\n/)) {
+    const trimmed = line.trim()
+    if (trimmed.length === 0 || trimmed[0] !== '{') continue
+    let parsed
+    try {
+      parsed = JSON.parse(trimmed)
+    } catch {
+      continue
+    }
+    if (parsed != null && typeof parsed === 'object' && parsed.jsonrpc === '2.0') out.push(parsed)
+  }
+  return out
+}
+
+function stdoutChunkToText(chunk, encoding) {
+  if (typeof chunk === 'string') return chunk
+  const enc = typeof encoding === 'string' ? encoding : 'utf8'
+  return Buffer.from(chunk).toString(enc)
+}
+
+/** node:test binary reporter frames are not JSON-RPC and have no trailing newline. */
+function isJsonRpcCaptureChunk(text) {
+  const trimmed = String(text).trim()
+  return trimmed.startsWith('{') && trimmed.includes('"jsonrpc"')
+}
+
+function requestSessionHeader(req) {
+  return headerMap(req.headers).get('mcp-session-id') ?? ''
+}
+
+/**
+ * Optional 3rd-arg `io` for runStdioBridge, plus a process.stdin stand-in so today's
+ * implementation (which still reads process.stdin) cannot hang the test run.
+ */
+function attachStdioBridgeIo(t) {
+  const stdin = new PassThrough()
+  let stdoutText = ''
+  let stderrText = ''
+  const stdout = new PassThrough()
+  const stderr = new PassThrough()
+
+  function appendStdoutCapture(text) {
+    if (stdoutText.length > 0 && !stdoutText.endsWith('\n') && !String(text).startsWith('\n')) {
+      stdoutText += '\n'
+    }
+    stdoutText += text
+  }
+
+  stdout.on('data', (c) => {
+    appendStdoutCapture(String(c))
+  })
+  stderr.on('data', (c) => {
+    stderrText += String(c)
+  })
+
+  const stdinDesc = Object.getOwnPropertyDescriptor(process, 'stdin')
+  Object.defineProperty(process, 'stdin', {
+    configurable: true,
+    enumerable: true,
+    value: stdin,
+  })
+
+  const origStdoutWrite = process.stdout.write
+  const origStderrWrite = process.stderr.write
+  process.stdout.write = function teeStdout(chunk, encoding, cb) {
+    const text = stdoutChunkToText(chunk, encoding)
+    if (isJsonRpcCaptureChunk(text)) appendStdoutCapture(text)
+    return origStdoutWrite.call(this, chunk, encoding, cb)
+  }
+  process.stderr.write = function teeStderr(chunk, encoding, cb) {
+    stderrText += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8')
+    return origStderrWrite.call(this, chunk, encoding, cb)
+  }
+
+  t.after(() => {
+    process.stdout.write = origStdoutWrite
+    process.stderr.write = origStderrWrite
+    if (stdinDesc != null) Object.defineProperty(process, 'stdin', stdinDesc)
+  })
+
+  return {
+    io: { stdin, stdout, stderr },
+    stdout: () => stdoutText,
+    stderr: () => stderrText,
+  }
+}
+
+async function waitForStdioBridge(running, ms = 8000) {
+  let timer
+  try {
+    await Promise.race([
+      running,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          reject(
+            new Error(
+              `runStdioBridge did not finish within ${ms}ms (accept optional 3rd io { stdin, stdout, stderr } and end stdin)`,
+            ),
+          )
+        }, ms)
+      }),
+    ])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 describe('@kaola/mcp package', () => {
   test('package.json is @kaola/mcp ESM, Node >=22, bin kaola-mcp', () => {
     const pkg = readMcpPackageJson()
@@ -377,5 +505,194 @@ describe('forwardMcpRequest', () => {
     assertNoSecretInText('console', logs.join('\n'), [privateKey, FORGE_TOKEN])
     assertNoSecretInText('stderr', stdioChunks.err, [privateKey, FORGE_TOKEN])
     assertNoSecretInText('stdout', stdioChunks.out, [privateKey])
+  })
+})
+
+describe('stdio bridge Streamable HTTP session', { concurrency: 1 }, () => {
+  test('captures MCP-Session-Id from initialize without putting it on the JSON-RPC body', async (t) => {
+    const SESSION_ID = '7e2a9c14-b4d1-4f88-a6c3-kaola-sid-init'
+    const home = tmpKaolaHome(t)
+    const stderr = new PassThrough()
+    let stderrText = ''
+    stderr.on('data', (c) => {
+      stderrText += String(c)
+    })
+
+    const mod = await loadBridge()
+    await mod.ensureDeviceIdentity(home)
+    const device = JSON.parse(readFileSync(join(home, 'device.json'), 'utf8'))
+    const seen = []
+
+    const mock = await startMockMcp(t, (req, res, body) => {
+      assertValidDeviceProof(req, body, device)
+      const parsed = JSON.parse(body.toString('utf8'))
+      seen.push({ rpcMethod: parsed.method, session: requestSessionHeader(req) })
+      res.statusCode = 200
+      res.setHeader('content-type', 'application/json')
+      res.setHeader('MCP-Session-Id', SESSION_ID)
+      res.end(JSON.stringify({ jsonrpc: '2.0', id: parsed.id, result: { protocolVersion: '2025-11-25' } }))
+    })
+
+    let captured
+    const out = await mod.forwardMcpRequest({
+      kaolaHome: home,
+      url: mock.origin,
+      body: { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-11-25' } },
+      stderr,
+      onSessionId: (id) => {
+        captured = id
+      },
+    })
+
+    assert.equal(seen.length, 1)
+    assert.equal(seen[0].rpcMethod, 'initialize')
+    assert.equal(seen[0].session, '', 'initialize must not invent a session request header')
+    assert.equal(captured, SESSION_ID)
+    assert.equal(out?.jsonrpc, '2.0')
+    assert.equal(out?.result?.protocolVersion, '2025-11-25')
+    assertRpcBodyHasNoSession(out, SESSION_ID, 'initialize RPC body')
+    assertKaolaHomeHasNoForgeToken(home)
+    assert.equal(stderrText.includes(FORGE_TOKEN), false)
+
+    const follow = await mod.forwardMcpRequest({
+      kaolaHome: home,
+      url: mock.origin,
+      body: { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} },
+      stderr,
+      sessionId: captured,
+    })
+    assert.equal(seen.length, 2)
+    assert.equal(seen[1].rpcMethod, 'tools/list')
+    assert.equal(seen[1].session, SESSION_ID)
+    assert.equal(follow?.jsonrpc, '2.0')
+    assertRpcBodyHasNoSession(follow, SESSION_ID, 'follow-up RPC body')
+  })
+
+  describe('runStdioBridge session replay', { concurrency: 1 }, () => {
+    test('replays captured mcp-session-id on the next stdin tools/list', async (t) => {
+      const SESSION_ID = 'a1b2c3d4-e5f6-4789-abcd-kaola-sid-replay'
+      const home = tmpKaolaHome(t)
+      const streams = attachStdioBridgeIo(t)
+      const mod = await loadBridge()
+      await mod.ensureDeviceIdentity(home)
+      const device = JSON.parse(readFileSync(join(home, 'device.json'), 'utf8'))
+      const seen = []
+
+      const mock = await startMockMcp(t, (req, res, body) => {
+        assertValidDeviceProof(req, body, device)
+        const parsed = JSON.parse(body.toString('utf8'))
+        const session = requestSessionHeader(req)
+        seen.push({ rpcMethod: parsed.method, session })
+
+        if (parsed.method === 'initialize') {
+          res.statusCode = 200
+          res.setHeader('content-type', 'application/json')
+          res.setHeader('mcp-session-id', SESSION_ID)
+          res.end(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              id: parsed.id,
+              result: { protocolVersion: '2025-11-25', capabilities: {}, serverInfo: { name: 'kaola-tasks' } },
+            }),
+          )
+          return
+        }
+
+        if (parsed.method === 'tools/list') {
+          if (session !== SESSION_ID) {
+            res.statusCode = 400
+            res.setHeader('content-type', 'application/json')
+            res.end(
+              JSON.stringify({
+                jsonrpc: '2.0',
+                error: { code: -32000, message: 'Bad Request: No valid session ID provided' },
+                id: null,
+              }),
+            )
+            return
+          }
+          res.statusCode = 200
+          res.setHeader('content-type', 'application/json')
+          res.end(JSON.stringify({ jsonrpc: '2.0', id: parsed.id, result: { tools: [{ name: 'list_tasks' }] } }))
+          return
+        }
+
+        res.statusCode = 400
+        res.end(JSON.stringify({ jsonrpc: '2.0', error: { code: -32601, message: 'Unknown method' }, id: parsed.id }))
+      })
+
+      const initialize = {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'cursor-test', version: '0' } },
+      }
+      const toolsList = { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }
+
+      const running = mod.runStdioBridge(['--url', mock.origin], { KAOLA_HOME: home }, streams.io)
+      streams.io.stdin.write(`${JSON.stringify(initialize)}\n`)
+      streams.io.stdin.write(`${JSON.stringify(toolsList)}\n`)
+      streams.io.stdin.end()
+      await waitForStdioBridge(running)
+
+      assert.equal(seen.length, 2, `expected initialize then tools/list HTTP POSTs, got ${JSON.stringify(seen)}`)
+      assert.equal(seen[0].rpcMethod, 'initialize')
+      assert.equal(seen[0].session, '', 'initialize request must omit mcp-session-id')
+      assert.equal(seen[1].rpcMethod, 'tools/list')
+      assert.equal(seen[1].session, SESSION_ID, 'second POST must replay mcp-session-id from initialize')
+
+      const rpcs = parseJsonRpcStdout(streams.stdout())
+      assert.equal(rpcs.length, 2, `expected two JSON-RPC stdout lines, got ${JSON.stringify(rpcs)}`)
+      assert.equal(
+        rpcs[1]?.error?.code,
+        undefined,
+        `tools/list stdout must not be the session Bad Request: ${JSON.stringify(rpcs[1])}`,
+      )
+      assert.notEqual(rpcs[1]?.error?.message, 'Bad Request: No valid session ID provided')
+      assert.deepEqual(rpcs[1]?.result, { tools: [{ name: 'list_tasks' }] })
+      assertRpcBodyHasNoSession(rpcs[0], SESSION_ID, 'stdout initialize')
+      assertRpcBodyHasNoSession(rpcs[1], SESSION_ID, 'stdout tools/list')
+      assertKaolaHomeHasNoForgeToken(home)
+      assert.equal(streams.stderr().includes(FORGE_TOKEN), false)
+    })
+
+    test('omits mcp-session-id on later stdin when initialize response had no such header', async (t) => {
+      const home = tmpKaolaHome(t)
+      const streams = attachStdioBridgeIo(t)
+      const mod = await loadBridge()
+      await mod.ensureDeviceIdentity(home)
+      const device = JSON.parse(readFileSync(join(home, 'device.json'), 'utf8'))
+      const seen = []
+
+      const mock = await startMockMcp(t, (req, res, body) => {
+        assertValidDeviceProof(req, body, device)
+        const parsed = JSON.parse(body.toString('utf8'))
+        seen.push({ rpcMethod: parsed.method, session: requestSessionHeader(req) })
+        res.statusCode = 200
+        res.setHeader('content-type', 'application/json')
+        if (parsed.method === 'initialize') {
+          res.end(JSON.stringify({ jsonrpc: '2.0', id: parsed.id, result: { protocolVersion: '2025-11-25' } }))
+          return
+        }
+        res.end(JSON.stringify({ jsonrpc: '2.0', id: parsed.id, result: { tools: [{ name: 'list_tasks' }] } }))
+      })
+
+      const running = mod.runStdioBridge(['--url', mock.origin], { KAOLA_HOME: home }, streams.io)
+      streams.io.stdin.write(
+        `${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-11-25' } })}\n`,
+      )
+      streams.io.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} })}\n`)
+      streams.io.stdin.end()
+      await waitForStdioBridge(running)
+
+      assert.equal(seen.length, 2, `expected two POSTs, got ${JSON.stringify(seen)}`)
+      assert.equal(seen[0].session, '', 'initialize must omit mcp-session-id')
+      assert.equal(seen[1].session, '', 'must not invent mcp-session-id when initialize omitted the header')
+      const rpcs = parseJsonRpcStdout(streams.stdout())
+      const toolsOut = rpcs.find((rpc) => rpc.id === 2) ?? rpcs[1]
+      assert.deepEqual(toolsOut?.result, { tools: [{ name: 'list_tasks' }] })
+      assertKaolaHomeHasNoForgeToken(home)
+      assert.equal(streams.stderr().includes(FORGE_TOKEN), false)
+    })
   })
 })

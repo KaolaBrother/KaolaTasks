@@ -921,6 +921,38 @@ describe('issue #10 MCP server', { concurrency: false }, () => {
         true,
         `claim_task description must contain the REST token-hygiene sentence: ${claim.description}`,
       )
+      assert.match(
+        claim.description,
+        /omit(?:ting)?\s+`?autonomous`?/i,
+        `claim_task description must mention omitting autonomous when the human instructed the claim: ${claim.description}`,
+      )
+
+      const listTasks = tools.find((tool) => tool.name === 'list_tasks')
+      assert.ok(
+        listTasks.description.includes('待认领'),
+        `list_tasks description must mention 待认领: ${listTasks.description}`,
+      )
+      assert.match(
+        listTasks.description,
+        /never includes a forge token/i,
+        `list_tasks description must say the list never includes a forge token: ${listTasks.description}`,
+      )
+
+      const submit = tools.find((tool) => tool.name === 'submit_pr')
+      assert.ok(
+        /\bPR\b/i.test(submit.description) && /\bMR\b/.test(submit.description),
+        `submit_pr description must mention PR/MR: ${submit.description}`,
+      )
+      assert.match(
+        submit.description,
+        /exist/i,
+        `submit_pr description must say to call it after a PR/MR exists: ${submit.description}`,
+      )
+      assert.match(
+        submit.description,
+        /forge/i,
+        `submit_pr description must mention the forge: ${submit.description}`,
+      )
     })
   })
 

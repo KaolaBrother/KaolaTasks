@@ -72,7 +72,7 @@ sequenceDiagram
 
 ## Agent 怎么接单
 
-MCP 端点：`POST http://localhost:31415/api/mcp`（Streamable HTTP）。身份是本机 Ed25519 设备证明，请求头 `X-Kaola-Key`、`X-Kaola-Ts`、`X-Kaola-Nonce`、`X-Kaola-Sig`（可选 `X-Kaola-Hostname`）。stdio 桥 `kaola-mcp` 代签。平时 MCP 配置**不含**仓库 / forge token，也不含设备私钥或 `ktk_`。
+MCP 端点：`POST http://localhost:31415/api/mcp`（Streamable HTTP）。身份是本机 Ed25519 设备证明，请求头 `X-Kaola-Key`、`X-Kaola-Ts`、`X-Kaola-Nonce`、`X-Kaola-Sig`（可选 `X-Kaola-Hostname`）。stdio 桥 `kaola-mcp` 代签，并把 HTTP `mcp-session-id` 在同一次 stdio 会话里带回（否则 Cursor 列不出工具）。平时 MCP 配置**不含**仓库 / forge token，也不含设备私钥或 `ktk_`。
 
 提交进 git 的 MCP 示例（`apps/mcp/examples/mcp.json`）**只有 command + `--url`**：
 
@@ -93,12 +93,12 @@ MCP 端点：`POST http://localhost:31415/api/mcp`（Streamable HTTP）。身份
 
 | 工具 | 做什么 |
 |------|--------|
-| `list_tasks` | 列出任务，可按状态 / 标签 / forge 过滤。无 `token`、无 `clone` |
+| `list_tasks` | 列出任务，可按状态 / 标签 / forge 过滤（可接单的是 `待认领`）。无 `token`、无 `clone` |
 | `get_task_brief` | 看一条任务的完整说明。无 `token`、无 `clone` |
-| `claim_task` | 认领。成功时才拿到**该任务**的 forge token（顶层 `token`）以及 `clone`。换一个 `task_id` 拿到的是那条任务自己的 token，禁止复用上一把（也不要从 MCP 配置或 git remote 接着用）。自主轮询请设 `autonomous: true` |
+| `claim_task` | 认领。人指定任务时不要带 `autonomous`。成功时才拿到**该任务**的 forge token（顶层 `token`）以及 `clone`。换一个 `task_id` 拿到的是那条任务自己的 token，禁止复用上一把（也不要从 MCP 配置或 git remote 接着用）。自主轮询请设 `autonomous: true` |
 | `report_progress` | 心跳，可选备注 |
 | `release_task` | 放弃，任务回到待认领 |
-| `submit_pr` | 提交 PR 地址，任务变为待验收 |
+| `submit_pr` | forge 上已有 PR/MR 后再交 URL，任务变为待验收 |
 
 REST `POST /api/v1/tasks/:publicId/claim` `201` 与 MCP `claim_task` 成功共用同一信封，键恰好是 `task`、`token`、`lease`、`clone`。`clone` 恰四键：`suggested_dir`、`token_usage`、`remote_url`、`extra_header`（`{ name, value_pattern }`）。用 `clone.extra_header` + `clone.remote_url` 克隆，目录是 `clone.suggested_dir`。`token_usage` 原文：`token 请通过环境变量或 git -c http.extraHeader 按次传递，不要写入 remote URL（会落盘到 .git/config）。`
 
