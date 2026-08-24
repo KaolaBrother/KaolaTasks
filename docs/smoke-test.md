@@ -37,11 +37,11 @@
 | 7 | 建私有仓并开 3 个 Issue | 自动 | 完成 | 有 `GITLAB_TOKEN` 之后用 API 建的。#1 导入考拉；#2 `.gitignore`、#3 LICENSE 留在 GitLab |
 | 8 | 工作台添加 GitLab 凭证档案 | **配合** | 完成 | SQLite `credential_profiles` id=1：`gitlab` / `https://gitlab.com` / `KaolaBrother/kaola-tasks-smoke`；`events` 有 `变更` create。换进程后仍要重新登录才能在页面里看到 |
 | 9 | 从 Issue 导入并发布 | **配合** | 完成 | 任务 `kt-2026-0001`：标题 `smoke: append a line to README`，`imported` / `gitlab` / `KaolaBrother/kaola-tasks-smoke`，状态 `待认领` |
-| 10 | 生成 Agent Key | **配合** | 未做 | 用**已经登录的** GitLab 用户 `KaolaBrother`（`active` + `full`）在「钥匙」页生成。认领**不必**再登 GitHub，也**不必**再为完成任务走一遍网页登录。明文 `ktk_…` 只出现一次。写入 `.env` 的 `KAOLA_AGENT_KEY=`，聊天只说「写好了」 |
-| 11 | 本机 Cursor CLI 配考拉 MCP | **配合** | 未做 | 全局 `~/.cursor/mcp.json`（或项目 `.cursor/mcp.json`，**不要提交 Key**）：`url` `http://localhost:31415/api/mcp`，`headers.Authorization` `Bearer ktk_…`。用**本机** CLI / 本机 Agent；Cloud Agent Runtime 打不到 localhost |
+| 10 | 生成 Agent Key | **配合** | 未做 | 人只做这一次：钥匙页生成，写入 `.env` 的 `KAOLA_AGENT_KEY=`。聊天只说「写好了」，**不要**贴 `ktk_…`，**不要**手改 mcp.json。这把 Key 是考拉身份（谁来 list/claim），不是仓库 token |
+| 11 | Agent 写入本机考拉 MCP | 自动（Key 已在 `.env`） | 未做 | Agent 读 `KAOLA_AGENT_KEY`，写入本机 `~/.cursor/mcp.json` 的 `kaola-tasks`（`url` `http://localhost:31415/api/mcp`）。不写进仓库、不出现在聊天。Cloud Agent 打不到 localhost，本轮仍用本机 |
 | 12 | `list_tasks`，人确认做哪条 | **配合** | 未做 | Agent 列出待认领。人指定 `kt-2026-0001`（`smoke: append a line to README`）。`get_task_brief` **不含** token。`repo`：`gitlab` / `https://gitlab.com` / `KaolaBrother/kaola-tasks-smoke`，`suggested_dir` `kaola-tasks-smoke` |
-| 13 | 指示认领 `claim_task` | 自动（MCP 已配） | 未做 | 只传 `task_id`，**不要** `autonomous`。成功：看板 `进行中`；返回顶层 `token`（发布者的 GitLab PAT）和 `clone` 四键（用 `clone.remote_url` + `clone.extra_header`，目录 `clone.suggested_dir`）。网页始终没有认领按钮 |
-| 14 | 本机 clone GitLab，改 README | **配合** | 未做 | remote：`https://gitlab.com/KaolaBrother/kaola-tasks-smoke.git`。token 用环境变量或 `git -c http.extraHeader`，**不要**写进 remote URL。目录用 `kaola-tasks-smoke`。在 `README.md` 末尾加一行 `Smoke test OK.` |
+| 13 | 指示认领 `claim_task` | 自动（MCP 已配） | 未做 | 只传 `task_id`，**不要** `autonomous`。成功：看板 `进行中`；顶层 `token` 是**这一条任务**的 GitLab PAT（发布者附上的）。不写进 mcp.json、不写进 remote URL。网页没有认领按钮 |
+| 14 | 本机 clone GitLab，改 README | 自动（人确认任务后） | 未做 | 只用 #13 揭示的 token，按 `clone.extra_header` + `clone.remote_url` 进 `clone.suggested_dir`。这是该 Issue 的临时仓库权，用完不落盘。`README.md` 末尾加一行 `Smoke test OK.` |
 | 15 | 推分支、开 MR，再 `submit_pr` | **配合** | 未做 | 同一 token 推分支、用 GitLab API 开 MR（认领者不必在该仓有自己的 GitLab 账号）。MCP `submit_pr` 交 `pr_url`；任务应变 `待验收` |
 | 16 | 合并 MR，看任务变已完成 | **配合** | 未做 | 人在 GitLab 点 Merge。默认约 60s 轮询；导入型应给源 Issue `#1` 回写评论 |
 
@@ -49,18 +49,15 @@
 
 **#1–#9 完成。** 板上有 `kt-2026-0001` / `待认领` / 导入自 GitLab Issue #1。发布这条已经测过。
 
-**下一步是 #10**，不是 GitHub 登录。接单闭环约定如下（现设计就能走；clone 用 `clone.remote_url` + `clone.extra_header`（#20），**不挡**本轮冒烟；步骤状态仍全部未做，未重跑）：
+**下一步是 #10。** 先钉死钥匙模型（发布者的仓库钥匙 ≠ 认领者的考拉身份）：
+
+- **仓库 token（任务上的那把）**：发布者发帖时附上，跟**这个 Issue 所在仓库**绑定。可以来自凭证档案，也可以是这条任务的一次性 token。认领者**不生成**这把钥匙，也不需要在 GitLab/GitHub 上有账号。谁 `claim_task` 成功，谁就领走**这一条任务**上的那把仓库 token。另一条任务可以是另一个仓库、另一把 token。
+- **Agent Key（`ktk_…`）**：只用来让本机 Cursor 调考拉 MCP（list / claim / submit_pr），标识「是谁领走了仓库 token」。**不是**仓库钥匙，也不是按任务发的。钥匙页生成一次，放进 `.env`；mcp.json 由 Agent 写。
 
 ```
-网页看板（只看）
-  → 本机 Cursor CLI + MCP（Agent Key）
-  → list_tasks → 人确认 kt-2026-0001
-  → claim_task（指示，无 autonomous）
-  → 用揭示的 GitLab token clone/改/推/开 MR
-  → submit_pr → 人 Merge → 已完成
+发布者：Issue + 该仓库的 forge token → 板上一条任务
+认领者 Agent：claim 这条任务 → 同时拿到该任务的仓库 token → 只对这个 repo clone/推/开 MR
 ```
-
-完成任务**不用**再登录 GitLab/GitHub 去拿仓库权；token 是发布时附上的。仍需要一把考拉 Agent Key（#10），用来标识谁领走了 token。
 
 ## 本轮之后（不写入本表状态，只作规划）
 
@@ -68,6 +65,7 @@
 |----|--------|----------------|
 | clone 信封四键含 `remote_url` + 按 forge 的 `extra_header` | GitHub [#20](https://github.com/KaolaBrother/KaolaTasks/issues/20) | 代码已落地；冒烟仍用 `clone.remote_url` + `clone.extra_header`。本表步骤未重跑 |
 | 发布页导入后只读展示 Issue，去掉验收/路径/优先级等表单项 | GitHub [#21](https://github.com/KaolaBrother/KaolaTasks/issues/21) | 代码已落地；本轮冒烟发布步骤未重跑 |
+| Agent 自动配 MCP；认领后的 forge token 只临时用于该任务 | GitHub [#22](https://github.com/KaolaBrother/KaolaTasks/issues/22) | **实现契约已整篇写进该 issue。** MCP 平时不含仓库钥匙；`claim_task` 才拿到该任务 token；换任务换 token。本轮冒烟按此理解，代码由下一会话落地 |
 
 ## 坑（续测别踩）
 
@@ -75,6 +73,7 @@
 - `GITLAB_TOKEN`（Legacy PAT）和 `OAUTH_GITLAB_CLIENT_SECRET`（OAuth 应用密钥）不是同一个东西。认领揭示的是档案里那份 GitLab token，不是 OAuth 密钥。
 - GitLab 新 UI 常把 Issue 显示成 `/-/work_items/N`；考拉只解析 `/-/issues/N`（以及遗留 `/issues/N`）。
 - 网页没有「认领」按钮；认领只走 Agent Key（MCP 或 Bearer REST）。口头让 Agent 去领时不要带 `autonomous`。
+- **不要人手改 mcp.json。** Agent Key 只进 `.env`；本机 MCP 由 Agent 写。认领揭示的 GitLab token 只临时给该 Issue 的 git 用，不进 MCP 配置。
 - Cloud Agent / 云端 Runtime 访问不了 `localhost:31415`。接单用本机 Cursor CLI / 本机 Agent。
 - clone 不要把 token 写进 remote URL。用 `clone.remote_url` + `clone.extra_header`（gitea `token ${token}`，GitLab `Bearer ${token}`），目录 `clone.suggested_dir`。
 - 会话在 Fastify 内存里，不在 SQLite。换进程后要重新登录才能生成 Agent Key（又是 **配合**）。
