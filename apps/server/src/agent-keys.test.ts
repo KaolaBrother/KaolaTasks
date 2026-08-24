@@ -5,6 +5,8 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import Database from 'better-sqlite3'
+import { createDb } from './db.ts'
+import { injectSigned, pairDeviceToSelf } from './device-proof.test-helpers.ts'
 
 // Binding names: kaola-workflow/bundle-4-5/.cache/technical-decisions.md
 const PENDING_STATUS = '待批准'
@@ -188,10 +190,41 @@ function assertSessionUnauthorized(res) {
   assert.equal(res.headers['www-authenticate'], undefined)
 }
 
-function assertBearerUnauthorized(res) {
+function assertDeviceUnauthorized(res) {
   assert.equal(res.statusCode, 401, `expected 401, got ${res.statusCode}: ${res.body}`)
   assert.deepEqual(parseJson(res), { error: 'unauthorized' })
-  assert.match(String(res.headers['www-authenticate'] ?? ''), /Bearer/)
+  assert.match(String(res.headers['www-authenticate'] ?? ''), /Kaola-Device/)
+}
+
+function withAdmins(t, spec) {
+  const previous = process.env.KAOLA_ADMINS
+  if (spec == null || spec === '') delete process.env.KAOLA_ADMINS
+  else process.env.KAOLA_ADMINS = spec
+  t.after(() => {
+    if (previous == null) delete process.env.KAOLA_ADMINS
+    else process.env.KAOLA_ADMINS = previous
+  })
+}
+
+function seedLeftoverGithub(db, { remoteId, username, displayName, status, permissionLevel }) {
+  db.$client
+    .prepare(
+      `INSERT INTO users (provider, remote_id, username, display_name, status, permission_level, trusted_automation)
+       VALUES ('github', ?, ?, ?, ?, ?, 0)`,
+    )
+    .run(String(remoteId), username, displayName, status, permissionLevel)
+}
+
+function assertWhoamiDeviceOwner(res, { deviceId, fingerprint, userId }) {
+  assert.equal(res.statusCode, 200, `GET /api/v1/agent/whoami: ${res.statusCode} ${res.body}`)
+  const who = parseJson(res)
+  assert.equal(Number(who.device_id), Number(deviceId))
+  assert.equal(who.fingerprint, fingerprint)
+  assert.equal(who.status, 'active')
+  assert.equal(who.owner?.kind, 'user')
+  assert.equal(Number(who.owner?.user_id), Number(userId))
+  assert.equal(Object.hasOwn(who, 'token'), false)
+  assert.equal(who.key_id, undefined)
 }
 
 function assertLoginRedirect(res) {
@@ -320,22 +353,22 @@ describe('unauthenticated session agent-key routes', () => {
   })
 })
 
-describe('GET /api/v1/agent/whoami Bearer failures', () => {
-  test('missing, wrong, and non-Bearer credentials are 401 with WWW-Authenticate Bearer', async (t) => {
+describe('GET /api/v1/agent/whoami device-proof failures', () => {
+  test('missing, leftover ktk_, and non-device credentials are 401 with WWW-Authenticate Kaola-Device', async (t) => {
     const app = await createApp(t)
     const fake = `ktk_${'ab'.repeat(32)}`
 
     const missing = await agentWhoami(app, {})
-    assertBearerUnauthorized(missing)
+    assertDeviceUnauthorized(missing)
 
     const wrong = await agentWhoami(app, { token: fake })
-    assertBearerUnauthorized(wrong)
+    assertDeviceUnauthorized(wrong)
 
     const tokenScheme = await agentWhoami(app, { authorization: `Token ${fake}` })
-    assertBearerUnauthorized(tokenScheme)
+    assertDeviceUnauthorized(tokenScheme)
 
     const basic = await agentWhoami(app, { authorization: 'Basic dXNlcjpwYXNz' })
-    assertBearerUnauthorized(basic)
+    assertDeviceUnauthorized(basic)
   })
 
   test('a session cookie does not authorize whoami; GET /api/v1/me does not accept Bearer', async (t) => {
@@ -352,13 +385,13 @@ describe('GET /api/v1/agent/whoami Bearer failures', () => {
     assertCreateKeyBody(createdBody, 'probe')
 
     const sessionOnly = await agentWhoami(app, { cookies: session.cookies })
-    assertBearerUnauthorized(sessionOnly)
+    assertDeviceUnauthorized(sessionOnly)
 
     const sessionPlusWrong = await agentWhoami(app, {
       cookies: session.cookies,
       token: `ktk_${'cd'.repeat(32)}`,
     })
-    assertBearerUnauthorized(sessionPlusWrong)
+    assertDeviceUnauthorized(sessionPlusWrong)
 
     const meWithBearer = await app.inject({
       method: 'GET',
@@ -372,9 +405,21 @@ describe('GET /api/v1/agent/whoami Bearer failures', () => {
   })
 })
 
-describe('pending GitHub cannot generate Agent Keys', () => {
-  test('pending GitHub POST /api/v1/agent-keys returns 403 with the generate-gate message', async (t) => {
-    const app = await createApp(t)
+describe('leftover 待批准 GitHub cannot generate Agent Keys', () => {
+  test('leftover 待批准 GitHub POST /api/v1/agent-keys returns 403 with the generate-gate message', async (t) => {
+    const sqlitePath = tempSqlitePath(t)
+    const db = createDb(sqlitePath)
+    t.after(() => {
+      db.$client.close()
+    })
+    seedLeftoverGithub(db, {
+      remoteId: 4242,
+      username: 'pending-cat',
+      displayName: 'Pending Cat',
+      status: PENDING_STATUS,
+      permissionLevel: 'claim_only',
+    })
+    const app = await createApp(t, { sqlitePath })
     const profiles = new Map()
     stubUserinfoByAccessToken(t, profiles)
     const accessToken = nextAccessToken('github-pending-key')
@@ -391,36 +436,29 @@ describe('pending GitHub cannot generate Agent Keys', () => {
   })
 })
 
-describe('approved GitHub claim_only self-service', () => {
-  test('approved GitHub claim_only can generate, list without plaintext, update last_used_at, and revoke immediately', async (t) => {
-    const app = await createApp(t)
+describe('leftover GitHub claim_only session CRUD (unused-compat)', () => {
+  test('leftover active claim_only can generate, list without plaintext, and revoke; leftover ktk_ is not whoami', async (t) => {
+    const sqlitePath = tempSqlitePath(t)
+    const db = createDb(sqlitePath)
+    t.after(() => {
+      db.$client.close()
+    })
+    seedLeftoverGithub(db, {
+      remoteId: 333,
+      username: 'needs-ok',
+      displayName: 'Needs Ok',
+      status: 'active',
+      permissionLevel: 'claim_only',
+    })
+    const app = await createApp(t, { sqlitePath })
     const profiles = new Map()
     stubUserinfoByAccessToken(t, profiles)
     const githubToken = nextAccessToken('github-approved-key')
-    const gitlabToken = nextAccessToken('gitlab-approver-key')
     profiles.set(githubToken, { id: 333, login: 'needs-ok', name: 'Needs Ok' })
-    profiles.set(gitlabToken, { id: 444, username: 'team-lead', name: 'Team Lead' })
 
     const github = await loginViaCallback(app, { ...PROVIDERS.github, accessToken: githubToken })
-    const member = await loginViaCallback(app, { ...PROVIDERS.gitlab, accessToken: gitlabToken })
-    const approve = await app.inject({
-      method: 'POST',
-      url: `/api/v1/users/${github.body.id}/approve`,
-      cookies: member.cookies,
-      headers: JSON_ACCEPT,
-    })
-    assert.ok(
-      approve.statusCode >= 200 && approve.statusCode < 300,
-      `approve should succeed, got ${approve.statusCode}: ${approve.body}`,
-    )
-    const githubMe = await app.inject({
-      method: 'GET',
-      url: '/api/v1/me',
-      cookies: github.cookies,
-      headers: JSON_ACCEPT,
-    })
-    assert.equal(githubMe.json().status, 'active')
-    assert.equal(githubMe.json().permission_level, 'claim_only')
+    assert.equal(github.body.status, 'active')
+    assert.equal(github.body.permission_level, 'claim_only')
 
     const empty = await listAgentKeys(app, github.cookies)
     assert.equal(empty.statusCode, 200, `GET /api/v1/agent-keys: ${empty.statusCode} ${empty.body}`)
@@ -442,34 +480,14 @@ describe('approved GitHub claim_only self-service', () => {
     assert.equal(listed.json().keys[0].last_used_at, null)
 
     const wrong = await agentWhoami(app, { token: `ktk_${'ef'.repeat(32)}` })
-    assertBearerUnauthorized(wrong)
+    assertDeviceUnauthorized(wrong)
     const listedAfterWrong = await listAgentKeys(app, github.cookies)
     assert.equal(listedAfterWrong.json().keys[0].last_used_at, null)
 
-    const before = Math.floor(Date.now() / 1000)
-    const whoami = await agentWhoami(app, { token: plaintext })
-    const after = Math.floor(Date.now() / 1000)
-    assert.equal(whoami.statusCode, 200, `GET /api/v1/agent/whoami: ${whoami.statusCode} ${whoami.body}`)
-    const who = whoami.json()
-    assert.equal(Number(who.id), Number(github.body.id))
-    assert.equal(Number(who.key_id), Number(createdBody.id))
-    assert.equal(who.label, 'gh-agent')
-    assert.equal(who.status, 'active')
-    assert.equal(who.permission_level, 'claim_only')
-    assert.equal(who.token, undefined)
-    assert.equal(who.key_hash, undefined)
-    assertNoPlaintextOrHash(who, [plaintext])
-
-    const listedAfterUse = await listAgentKeys(app, github.cookies)
-    const usedAt = listedAfterUse.json().keys[0].last_used_at
-    assert.ok(Number.isInteger(usedAt), `last_used_at must be unix seconds integer, got ${usedAt}`)
-    assert.ok(usedAt >= before - 1 && usedAt <= after + 1, `last_used_at ${usedAt} not in [${before - 1}, ${after + 1}]`)
-
-    const usedAtFrozen = usedAt
-    const wrongAfterUse = await agentWhoami(app, { token: `ktk_${'11'.repeat(32)}` })
-    assertBearerUnauthorized(wrongAfterUse)
-    const listedAfterFailed = await listAgentKeys(app, github.cookies)
-    assert.equal(listedAfterFailed.json().keys[0].last_used_at, usedAtFrozen)
+    const leftover = await agentWhoami(app, { token: plaintext })
+    assertDeviceUnauthorized(leftover)
+    const listedAfterLeftover = await listAgentKeys(app, github.cookies)
+    assert.equal(listedAfterLeftover.json().keys[0].last_used_at, null)
 
     const revoked = await deleteAgentKey(app, github.cookies, createdBody.id)
     assert.equal(revoked.statusCode, 200, `DELETE /api/v1/agent-keys/:id: ${revoked.statusCode} ${revoked.body}`)
@@ -477,7 +495,7 @@ describe('approved GitHub claim_only self-service', () => {
     assertNoPlaintextOrHash(parseJson(revoked), [plaintext])
 
     const afterRevoke = await agentWhoami(app, { token: plaintext })
-    assertBearerUnauthorized(afterRevoke)
+    assertDeviceUnauthorized(afterRevoke)
 
     const listedAfterRevoke = await listAgentKeys(app, github.cookies)
     assertListBody(listedAfterRevoke.json(), [plaintext])
@@ -524,25 +542,34 @@ describe('GitLab and Gitea full+active self-service', () => {
     ])
     assert.equal(listed.json().keys.length, 3)
 
-    const lowercase = await agentWhoami(app, { authorization: `bearer ${labeled.json().token}` })
-    assert.equal(lowercase.statusCode, 200, `lowercase bearer: ${lowercase.statusCode} ${lowercase.body}`)
-    assert.equal(Number(lowercase.json().id), Number(gitlab.body.id))
-    assert.equal(Number(lowercase.json().key_id), Number(labeled.json().id))
-    assert.equal(lowercase.json().label, 'ci')
-    assert.equal(lowercase.json().status, 'active')
-    assert.equal(lowercase.json().permission_level, 'full')
+    const leftoverLower = await agentWhoami(app, { authorization: `bearer ${labeled.json().token}` })
+    assertDeviceUnauthorized(leftoverLower)
+    const leftoverMixed = await agentWhoami(app, { authorization: `BeArEr ${unlabeled.json().token}` })
+    assertDeviceUnauthorized(leftoverMixed)
 
-    const mixed = await agentWhoami(app, { authorization: `BeArEr ${unlabeled.json().token}` })
-    assert.equal(mixed.statusCode, 200, `mixed-case Bearer: ${mixed.statusCode} ${mixed.body}`)
-    assert.equal(Number(mixed.json().key_id), Number(unlabeled.json().id))
-    assert.equal(mixed.json().label, '')
+    const paired = await pairDeviceToSelf(app, gitlab.cookies)
+    const whoami = await injectSigned(app, paired.identity, {
+      method: 'GET',
+      url: '/api/v1/agent/whoami',
+      extraHeaders: JSON_ACCEPT,
+    })
+    assertWhoamiDeviceOwner(whoami, {
+      deviceId: paired.deviceId,
+      fingerprint: paired.identity.fingerprint,
+      userId: gitlab.body.id,
+    })
+    assertNoPlaintextOrHash(parseJson(whoami), [
+      unlabeled.json().token,
+      labeled.json().token,
+      sameLabel.json().token,
+    ])
 
     const stillRoot = await app.inject({ method: 'GET', url: '/' })
     assert.equal(stillRoot.body, '考拉任务服务占位')
     assert.equal(process.env.VAULT_MASTER_KEY, undefined)
   })
 
-  test('Gitea full+active can generate, list, and use Bearer whoami', async (t) => {
+  test('Gitea full+active can generate, list, and use device-proof whoami', async (t) => {
     const app = await createApp(t)
     const profiles = new Map()
     stubUserinfoByAccessToken(t, profiles)
@@ -561,18 +588,27 @@ describe('GitLab and Gitea full+active self-service', () => {
     assertListBody(listed.json(), [created.json().token])
     assert.equal(listed.json().keys.length, 1)
 
-    const whoami = await agentWhoami(app, { token: created.json().token })
-    assert.equal(whoami.statusCode, 200, `whoami: ${whoami.statusCode} ${whoami.body}`)
-    assert.equal(Number(whoami.json().id), Number(gitea.body.id))
-    assert.equal(Number(whoami.json().key_id), Number(created.json().id))
-    assert.equal(whoami.json().label, 'gitea-bot')
-    assert.equal(whoami.json().status, 'active')
-    assert.equal(whoami.json().permission_level, 'full')
+    const leftover = await agentWhoami(app, { token: created.json().token })
+    assertDeviceUnauthorized(leftover)
+
+    const paired = await pairDeviceToSelf(app, gitea.cookies)
+    const whoami = await injectSigned(app, paired.identity, {
+      method: 'GET',
+      url: '/api/v1/agent/whoami',
+      extraHeaders: JSON_ACCEPT,
+    })
+    assertWhoamiDeviceOwner(whoami, {
+      deviceId: paired.deviceId,
+      fingerprint: paired.identity.fingerprint,
+      userId: gitea.body.id,
+    })
+    assertNoPlaintextOrHash(parseJson(whoami), [created.json().token])
   })
 })
 
 describe('list and revoke are own keys only', () => {
   test('a full member cannot list or revoke another user\'s key; missing and not-owned DELETE are 404 not_found', async (t) => {
+    withAdmins(t, 'gitlab:bob')
     const app = await createApp(t)
     const profiles = new Map()
     stubUserinfoByAccessToken(t, profiles)
@@ -606,9 +642,11 @@ describe('list and revoke are own keys only', () => {
     assert.equal(stillAlice.json().keys.length, 1)
     assert.equal(Number(stillAlice.json().keys[0].id), Number(aliceBody.id))
 
-    const whoami = await agentWhoami(app, { token: aliceBody.token })
-    assert.equal(whoami.statusCode, 200, `alice key still works after bob revoke attempt: ${whoami.statusCode} ${whoami.body}`)
-    assert.equal(Number(whoami.json().id), Number(alice.body.id))
+    const leftoverWhoami = await agentWhoami(app, { token: aliceBody.token })
+    assertDeviceUnauthorized(leftoverWhoami)
+    const stillAliceAfterLeftover = await listAgentKeys(app, alice.cookies)
+    assert.equal(stillAliceAfterLeftover.json().keys.length, 1)
+    assert.equal(Number(stillAliceAfterLeftover.json().keys[0].id), Number(aliceBody.id))
 
     const aliceRevoke = await deleteAgentKey(app, alice.cookies, aliceBody.id)
     assert.equal(aliceRevoke.statusCode, 200)
@@ -681,20 +719,14 @@ describe('agent_keys hashed storage', () => {
     assert.equal(duplicateInserted, false, 'duplicate key_hash must violate UNIQUE')
 
     const failed = await agentWhoami(app, { token: `ktk_${'00'.repeat(32)}` })
-    assertBearerUnauthorized(failed)
+    assertDeviceUnauthorized(failed)
     const afterFail = sqlite.prepare('SELECT last_used_at FROM agent_keys WHERE id = ?').get(rows[0].id)
     assert.equal(afterFail.last_used_at, null)
 
-    const before = Math.floor(Date.now() / 1000)
-    const ok = await agentWhoami(app, { token: firstToken })
-    const after = Math.floor(Date.now() / 1000)
-    assert.equal(ok.statusCode, 200)
-    const afterOk = sqlite.prepare('SELECT last_used_at FROM agent_keys WHERE id = ?').get(rows[0].id)
-    assert.ok(Number.isInteger(afterOk.last_used_at), `sqlite last_used_at must be integer, got ${afterOk.last_used_at}`)
-    assert.ok(
-      afterOk.last_used_at >= before - 1 && afterOk.last_used_at <= after + 1,
-      `sqlite last_used_at ${afterOk.last_used_at} not in [${before - 1}, ${after + 1}]`,
-    )
+    const leftoverOk = await agentWhoami(app, { token: firstToken })
+    assertDeviceUnauthorized(leftoverOk)
+    const afterLeftover = sqlite.prepare('SELECT last_used_at FROM agent_keys WHERE id = ?').get(rows[0].id)
+    assert.equal(afterLeftover.last_used_at, null)
     const sibling = sqlite.prepare('SELECT last_used_at FROM agent_keys WHERE id = ?').get(rows[1].id)
     assert.equal(sibling.last_used_at, null)
   })

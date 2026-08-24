@@ -5,6 +5,7 @@ import Fastify from 'fastify'
 import { registerAgentKeys } from './agent-keys.ts'
 import { registerAuth } from './auth.ts'
 import { registerClaim } from './claim.ts'
+import { registerDevices } from './devices.ts'
 import { registerClaimConfirmations } from './claim-confirmations.ts'
 import { registerCredentialProfiles } from './credential-profiles.ts'
 import { createDb } from './db.ts'
@@ -90,6 +91,7 @@ export function buildApp(options?: {
   registerCredentialProfiles(app, db)
   registerTasks(app, db)
   registerClaim(app, db)
+  registerDevices(app, db)
   registerClaimConfirmations(app, db)
   registerEvents(app, db)
   registerMcp(app, db)

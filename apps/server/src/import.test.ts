@@ -219,6 +219,21 @@ function openDb(t, sqlitePath) {
   return db
 }
 
+function seedLeftoverGithub(db, { remoteId, username, displayName, status, permissionLevel }) {
+  db.$client
+    .prepare(
+      `INSERT INTO users (provider, remote_id, username, display_name, status, permission_level, trusted_automation)
+       VALUES ('github', ?, ?, ?, ?, ?, 0)`,
+    )
+    .run(String(remoteId), username, displayName, status, permissionLevel)
+}
+
+async function loginLeftoverGithub(app, stub, { remoteId, login, name, label }) {
+  const leftoverToken = nextAccessToken(label)
+  stub.oauth.set(leftoverToken, { id: Number(remoteId), login, name })
+  return loginViaCallback(app, { ...PROVIDERS.github, accessToken: leftoverToken })
+}
+
 async function loginViaCallback(app, { decoratorName, callbackPath, accessToken }) {
   stubTokenExchange(app, decoratorName, accessToken)
   const callback = await app.inject({
@@ -248,30 +263,6 @@ async function loginGitea(app, stub, label = 'gitea') {
     full_name: `Gi Tea ${label}`,
   })
   return loginViaCallback(app, { ...PROVIDERS.gitea, accessToken })
-}
-
-async function loginGithub(app, stub, label = 'github') {
-  const accessToken = nextAccessToken(label)
-  stub.oauth.set(accessToken, {
-    id: 60000 + tokenSeq,
-    login: `gh-${label}`,
-    name: `Octo ${label}`,
-  })
-  return loginViaCallback(app, { ...PROVIDERS.github, accessToken })
-}
-
-async function approveUser(app, memberCookies, userId) {
-  const approve = await app.inject({
-    method: 'POST',
-    url: `/api/v1/users/${userId}/approve`,
-    cookies: memberCookies,
-    headers: jsonHeaders,
-  })
-  assert.ok(
-    approve.statusCode >= 200 && approve.statusCode < 300,
-    `approve should succeed, got ${approve.statusCode}: ${approve.body}`,
-  )
-  return approve
 }
 
 function jsonBody(res) {
@@ -423,29 +414,59 @@ describe('issue #12 POST /api/v1/tasks/import', { concurrency: false }, () => {
       assert.deepEqual(jsonBody(res), { error: 'unauthorized' })
     })
 
-    test('待批准 GitHub user gets 403 forbidden', async (t) => {
-      const app = await createApp(t)
+    test('leftover 待批准 GitHub user gets 403 forbidden', async (t) => {
+      const sqlitePath = sqliteFile(t)
+      const db = openDb(t, sqlitePath)
+      seedLeftoverGithub(db, {
+        remoteId: 22201,
+        username: 'gh-import-pending',
+        displayName: 'Pending Import',
+        status: '待批准',
+        permissionLevel: 'claim_only',
+      })
+      const app = await createApp(t, sqlitePath)
       const stub = beginFetch(t)
-      const github = await loginGithub(app, stub, 'pending-import')
+      const github = await loginLeftoverGithub(app, stub, {
+        remoteId: 22201,
+        login: 'gh-import-pending',
+        name: 'Pending Import',
+        label: 'pending-import',
+      })
       assert.equal(github.body.status, '待批准')
+      assert.equal(github.body.permission_level, 'claim_only')
       const res = await postImport(app, github.cookies)
       assert.equal(res.statusCode, 403, `pending import: ${res.statusCode} ${res.body}`)
       assert.deepEqual(jsonBody(res), { error: 'forbidden' })
     })
 
-    test('approved GitHub claim_only user gets 403 forbidden', async (t) => {
-      const app = await createApp(t)
+    test('leftover active claim_only GitHub user gets 403 forbidden', async (t) => {
+      const sqlitePath = sqliteFile(t)
+      const db = openDb(t, sqlitePath)
+      seedLeftoverGithub(db, {
+        remoteId: 22202,
+        username: 'gh-import-claim-only',
+        displayName: 'Claim Only Import',
+        status: 'active',
+        permissionLevel: 'claim_only',
+      })
+      const app = await createApp(t, sqlitePath)
       const stub = beginFetch(t)
       const member = await loginGitea(app, stub, 'owner')
-      const github = await loginGithub(app, stub, 'claim-only-import')
-      await approveUser(app, member.cookies, github.body.id)
+      const github = await loginLeftoverGithub(app, stub, {
+        remoteId: 22202,
+        login: 'gh-import-claim-only',
+        name: 'Claim Only Import',
+        label: 'claim-only-import',
+      })
       const me = await app.inject({
         method: 'GET',
         url: '/api/v1/me',
         cookies: github.cookies,
         headers: jsonHeaders,
       })
+      assert.equal(me.json().status, 'active')
       assert.equal(me.json().permission_level, 'claim_only')
+      assert.notEqual(Number(github.body.id), Number(member.body.id))
       const res = await postImport(app, github.cookies)
       assert.equal(res.statusCode, 403, `claim_only import: ${res.statusCode} ${res.body}`)
       assert.deepEqual(jsonBody(res), { error: 'forbidden' })

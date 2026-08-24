@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseTaskBrief } from '@kaola/shared'
 import { createDb } from './db.ts'
+import { injectSigned, pairDeviceToSelf } from './device-proof.test-helpers.ts'
 
 // Issue #10 MCP server. Seams copied from claim.test.ts (do not import that file).
 const GITLAB_BASE_URL = 'https://gitlab.example.test'
@@ -24,7 +25,6 @@ const PROFILE_TOKEN = 'gitea-PROFILE-SHARED-TOKEN-vv31'
 const GITLAB_FORGE_TOKEN = 'gitlab-FILTER-ONE-OFF-TOKEN-aa19'
 const GITHUB_FORGE_TOKEN = 'github-INLINE-ONE-OFF-TOKEN-gh01'
 
-const PENDING_CLAIM_MESSAGE = '你的账号待正式成员批准后方可认领任务。'
 const TASK_ALREADY_CLAIMED_MESSAGE = '任务已被认领。'
 const TASK_NOT_CLAIMED_MESSAGE = '任务未被认领。'
 const TOKEN_REVEAL_EVENT = 'token 揭示'
@@ -34,7 +34,6 @@ const TTL_SECONDS = 86400
 const FROZEN_MS = Date.UTC(2026, 7, 21, 4, 0, 0)
 const CLONE_TOKEN_USAGE =
   'token 请通过环境变量或 git -c http.extraHeader 按次传递，不要写入 remote URL（会落盘到 .git/config）。'
-const AGENT_KEY_RE = /^ktk_[0-9a-f]{64}$/
 const MCP_PATH = '/api/mcp'
 const MCP_PROTOCOL_VERSION = '2025-11-25'
 const TOOL_NAMES = [
@@ -256,6 +255,16 @@ function sqliteFile(t) {
   return sqlitePath
 }
 
+function withAdmins(t, spec) {
+  const previous = process.env.KAOLA_ADMINS
+  if (spec == null || spec === '') delete process.env.KAOLA_ADMINS
+  else process.env.KAOLA_ADMINS = spec
+  t.after(() => {
+    if (previous == null) delete process.env.KAOLA_ADMINS
+    else process.env.KAOLA_ADMINS = previous
+  })
+}
+
 async function createApp(t, sqlitePath) {
   const app = buildApp(sqlitePath ? { sqlitePath } : undefined)
   t.after(async () => {
@@ -335,16 +344,6 @@ async function loginGitea(app, stub, label = 'gitea') {
   return loginViaCallback(app, { ...PROVIDERS.gitea, accessToken })
 }
 
-async function loginGithub(app, stub, label = 'github') {
-  const accessToken = nextAccessToken(label)
-  stub.oauth.set(accessToken, {
-    id: 60000 + tokenSeq,
-    login: `gh-${label}`,
-    name: `Octo ${label}`,
-  })
-  return loginViaCallback(app, { ...PROVIDERS.github, accessToken })
-}
-
 function jsonBody(res) {
   try {
     return res.json()
@@ -404,17 +403,8 @@ function bearerHeaders(token) {
 }
 
 async function mintAgentKey(app, cookies, label = 'agent') {
-  const res = await app.inject({
-    method: 'POST',
-    url: '/api/v1/agent-keys',
-    cookies,
-    headers: jsonHeaders,
-    payload: { label },
-  })
-  assert.equal(res.statusCode, 201, `POST /api/v1/agent-keys: ${res.statusCode} ${res.body}`)
-  const body = jsonBody(res)
-  assert.match(String(body?.token ?? ''), AGENT_KEY_RE)
-  return { id: body.id, token: body.token, label: body.label }
+  const paired = await pairDeviceToSelf(app, cookies, { hostname: label })
+  return { id: paired.deviceId, identity: paired.identity, deviceId: paired.deviceId }
 }
 
 function hashAgentKey(plaintext) {
@@ -432,7 +422,16 @@ function seedAgentKey(db, userId, label = 'seeded-pending') {
   return { id: Number(row.id), token, keyHash, label }
 }
 
-async function claimTaskHttp(app, { token, publicId }) {
+async function claimTaskHttp(app, { token, identity, publicId }) {
+  const proof = identity ?? (token && typeof token === 'object' && token.privateKey ? token : null)
+  if (proof != null) {
+    return injectSigned(app, proof, {
+      method: 'POST',
+      url: `/api/v1/tasks/${publicId}/claim`,
+      payload: {},
+      extraHeaders: { accept: 'application/json', 'content-type': 'application/json' },
+    })
+  }
   return app.inject({
     method: 'POST',
     url: `/api/v1/tasks/${publicId}/claim`,
@@ -524,7 +523,7 @@ function assertClaimRevealToken(body, forgePlaintext) {
 function assertBearerUnauthorized(res) {
   assert.equal(res.statusCode, 401, `expected 401, got ${res.statusCode}: ${res.body}`)
   assert.deepEqual(jsonBody(res), { error: 'unauthorized' })
-  assert.match(String(res.headers['www-authenticate'] ?? ''), /Bearer/)
+  assert.match(String(res.headers['www-authenticate'] ?? ''), /Kaola-Device/)
 }
 
 function illegalTransitionMessage(from, to) {
@@ -548,7 +547,7 @@ function eventsOfType(db, type) {
 function claimRevealEvents(db, publicId) {
   return eventsOfType(db, TOKEN_REVEAL_EVENT).filter((event) => {
     const details = parseDetails(event)
-    return details?.task_id === publicId && details?.agent_key_id != null
+    return details?.task_id === publicId && details?.device_id != null
   })
 }
 
@@ -579,7 +578,7 @@ function forceStatus(db, publicId, status) {
 function leaseRows(db, taskPk) {
   return db.$client
     .prepare(
-      'SELECT id, task_id, claimer_user_id, agent_key_id, claimed_at, expires_at, last_heartbeat, state FROM leases WHERE task_id = ?',
+      'SELECT id, task_id, claimer_user_id, device_id, claimed_at, expires_at, last_heartbeat, state FROM leases WHERE task_id = ?',
     )
     .all(taskPk)
 }
@@ -594,7 +593,12 @@ function submissionRows(db, taskPk) {
     .all(taskPk)
 }
 
-async function boot(t, sqlitePath) {
+async function boot(t, sqlitePath, opts = {}) {
+  if (sqlitePath && typeof sqlitePath === 'object') {
+    opts = sqlitePath
+    sqlitePath = undefined
+  }
+  if (opts.admins) withAdmins(t, opts.admins)
   const app = await createApp(t, sqlitePath)
   const stub = beginFetch(t)
   allowForgeToken(stub, INLINE_TOKEN)
@@ -615,7 +619,22 @@ function mcpHeaders({ token, sessionId, extra } = {}) {
   return headers
 }
 
-async function postMcp(app, { token, cookies, sessionId, extraHeaders, payload }) {
+async function postMcp(app, { token, identity, cookies, sessionId, extraHeaders, payload }) {
+  const proof = identity ?? (token && typeof token === 'object' && token.privateKey ? token : null)
+  if (proof != null) {
+    const extra = {
+      accept: 'application/json, text/event-stream',
+      'content-type': 'application/json',
+      ...(extraHeaders ?? {}),
+    }
+    if (sessionId != null) extra['mcp-session-id'] = sessionId
+    return injectSigned(app, proof, {
+      method: 'POST',
+      url: MCP_PATH,
+      payload,
+      extraHeaders: extra,
+    })
+  }
   return app.inject({
     method: 'POST',
     url: MCP_PATH,
@@ -833,8 +852,8 @@ function assertClaimEnvelope(body, { forgeToken, suggestedDir, nowUnix }) {
 }
 
 describe('issue #10 MCP server', { concurrency: false }, () => {
-  describe('authentication — Bearer only, HTTP 401 before JSON-RPC', () => {
-    test('unauthenticated POST /api/mcp (missing Authorization) is 401 unauthorized with WWW-Authenticate Bearer', async (t) => {
+  describe('authentication — device proof, HTTP 401 before JSON-RPC', () => {
+    test('unauthenticated POST /api/mcp (missing device headers) is 401 unauthorized with WWW-Authenticate Kaola-Device', async (t) => {
       const { app } = await boot(t)
       const res = await postMcp(app, {
         payload: { jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} },
@@ -842,7 +861,7 @@ describe('issue #10 MCP server', { concurrency: false }, () => {
       assertBearerUnauthorized(res)
     })
 
-    test('Token scheme, Basic, and wrong Bearer on POST /api/mcp are 401 with WWW-Authenticate Bearer', async (t) => {
+    test('Token scheme, Basic, leftover ktk_, and wrong device proof on POST /api/mcp are 401 with WWW-Authenticate Kaola-Device', async (t) => {
       const { app, stub } = await boot(t)
       const poster = await loginGitea(app, stub, 'wrong-bearer')
       await mintAgentKey(app, poster.cookies, 'unused')
@@ -867,7 +886,7 @@ describe('issue #10 MCP server', { concurrency: false }, () => {
       assertBearerUnauthorized(basic)
     })
 
-    test('a session cookie without Bearer does not authorize POST /api/mcp', async (t) => {
+    test('a session cookie without device proof does not authorize POST /api/mcp', async (t) => {
       const { app, stub } = await boot(t)
       const poster = await loginGitea(app, stub, 'session-only')
       await mintAgentKey(app, poster.cookies, 'unused')
@@ -883,8 +902,8 @@ describe('issue #10 MCP server', { concurrency: false }, () => {
       const { app, stub } = await boot(t)
       const poster = await loginGitea(app, stub, 'tools-list')
       const key = await mintAgentKey(app, poster.cookies, 'lister')
-      const client = await readyMcp(app, key.token)
-      const { tools } = await client.listTools(app, key.token)
+      const client = await readyMcp(app, key.identity)
+      const { tools } = await client.listTools(app, key.identity)
 
       assert.deepEqual(
         tools.map((tool) => tool.name).sort(),
@@ -912,9 +931,9 @@ describe('issue #10 MCP server', { concurrency: false }, () => {
       const first = await createTaskOk(app, poster.cookies)
       const second = await createTaskOk(app, poster.cookies, taskPayload({ title: '第二张卡片' }))
       const key = await mintAgentKey(app, poster.cookies, 'lister')
-      const client = await readyMcp(app, key.token)
+      const client = await readyMcp(app, key.identity)
 
-      const called = await client.callTool(app, key.token, 'list_tasks', {})
+      const called = await client.callTool(app, key.identity, 'list_tasks', {})
       const payload = assertToolOk(called.result)
       assert.deepEqual(Object.keys(payload).sort(), ['tasks'])
       assert.ok(Array.isArray(payload.tasks), 'list_tasks.tasks must be an array')
@@ -954,13 +973,13 @@ describe('issue #10 MCP server', { concurrency: false }, () => {
         }),
       )
       const key = await mintAgentKey(app, poster.cookies, 'filter-bot')
-      const claimed = await claimTaskHttp(app, { token: key.token, publicId: backend.brief.id })
+      const claimed = await claimTaskHttp(app, { token: key.identity, publicId: backend.brief.id })
       assert.equal(claimed.statusCode, 201, `REST claim setup: ${claimed.statusCode} ${claimed.body}`)
 
-      const client = await readyMcp(app, key.token)
+      const client = await readyMcp(app, key.identity)
 
       const byStatus = assertToolOk(
-        (await client.callTool(app, key.token, 'list_tasks', { status: '进行中' })).result,
+        (await client.callTool(app, key.identity, 'list_tasks', { status: '进行中' })).result,
       )
       assert.deepEqual(
         byStatus.tasks.map((task) => task.id),
@@ -969,7 +988,7 @@ describe('issue #10 MCP server', { concurrency: false }, () => {
       assert.equal(byStatus.tasks[0].status, '进行中')
 
       const pending = assertToolOk(
-        (await client.callTool(app, key.token, 'list_tasks', { status: '待认领' })).result,
+        (await client.callTool(app, key.identity, 'list_tasks', { status: '待认领' })).result,
       )
       assert.deepEqual(
         pending.tasks.map((task) => task.id),
@@ -977,7 +996,7 @@ describe('issue #10 MCP server', { concurrency: false }, () => {
       )
 
       const byTag = assertToolOk(
-        (await client.callTool(app, key.token, 'list_tasks', { tags: 'backend' })).result,
+        (await client.callTool(app, key.identity, 'list_tasks', { tags: 'backend' })).result,
       )
       assert.deepEqual(
         byTag.tasks.map((task) => task.id),
@@ -985,7 +1004,7 @@ describe('issue #10 MCP server', { concurrency: false }, () => {
       )
 
       const frontendOnly = assertToolOk(
-        (await client.callTool(app, key.token, 'list_tasks', { tags: 'frontend' })).result,
+        (await client.callTool(app, key.identity, 'list_tasks', { tags: 'frontend' })).result,
       )
       assert.deepEqual(
         frontendOnly.tasks.map((task) => task.id),
@@ -993,7 +1012,7 @@ describe('issue #10 MCP server', { concurrency: false }, () => {
       )
 
       const byForge = assertToolOk(
-        (await client.callTool(app, key.token, 'list_tasks', { forge: 'gitlab' })).result,
+        (await client.callTool(app, key.identity, 'list_tasks', { forge: 'gitlab' })).result,
       )
       assert.deepEqual(
         byForge.tasks.map((task) => task.id),
@@ -1002,7 +1021,7 @@ describe('issue #10 MCP server', { concurrency: false }, () => {
       assert.equal(byForge.tasks[0].repo.forge, 'gitlab')
 
       const giteaOnly = assertToolOk(
-        (await client.callTool(app, key.token, 'list_tasks', { forge: 'gitea' })).result,
+        (await client.callTool(app, key.identity, 'list_tasks', { forge: 'gitea' })).result,
       )
       assert.deepEqual(
         giteaOnly.tasks.map((task) => task.id),
@@ -1016,43 +1035,49 @@ describe('issue #10 MCP server', { concurrency: false }, () => {
       const poster = await loginGitea(app, stub, 'list-expiry')
       const { brief } = await createTaskOk(app, poster.cookies)
       const key = await mintAgentKey(app, poster.cookies, 'expiring')
-      const claimed = await claimTaskHttp(app, { token: key.token, publicId: brief.id })
+      const claimed = await claimTaskHttp(app, { token: key.identity, publicId: brief.id })
       assert.equal(claimed.statusCode, 201, `REST claim: ${claimed.statusCode} ${claimed.body}`)
 
-      const client = await readyMcp(app, key.token)
+      const client = await readyMcp(app, key.identity)
       clock.advanceMs(TTL_SECONDS * 1000)
 
-      const listed = await client.callTool(app, key.token, 'list_tasks', {})
+      const listed = await client.callTool(app, key.identity, 'list_tasks', {})
       const listPayload = assertToolOk(listed.result)
       assert.equal(listPayload.tasks.length, 1)
       assert.equal(listPayload.tasks[0].status, '待认领')
       assertBriefShape(listPayload.tasks[0])
       assertNoForgeSecretMaterial(listed.res, INLINE_TOKEN)
 
-      const fetched = await client.callTool(app, key.token, 'get_task_brief', { task_id: brief.id })
+      const fetched = await client.callTool(app, key.identity, 'get_task_brief', { task_id: brief.id })
       const briefPayload = assertToolOk(fetched.result)
       assertBriefShape(briefPayload)
       assert.equal(briefPayload.status, '待认领')
       assertNoForgeSecretMaterial(fetched.res, INLINE_TOKEN)
     })
 
-    test('a pending 待批准 Agent Key may list_tasks', async (t) => {
+    test('a leftover ktk_ Bearer cannot list_tasks: 401 unauthorized, not a successful tool result', async (t) => {
       const sqlitePath = sqliteFile(t)
       const { app, stub } = await boot(t, sqlitePath)
       const member = await loginGitea(app, stub, 'pending-list-owner')
-      const pending = await loginGithub(app, stub, 'pending-lister')
-      assert.equal(pending.body.status, '待批准')
       const { brief } = await createTaskOk(app, member.cookies)
       const db = openDb(t, sqlitePath)
-      const seeded = seedAgentKey(db, pending.body.id)
+      db.$client
+        .prepare(
+          `INSERT INTO users (provider, remote_id, username, display_name, status, permission_level, trusted_automation)
+           VALUES ('github', '60222', 'gh-leftover-lister', 'Leftover Lister', '待批准', 'claim_only', 0)`,
+        )
+        .run()
+      const leftoverId = db.$client.prepare("SELECT id FROM users WHERE username = 'gh-leftover-lister'").get().id
+      const seeded = seedAgentKey(db, leftoverId)
 
-      const client = await readyMcp(app, seeded.token)
-      const listed = await client.callTool(app, seeded.token, 'list_tasks', {})
-      const payload = assertToolOk(listed.result)
-      assert.equal(payload.tasks.length, 1)
-      assert.equal(payload.tasks[0].id, brief.id)
-      assertBriefShape(payload.tasks[0])
-      assertNoForgeSecretMaterial(listed.res, INLINE_TOKEN)
+      const res = await postMcp(app, {
+        token: seeded.token,
+        payload: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'list_tasks', arguments: {} } },
+      })
+      assertBearerUnauthorized(res)
+      assert.notEqual(res.statusCode, 202)
+      assertNoForgeSecretMaterial(res, INLINE_TOKEN)
+      assert.equal(brief.id.length > 0, true)
     })
 
     test('get_task_brief returns a top-level brief; missing and numeric ids are isError not_found', async (t) => {
@@ -1060,9 +1085,9 @@ describe('issue #10 MCP server', { concurrency: false }, () => {
       const poster = await loginGitea(app, stub, 'get-brief')
       const { brief } = await createTaskOk(app, poster.cookies)
       const key = await mintAgentKey(app, poster.cookies, 'getter')
-      const client = await readyMcp(app, key.token)
+      const client = await readyMcp(app, key.identity)
 
-      const fetched = await client.callTool(app, key.token, 'get_task_brief', { task_id: brief.id })
+      const fetched = await client.callTool(app, key.identity, 'get_task_brief', { task_id: brief.id })
       const payload = assertToolOk(fetched.result)
       assertBriefShape(payload)
       assert.equal(payload.id, brief.id)
@@ -1071,7 +1096,7 @@ describe('issue #10 MCP server', { concurrency: false }, () => {
       assertNoForgeSecretMaterial(fetched.res, INLINE_TOKEN)
 
       for (const taskId of ['kt-2026-9999', '1']) {
-        const missing = await client.callTool(app, key.token, 'get_task_brief', { task_id: taskId })
+        const missing = await client.callTool(app, key.identity, 'get_task_brief', { task_id: taskId })
         const body = assertToolError(missing.result, { error: 'not_found' })
         assertNoForgeSecretValue(body, JSON.stringify(missing.result), INLINE_TOKEN)
         assertNoForgeSecretMaterial(missing.res, INLINE_TOKEN)
@@ -1086,9 +1111,9 @@ describe('issue #10 MCP server', { concurrency: false }, () => {
       const poster = await loginGitea(app, stub, 'mcp-claim')
       const { brief } = await createTaskOk(app, poster.cookies)
       const key = await mintAgentKey(app, poster.cookies, 'claimer')
-      const client = await readyMcp(app, key.token)
+      const client = await readyMcp(app, key.identity)
 
-      const called = await client.callTool(app, key.token, 'claim_task', { task_id: brief.id })
+      const called = await client.callTool(app, key.identity, 'claim_task', { task_id: brief.id })
       const envelope = assertToolOk(called.result)
       assertClaimEnvelope(envelope, {
         forgeToken: INLINE_TOKEN,
@@ -1116,9 +1141,9 @@ describe('issue #10 MCP server', { concurrency: false }, () => {
       )
       assert.notEqual(firstBrief.id, secondBrief.id)
       const key = await mintAgentKey(app, poster.cookies, 'mcp-switch-bot')
-      const client = await readyMcp(app, key.token)
+      const client = await readyMcp(app, key.identity)
 
-      const first = await client.callTool(app, key.token, 'claim_task', { task_id: firstBrief.id })
+      const first = await client.callTool(app, key.identity, 'claim_task', { task_id: firstBrief.id })
       const firstBody = assertClaimEnvelope(assertToolOk(first.result), {
         forgeToken: INLINE_TOKEN,
         suggestedDir: firstBrief.repo.suggested_dir,
@@ -1126,7 +1151,7 @@ describe('issue #10 MCP server', { concurrency: false }, () => {
       })
       assert.equal(firstBody.task.id, firstBrief.id)
 
-      const second = await client.callTool(app, key.token, 'claim_task', { task_id: secondBrief.id })
+      const second = await client.callTool(app, key.identity, 'claim_task', { task_id: secondBrief.id })
       const secondBody = assertClaimEnvelope(assertToolOk(second.result), {
         forgeToken: PROFILE_TOKEN,
         suggestedDir: secondBrief.repo.suggested_dir,
@@ -1158,8 +1183,8 @@ describe('issue #10 MCP server', { concurrency: false }, () => {
         }),
       )
       const key = await mintAgentKey(app, poster.cookies, 'gh-claimer')
-      const client = await readyMcp(app, key.token)
-      const called = await client.callTool(app, key.token, 'claim_task', { task_id: brief.id })
+      const client = await readyMcp(app, key.identity)
+      const called = await client.callTool(app, key.identity, 'claim_task', { task_id: brief.id })
       const envelope = assertToolOk(called.result)
       assertClaimEnvelope(envelope, {
         forgeToken: GITHUB_FORGE_TOKEN,
@@ -1192,8 +1217,8 @@ describe('issue #10 MCP server', { concurrency: false }, () => {
         }),
       )
       const key = await mintAgentKey(app, poster.cookies, 'gl-claimer')
-      const client = await readyMcp(app, key.token)
-      const called = await client.callTool(app, key.token, 'claim_task', { task_id: brief.id })
+      const client = await readyMcp(app, key.identity)
+      const called = await client.callTool(app, key.identity, 'claim_task', { task_id: brief.id })
       const envelope = assertToolOk(called.result)
       assertClaimEnvelope(envelope, {
         forgeToken: GITLAB_FORGE_TOKEN,
@@ -1207,49 +1232,56 @@ describe('issue #10 MCP server', { concurrency: false }, () => {
       assert.equal(envelope.clone.remote_url.includes('%2F'), false)
     })
 
-    test('pending claim_task is isError matching REST 403, reveals no token, and writes no token 揭示', async (t) => {
+    test('leftover ktk_ Bearer cannot claim_task: 401 unauthorized, no token 揭示', async (t) => {
       const sqlitePath = sqliteFile(t)
       const { app, stub } = await boot(t, sqlitePath)
       const member = await loginGitea(app, stub, 'pending-claim-owner')
-      const pending = await loginGithub(app, stub, 'pending-claimer')
-      assert.equal(pending.body.status, '待批准')
       const { brief } = await createTaskOk(app, member.cookies)
       const db = openDb(t, sqlitePath)
-      const seeded = seedAgentKey(db, pending.body.id)
+      db.$client
+        .prepare(
+          `INSERT INTO users (provider, remote_id, username, display_name, status, permission_level, trusted_automation)
+           VALUES ('github', '60223', 'gh-leftover-claimer', 'Leftover Claimer', '待批准', 'claim_only', 0)`,
+        )
+        .run()
+      const leftoverId = db.$client.prepare("SELECT id FROM users WHERE username = 'gh-leftover-claimer'").get().id
+      const seeded = seedAgentKey(db, leftoverId)
       assert.equal(claimRevealEvents(db, brief.id).length, 0)
 
-      const client = await readyMcp(app, seeded.token)
-      const called = await client.callTool(app, seeded.token, 'claim_task', { task_id: brief.id })
-      const body = assertToolError(called.result, {
-        error: 'forbidden',
-        message: PENDING_CLAIM_MESSAGE,
+      const res = await postMcp(app, {
+        token: seeded.token,
+        payload: {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/call',
+          params: { name: 'claim_task', arguments: { task_id: brief.id } },
+        },
       })
-      assert.equal(Object.hasOwn(body, 'token'), false)
-      assertNoForgeSecretValue(called.result, JSON.stringify(called.result), INLINE_TOKEN)
-      assertNoForgeSecretMaterial(called.res, INLINE_TOKEN)
+      assertBearerUnauthorized(res)
+      assert.notEqual(res.statusCode, 202)
+      assertNoForgeSecretMaterial(res, INLINE_TOKEN)
       assert.equal(claimRevealEvents(db, brief.id).length, 0)
-      assert.equal(eventsOfType(db, TOKEN_REVEAL_EVENT).length, 0)
     })
 
     test('second claim_task is conflict; list_tasks and get_task_brief still omit the forge token', async (t) => {
       const sqlitePath = sqliteFile(t)
-      const { app, stub } = await boot(t, sqlitePath)
+      const { app, stub } = await boot(t, sqlitePath, { admins: 'gitlab:gl-rival' })
       const poster = await loginGitea(app, stub, 'second-claim')
       const other = await loginGitlab(app, stub, 'rival')
       const { brief } = await createTaskOk(app, poster.cookies)
       const firstKey = await mintAgentKey(app, poster.cookies, 'holder')
       const rivalKey = await mintAgentKey(app, other.cookies, 'rival')
-      const holder = await readyMcp(app, firstKey.token)
-      const rival = await readyMcp(app, rivalKey.token)
+      const holder = await readyMcp(app, firstKey.identity)
+      const rival = await readyMcp(app, rivalKey.identity)
 
-      const first = await holder.callTool(app, firstKey.token, 'claim_task', { task_id: brief.id })
+      const first = await holder.callTool(app, firstKey.identity, 'claim_task', { task_id: brief.id })
       const envelope = assertToolOk(first.result)
       assert.equal(envelope.token, INLINE_TOKEN)
 
       const db = openDb(t, sqlitePath)
       assert.equal(claimRevealEvents(db, brief.id).length, 1)
 
-      const retry = await holder.callTool(app, firstKey.token, 'claim_task', { task_id: brief.id })
+      const retry = await holder.callTool(app, firstKey.identity, 'claim_task', { task_id: brief.id })
       const retryBody = assertToolError(retry.result, {
         error: 'conflict',
         message: TASK_ALREADY_CLAIMED_MESSAGE,
@@ -1258,18 +1290,18 @@ describe('issue #10 MCP server', { concurrency: false }, () => {
       assertNoForgeSecretValue(retry.result, JSON.stringify(retry.result), INLINE_TOKEN)
       assertNoForgeSecretMaterial(retry.res, INLINE_TOKEN)
 
-      const rivalCall = await rival.callTool(app, rivalKey.token, 'claim_task', { task_id: brief.id })
+      const rivalCall = await rival.callTool(app, rivalKey.identity, 'claim_task', { task_id: brief.id })
       assertToolError(rivalCall.result, { error: 'conflict', message: TASK_ALREADY_CLAIMED_MESSAGE })
       assertNoForgeSecretMaterial(rivalCall.res, INLINE_TOKEN)
       assert.equal(claimRevealEvents(db, brief.id).length, 1)
 
-      const listed = await holder.callTool(app, firstKey.token, 'list_tasks', {})
+      const listed = await holder.callTool(app, firstKey.identity, 'list_tasks', {})
       const listPayload = assertToolOk(listed.result)
       assert.equal(listPayload.tasks[0].status, '进行中')
       assertBriefShape(listPayload.tasks[0])
       assertNoForgeSecretMaterial(listed.res, INLINE_TOKEN)
 
-      const fetched = await holder.callTool(app, firstKey.token, 'get_task_brief', { task_id: brief.id })
+      const fetched = await holder.callTool(app, firstKey.identity, 'get_task_brief', { task_id: brief.id })
       const briefPayload = assertToolOk(fetched.result)
       assert.equal(briefPayload.status, '进行中')
       assertBriefShape(briefPayload)
@@ -1285,11 +1317,11 @@ describe('issue #10 MCP server', { concurrency: false }, () => {
       const poster = await loginGitea(app, stub, 'mcp-progress')
       const { brief } = await createTaskOk(app, poster.cookies)
       const key = await mintAgentKey(app, poster.cookies, 'heart')
-      const claimed = await claimTaskHttp(app, { token: key.token, publicId: brief.id })
+      const claimed = await claimTaskHttp(app, { token: key.identity, publicId: brief.id })
       assert.equal(claimed.statusCode, 201, `REST claim: ${claimed.statusCode} ${claimed.body}`)
-      const client = await readyMcp(app, key.token)
+      const client = await readyMcp(app, key.identity)
 
-      const omitted = await client.callTool(app, key.token, 'report_progress', { task_id: brief.id })
+      const omitted = await client.callTool(app, key.identity, 'report_progress', { task_id: brief.id })
       const omitPayload = assertToolOk(omitted.result)
       assert.deepEqual(Object.keys(omitPayload).sort(), ['lease', 'task'])
       assertBriefShape(omitPayload.task)
@@ -1301,7 +1333,7 @@ describe('issue #10 MCP server', { concurrency: false }, () => {
       assertNoForgeSecretMaterial(omitted.res, INLINE_TOKEN)
 
       clock.advanceMs(60 * 1000)
-      const noted = await client.callTool(app, key.token, 'report_progress', {
+      const noted = await client.callTool(app, key.identity, 'report_progress', {
         task_id: brief.id,
         note: '正在写分页测试',
       })
@@ -1325,16 +1357,16 @@ describe('issue #10 MCP server', { concurrency: false }, () => {
       const second = await createTaskOk(app, poster.cookies, taskPayload({ title: '第二张' }))
       const key = await mintAgentKey(app, poster.cookies, 'releaser')
       assert.equal(
-        (await claimTaskHttp(app, { token: key.token, publicId: first.brief.id })).statusCode,
+        (await claimTaskHttp(app, { token: key.identity, publicId: first.brief.id })).statusCode,
         201,
       )
       assert.equal(
-        (await claimTaskHttp(app, { token: key.token, publicId: second.brief.id })).statusCode,
+        (await claimTaskHttp(app, { token: key.identity, publicId: second.brief.id })).statusCode,
         201,
       )
-      const client = await readyMcp(app, key.token)
+      const client = await readyMcp(app, key.identity)
 
-      const omitted = await client.callTool(app, key.token, 'release_task', { task_id: first.brief.id })
+      const omitted = await client.callTool(app, key.identity, 'release_task', { task_id: first.brief.id })
       const omitPayload = assertToolOk(omitted.result)
       assert.deepEqual(Object.keys(omitPayload).sort(), ['task'])
       assertBriefShape(omitPayload.task)
@@ -1342,7 +1374,7 @@ describe('issue #10 MCP server', { concurrency: false }, () => {
       assertNoForgeSecretValue(omitPayload, JSON.stringify(omitPayload), INLINE_TOKEN)
       assertNoForgeSecretMaterial(omitted.res, INLINE_TOKEN)
 
-      const reasoned = await client.callTool(app, key.token, 'release_task', {
+      const reasoned = await client.callTool(app, key.identity, 'release_task', {
         task_id: second.brief.id,
         reason: '换人做',
       })
@@ -1375,26 +1407,26 @@ describe('issue #10 MCP server', { concurrency: false }, () => {
     })
 
     test('non-holder report_progress and release_task are isError forbidden with no message', async (t) => {
-      const { app, stub } = await boot(t)
+      const { app, stub } = await boot(t, { admins: 'gitlab:gl-bystander' })
       const poster = await loginGitea(app, stub, 'holder')
       const other = await loginGitlab(app, stub, 'bystander')
       const { brief } = await createTaskOk(app, poster.cookies)
       const holderKey = await mintAgentKey(app, poster.cookies, 'holder-key')
       const otherKey = await mintAgentKey(app, other.cookies, 'bystander-key')
       assert.equal(
-        (await claimTaskHttp(app, { token: holderKey.token, publicId: brief.id })).statusCode,
+        (await claimTaskHttp(app, { token: holderKey.identity, publicId: brief.id })).statusCode,
         201,
       )
-      const bystander = await readyMcp(app, otherKey.token)
+      const bystander = await readyMcp(app, otherKey.identity)
 
-      const progressed = await bystander.callTool(app, otherKey.token, 'report_progress', {
+      const progressed = await bystander.callTool(app, otherKey.identity, 'report_progress', {
         task_id: brief.id,
         note: 'nope',
       })
       assertToolError(progressed.result, { error: 'forbidden', omitMessage: true })
       assertNoForgeSecretMaterial(progressed.res, INLINE_TOKEN)
 
-      const released = await bystander.callTool(app, otherKey.token, 'release_task', {
+      const released = await bystander.callTool(app, otherKey.identity, 'release_task', {
         task_id: brief.id,
         reason: 'nope',
       })
@@ -1407,13 +1439,13 @@ describe('issue #10 MCP server', { concurrency: false }, () => {
       const poster = await loginGitea(app, stub, 'never-claimed')
       const { brief } = await createTaskOk(app, poster.cookies)
       const key = await mintAgentKey(app, poster.cookies, 'idle')
-      const client = await readyMcp(app, key.token)
+      const client = await readyMcp(app, key.identity)
 
-      const progressed = await client.callTool(app, key.token, 'report_progress', { task_id: brief.id })
+      const progressed = await client.callTool(app, key.identity, 'report_progress', { task_id: brief.id })
       assertToolError(progressed.result, { error: 'conflict', message: TASK_NOT_CLAIMED_MESSAGE })
       assertNoForgeSecretMaterial(progressed.res, INLINE_TOKEN)
 
-      const released = await client.callTool(app, key.token, 'release_task', { task_id: brief.id })
+      const released = await client.callTool(app, key.identity, 'release_task', { task_id: brief.id })
       assertToolError(released.result, { error: 'conflict', message: TASK_NOT_CLAIMED_MESSAGE })
       assertNoForgeSecretMaterial(released.res, INLINE_TOKEN)
     })
@@ -1427,10 +1459,10 @@ describe('issue #10 MCP server', { concurrency: false }, () => {
       const { brief } = await createTaskOk(app, poster.cookies)
       const key = await mintAgentKey(app, poster.cookies, 'submitter')
       assert.equal(
-        (await claimTaskHttp(app, { token: key.token, publicId: brief.id })).statusCode,
+        (await claimTaskHttp(app, { token: key.identity, publicId: brief.id })).statusCode,
         201,
       )
-      const client = await readyMcp(app, key.token)
+      const client = await readyMcp(app, key.identity)
       const prUrl = `${FORGE_BASE_URL}/${REPO_FULL_NAME}/pulls/7`
       const summary = '分页导出已提交'
 
@@ -1439,7 +1471,7 @@ describe('issue #10 MCP server', { concurrency: false }, () => {
       const lease = activeLeaseRows(db, task.id)[0]
       assert.ok(lease, 'setup: expected an active lease before submit_pr')
 
-      const called = await client.callTool(app, key.token, 'submit_pr', {
+      const called = await client.callTool(app, key.identity, 'submit_pr', {
         task_id: brief.id,
         pr_url: prUrl,
         summary,
@@ -1483,7 +1515,7 @@ describe('issue #10 MCP server', { concurrency: false }, () => {
 
     test('submit_pr fails for non-holder, no lease, and not 进行中', async (t) => {
       const sqlitePath = sqliteFile(t)
-      const { app, stub } = await boot(t, sqlitePath)
+      const { app, stub } = await boot(t, sqlitePath, { admins: 'gitlab:gl-submit-fail-other' })
       const poster = await loginGitea(app, stub, 'submit-fail-owner')
       const other = await loginGitlab(app, stub, 'submit-fail-other')
       const live = await createTaskOk(app, poster.cookies)
@@ -1492,38 +1524,38 @@ describe('issue #10 MCP server', { concurrency: false }, () => {
       const holderKey = await mintAgentKey(app, poster.cookies, 'holder')
       const otherKey = await mintAgentKey(app, other.cookies, 'other')
       assert.equal(
-        (await claimTaskHttp(app, { token: holderKey.token, publicId: live.brief.id })).statusCode,
+        (await claimTaskHttp(app, { token: holderKey.identity, publicId: live.brief.id })).statusCode,
         201,
       )
       assert.equal(
-        (await claimTaskHttp(app, { token: holderKey.token, publicId: cancelled.brief.id })).statusCode,
+        (await claimTaskHttp(app, { token: holderKey.identity, publicId: cancelled.brief.id })).statusCode,
         201,
       )
       const db = openDb(t, sqlitePath)
       forceStatus(db, cancelled.brief.id, '已取消')
 
-      const holder = await readyMcp(app, holderKey.token)
-      const bystander = await readyMcp(app, otherKey.token)
+      const holder = await readyMcp(app, holderKey.identity)
+      const bystander = await readyMcp(app, otherKey.identity)
       const args = {
         pr_url: `${FORGE_BASE_URL}/${REPO_FULL_NAME}/pulls/8`,
         summary: '不应成功',
       }
 
-      const nonHolder = await bystander.callTool(app, otherKey.token, 'submit_pr', {
+      const nonHolder = await bystander.callTool(app, otherKey.identity, 'submit_pr', {
         task_id: live.brief.id,
         ...args,
       })
       assertToolError(nonHolder.result, { error: 'forbidden', omitMessage: true })
       assertNoForgeSecretMaterial(nonHolder.res, INLINE_TOKEN)
 
-      const noLease = await holder.callTool(app, holderKey.token, 'submit_pr', {
+      const noLease = await holder.callTool(app, holderKey.identity, 'submit_pr', {
         task_id: unused.brief.id,
         ...args,
       })
       assertToolError(noLease.result, { error: 'conflict', message: TASK_NOT_CLAIMED_MESSAGE })
       assertNoForgeSecretMaterial(noLease.res, INLINE_TOKEN)
 
-      const notInProgress = await holder.callTool(app, holderKey.token, 'submit_pr', {
+      const notInProgress = await holder.callTool(app, holderKey.identity, 'submit_pr', {
         task_id: cancelled.brief.id,
         ...args,
       })

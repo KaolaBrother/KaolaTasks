@@ -5,7 +5,7 @@ import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import * as z from 'zod'
-import { addAgentBearerHook, sendBearerUnauthorized } from './agent-bearer.ts'
+import { addDeviceProofHook, sendDeviceUnauthorized } from './device-proof.ts'
 import {
   CLONE_TOKEN_USAGE,
   type AgentPrincipal,
@@ -167,9 +167,9 @@ async function handleMcpPost(
   request: FastifyRequest,
   reply: FastifyReply,
 ): Promise<void> {
-  const auth = request.agentAuth
+  const auth = request.deviceAuth
   if (auth == null) {
-    sendBearerUnauthorized(reply)
+    sendDeviceUnauthorized(reply)
     return
   }
 
@@ -225,8 +225,8 @@ async function handleMcpPost(
 }
 
 export function registerMcp(app: FastifyInstance, db: AppDb) {
-  app.register(async function mcpBearerContext(child) {
-    addAgentBearerHook(child, db)
+  app.register(async function mcpDeviceContext(child) {
+    addDeviceProofHook(child, db)
 
     const sessions = new Map<string, McpSession>()
     child.addHook('onClose', async () => {

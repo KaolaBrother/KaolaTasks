@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { injectSigned, pairDeviceToSelf } from './device-proof.test-helpers.ts'
 
 // Issue #15 — GET /api/v1/events + GET /api/v1/stats. Neither route exists yet (verified by
 // grepping every app.get|post|patch|delete( call site in apps/server/src — see
@@ -231,30 +232,6 @@ async function loginGitea(app, stub, label = 'gitea') {
   return loginViaCallback(app, { ...PROVIDERS.gitea, accessToken })
 }
 
-async function loginGithub(app, stub, label = 'github') {
-  const accessToken = nextAccessToken(label)
-  stub.oauth.set(accessToken, {
-    id: 60000 + tokenSeq,
-    login: `gh-${label}`,
-    name: `Octo ${label}`,
-  })
-  return loginViaCallback(app, { ...PROVIDERS.github, accessToken })
-}
-
-async function approveUser(app, memberCookies, userId) {
-  const approve = await app.inject({
-    method: 'POST',
-    url: `/api/v1/users/${userId}/approve`,
-    cookies: memberCookies,
-    headers: jsonHeaders,
-  })
-  assert.ok(
-    approve.statusCode >= 200 && approve.statusCode < 300,
-    `approve should succeed, got ${approve.statusCode}: ${approve.body}`,
-  )
-  return approve
-}
-
 function jsonBody(res) {
   try {
     return res.json()
@@ -306,19 +283,20 @@ function bearerHeaders(token) {
 }
 
 async function mintAgentKey(app, cookies, label = 'agent') {
-  const res = await app.inject({
-    method: 'POST',
-    url: '/api/v1/agent-keys',
-    cookies,
-    headers: jsonHeaders,
-    payload: { label },
-  })
-  assert.equal(res.statusCode, 201, `POST /api/v1/agent-keys: ${res.statusCode} ${res.body}`)
-  const body = jsonBody(res)
-  return { id: body.id, token: body.token }
+  const paired = await pairDeviceToSelf(app, cookies, { hostname: label })
+  return { id: paired.deviceId, identity: paired.identity, deviceId: paired.deviceId }
 }
 
-async function claimTask(app, { token, publicId }) {
+async function claimTask(app, { token, identity, publicId }) {
+  const proof = identity ?? (token && typeof token === 'object' && token.privateKey ? token : null)
+  if (proof != null) {
+    return injectSigned(app, proof, {
+      method: 'POST',
+      url: `/api/v1/tasks/${publicId}/claim`,
+      payload: {},
+      extraHeaders: { accept: 'application/json', 'content-type': 'application/json' },
+    })
+  }
   return app.inject({
     method: 'POST',
     url: `/api/v1/tasks/${publicId}/claim`,
@@ -326,7 +304,16 @@ async function claimTask(app, { token, publicId }) {
   })
 }
 
-async function progressTask(app, { token, publicId, payload }) {
+async function progressTask(app, { token, identity, publicId, payload }) {
+  const proof = identity ?? (token && typeof token === 'object' && token.privateKey ? token : null)
+  if (proof != null) {
+    return injectSigned(app, proof, {
+      method: 'POST',
+      url: `/api/v1/tasks/${publicId}/progress`,
+      payload: payload ?? {},
+      extraHeaders: { accept: 'application/json', 'content-type': 'application/json' },
+    })
+  }
   const req = {
     method: 'POST',
     url: `/api/v1/tasks/${publicId}/progress`,
@@ -410,8 +397,20 @@ describe('issue #15 audit log HTTP + team stats', { concurrency: false }, () => 
     })
 
     test('待批准 GitHub user is 401 on events and stats (never sees the member workbench)', async (t) => {
-      const { app, stub } = await boot(t)
-      const pending = await loginGithub(app, stub, 'events-pending')
+      const sqlitePath = sqliteFile(t)
+      const db = openDb(t, sqlitePath)
+      db.$client
+        .prepare(
+          `INSERT INTO users (provider, remote_id, username, display_name, status, permission_level, trusted_automation)
+           VALUES ('github', '2222', 'gh-events-pending', 'Pending Events', '待批准', 'claim_only', 0)`,
+        )
+        .run()
+      const app = await createApp(t, sqlitePath)
+      const stub = beginFetch(t)
+      allowForgeToken(stub, INLINE_TOKEN)
+      const leftoverToken = nextAccessToken('events-pending')
+      stub.oauth.set(leftoverToken, { id: 2222, login: 'gh-events-pending', name: 'Pending Events' })
+      const pending = await loginViaCallback(app, { ...PROVIDERS.github, accessToken: leftoverToken })
       assert.equal(pending.body.status, '待批准')
 
       assertUnauthorized(await getEvents(app, pending.cookies))
@@ -419,10 +418,21 @@ describe('issue #15 audit log HTTP + team stats', { concurrency: false }, () => 
     })
 
     test('approved claim_only user can read events and stats, same as the board', async (t) => {
-      const { app, stub } = await boot(t)
+      const sqlitePath = sqliteFile(t)
+      const db = openDb(t, sqlitePath)
+      db.$client
+        .prepare(
+          `INSERT INTO users (provider, remote_id, username, display_name, status, permission_level, trusted_automation)
+           VALUES ('github', '3333', 'gh-events-claim-only', 'Claim Only Events', 'active', 'claim_only', 0)`,
+        )
+        .run()
+      const app = await createApp(t, sqlitePath)
+      const stub = beginFetch(t)
+      allowForgeToken(stub, INLINE_TOKEN)
       const owner = await loginGitea(app, stub, 'events-owner')
-      const github = await loginGithub(app, stub, 'events-claim-only')
-      await approveUser(app, owner.cookies, github.body.id)
+      const leftoverToken = nextAccessToken('events-claim-only')
+      stub.oauth.set(leftoverToken, { id: 3333, login: 'gh-events-claim-only', name: 'Claim Only Events' })
+      const github = await loginViaCallback(app, { ...PROVIDERS.github, accessToken: leftoverToken })
       const me = await app.inject({
         method: 'GET',
         url: '/api/v1/me',
@@ -431,6 +441,7 @@ describe('issue #15 audit log HTTP + team stats', { concurrency: false }, () => 
       })
       assert.equal(me.json().status, 'active')
       assert.equal(me.json().permission_level, 'claim_only')
+      assert.notEqual(Number(github.body.id), Number(owner.body.id))
 
       const events = await getEvents(app, github.cookies)
       assert.equal(events.statusCode, 200, `claim_only GET events: ${events.statusCode} ${events.body}`)
@@ -482,7 +493,7 @@ describe('issue #15 audit log HTTP + team stats', { concurrency: false }, () => 
       const poster = await loginGitea(app, stub, 'events-writers')
       const { brief, key } = await pipeAndClaim(app, poster.cookies)
 
-      const progressed = await progressTask(app, { token: key.token, publicId: brief.id, payload: { note: '写测试' } })
+      const progressed = await progressTask(app, { token: key.identity, publicId: brief.id, payload: { note: '写测试' } })
       assert.equal(progressed.statusCode, 200, `progress: ${progressed.statusCode} ${progressed.body}`)
 
       const res = await getEvents(app, poster.cookies)
@@ -495,7 +506,7 @@ describe('issue #15 audit log HTTP + team stats', { concurrency: false }, () => 
       assert.equal(reveal[0].actor_username, poster.body.username)
       assert.deepEqual(reveal[0].details, {
         task_id: brief.id,
-        agent_key_id: key.id,
+        device_id: key.id,
         credential: 'inline',
       })
 
@@ -554,8 +565,14 @@ describe('issue #15 audit log HTTP + team stats', { concurrency: false }, () => 
       const stub = beginFetch(t)
       allowForgeToken(stub, INLINE_TOKEN)
       const alice = await loginGitea(app, stub, 'stats-alice')
-      const bob = await loginGitea(app, stub, 'stats-bob')
       const db = openDb(t, sqlitePath)
+      db.$client
+        .prepare(
+          `INSERT INTO users (provider, remote_id, username, display_name, status, permission_level, trusted_automation)
+           VALUES ('gitea', '88001', 'gt-stats-bob', 'Gi Tea stats-bob', 'active', 'full', 0)`,
+        )
+        .run()
+      const bob = db.$client.prepare("SELECT id, username FROM users WHERE username = 'gt-stats-bob'").get()
       const now = Math.floor(Date.now() / 1000)
 
       // Two system (null-actor) completions — the poller's real write shape (poller.ts /
@@ -584,13 +601,13 @@ describe('issue #15 audit log HTTP + team stats', { concurrency: false }, () => 
       // Noise that must NOT count: a non-completion transition, and a heartbeat.
       insertRawEvent(db, {
         type: STATUS_TRANSITION_EVENT,
-        actorUserId: bob.body.id,
+        actorUserId: bob.id,
         createdAt: now,
         details: { task_id: 'kt-2026-9004', from: '进行中', to: '待验收' },
       })
       insertRawEvent(db, {
         type: HEARTBEAT_EVENT,
-        actorUserId: bob.body.id,
+        actorUserId: bob.id,
         createdAt: now,
         details: { task_id: 'kt-2026-9004', note: '' },
       })
@@ -604,7 +621,7 @@ describe('issue #15 audit log HTTP + team stats', { concurrency: false }, () => 
         [SYSTEM_ACTOR_LABEL]: 2,
         [alice.body.username]: 1,
       })
-      assert.equal(Object.hasOwn(body.completed_by_username, bob.body.username), false)
+      assert.equal(Object.hasOwn(body.completed_by_username, bob.username), false)
       assertNoSecretMaterial(res, INLINE_TOKEN)
     })
 
@@ -630,7 +647,7 @@ describe('issue #15 audit log HTTP + team stats', { concurrency: false }, () => 
 async function pipeAndClaim(app, posterCookies) {
   const brief = await createTaskOk(app, posterCookies)
   const key = await mintAgentKey(app, posterCookies, 'events-bot')
-  const claimed = await claimTask(app, { token: key.token, publicId: brief.id })
+  const claimed = await claimTask(app, { token: key.identity, publicId: brief.id })
   assert.equal(claimed.statusCode, 201, `claim: ${claimed.statusCode} ${claimed.body}`)
   return { brief, key }
 }

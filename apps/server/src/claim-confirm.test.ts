@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseTaskBrief } from '@kaola/shared'
 import { createDb } from './db.ts'
+import { injectSigned, pairDeviceToSelf, generateDeviceIdentity } from './device-proof.test-helpers.ts'
 
 // Issue #16 claim-confirmation gate for autonomous polling agents (REST + MCP).
 // Seams copied from claim.test.ts and mcp.test.ts (do not import either). Oracle:
@@ -21,7 +22,6 @@ const REPO_FULL_NAME = 'team/orders'
 
 const INLINE_TOKEN = 'gitea-INLINE-ONE-OFF-TOKEN-zzq7'
 
-const PENDING_CLAIM_MESSAGE = '你的账号待正式成员批准后方可认领任务。'
 const TOKEN_REVEAL_EVENT = 'token 揭示'
 const PENDING_CONFIRM_EVENT = '认领待确认'
 const CONFIRM_APPROVED_EVENT = '认领已确认'
@@ -29,7 +29,6 @@ const TTL_SECONDS = 86400
 const FROZEN_MS = Date.UTC(2026, 7, 21, 4, 0, 0)
 const CLONE_TOKEN_USAGE =
   'token 请通过环境变量或 git -c http.extraHeader 按次传递，不要写入 remote URL（会落盘到 .git/config）。'
-const AGENT_KEY_RE = /^ktk_[0-9a-f]{64}$/
 const MCP_PATH = '/api/mcp'
 const MCP_PROTOCOL_VERSION = '2025-11-25'
 
@@ -233,6 +232,16 @@ function sqliteFile(t) {
   return sqlitePath
 }
 
+function withAdmins(t, spec) {
+  const previous = process.env.KAOLA_ADMINS
+  if (spec == null || spec === '') delete process.env.KAOLA_ADMINS
+  else process.env.KAOLA_ADMINS = spec
+  t.after(() => {
+    if (previous == null) delete process.env.KAOLA_ADMINS
+    else process.env.KAOLA_ADMINS = previous
+  })
+}
+
 async function createApp(t, sqlitePath) {
   const app = buildApp(sqlitePath ? { sqlitePath } : undefined)
   t.after(async () => {
@@ -324,16 +333,6 @@ async function loginGiteaFixed(app, stub, remoteId, label = 'gitea-fixed') {
   return loginViaCallback(app, { ...PROVIDERS.gitea, accessToken })
 }
 
-async function loginGithub(app, stub, label = 'github') {
-  const accessToken = nextAccessToken(label)
-  stub.oauth.set(accessToken, {
-    id: 60000 + tokenSeq,
-    login: `gh-${label}`,
-    name: `Octo ${label}`,
-  })
-  return loginViaCallback(app, { ...PROVIDERS.github, accessToken })
-}
-
 function jsonBody(res) {
   try {
     return res.json()
@@ -393,17 +392,8 @@ function bearerHeaders(token) {
 }
 
 async function mintAgentKey(app, cookies, label = 'agent') {
-  const res = await app.inject({
-    method: 'POST',
-    url: '/api/v1/agent-keys',
-    cookies,
-    headers: jsonHeaders,
-    payload: { label },
-  })
-  assert.equal(res.statusCode, 201, `POST /api/v1/agent-keys: ${res.statusCode} ${res.body}`)
-  const body = jsonBody(res)
-  assert.match(String(body?.token ?? ''), AGENT_KEY_RE)
-  return { id: body.id, token: body.token, label: body.label }
+  const paired = await pairDeviceToSelf(app, cookies, { hostname: label })
+  return { id: paired.deviceId, identity: paired.identity, deviceId: paired.deviceId }
 }
 
 function hashAgentKey(plaintext) {
@@ -422,13 +412,23 @@ function seedAgentKey(db, userId, label = 'seeded-pending') {
 }
 
 // Missing `autonomous` => omit the body entirely (today's real clients send none).
-async function claimTaskAutonomous(app, { token, publicId, autonomous }) {
+async function claimTaskAutonomous(app, { token, identity, publicId, autonomous }) {
+  const proof = identity ?? (token && typeof token === 'object' && token.privateKey ? token : null)
+  const payload = autonomous !== undefined ? { autonomous } : undefined
+  if (proof != null) {
+    return injectSigned(app, proof, {
+      method: 'POST',
+      url: `/api/v1/tasks/${publicId}/claim`,
+      payload: payload ?? {},
+      extraHeaders: { accept: 'application/json', 'content-type': 'application/json' },
+    })
+  }
   const req = {
     method: 'POST',
     url: `/api/v1/tasks/${publicId}/claim`,
     headers: bearerHeaders(token),
   }
-  if (autonomous !== undefined) req.payload = { autonomous }
+  if (payload !== undefined) req.payload = payload
   return app.inject(req)
 }
 
@@ -635,7 +635,7 @@ function eventsOfType(db, type) {
 function claimRevealEvents(db, publicId) {
   return eventsOfType(db, TOKEN_REVEAL_EVENT).filter((event) => {
     const details = parseDetails(event)
-    return details?.task_id === publicId && details?.agent_key_id != null
+    return details?.task_id === publicId && details?.device_id != null
   })
 }
 
@@ -658,17 +658,17 @@ function taskRow(db, publicId) {
 function leaseRows(db, taskPk) {
   return db.$client
     .prepare(
-      'SELECT task_id, claimer_user_id, agent_key_id, claimed_at, expires_at, last_heartbeat, state FROM leases WHERE task_id = ?',
+      'SELECT task_id, claimer_user_id, device_id, claimed_at, expires_at, last_heartbeat, state FROM leases WHERE task_id = ?',
     )
     .all(taskPk)
 }
 
 // `claim_confirmations` schema is pinned by the oracle (orchestrator-rulings.md §16):
-// id, task_id (tasks.id PK, NOT the public_id string), user_id, agent_key_id, state, created_at.
+// id, task_id (tasks.id PK, NOT the public_id string), user_id, device_id, state, created_at.
 function claimConfirmationRows(db, taskPk, userId, agentKeyId) {
   return db.$client
     .prepare(
-      'SELECT id, task_id, user_id, agent_key_id, state, created_at FROM claim_confirmations WHERE task_id = ? AND user_id = ? AND agent_key_id = ?',
+      'SELECT id, task_id, user_id, device_id, state, created_at FROM claim_confirmations WHERE task_id = ? AND user_id = ? AND device_id = ?',
     )
     .all(taskPk, userId, agentKeyId)
 }
@@ -676,7 +676,7 @@ function claimConfirmationRows(db, taskPk, userId, agentKeyId) {
 function seedClaimConfirmation(db, { taskPk, userId, agentKeyId, state, createdAt }) {
   db.$client
     .prepare(
-      'INSERT INTO claim_confirmations (task_id, user_id, agent_key_id, state, created_at) VALUES (?, ?, ?, ?, ?)',
+      'INSERT INTO claim_confirmations (task_id, user_id, device_id, state, created_at) VALUES (?, ?, ?, ?, ?)',
     )
     .run(taskPk, userId, agentKeyId, state, createdAt)
 }
@@ -702,6 +702,20 @@ function mcpHeaders({ token, sessionId, extra } = {}) {
 }
 
 async function postMcp(app, { token, cookies, sessionId, extraHeaders, payload }) {
+  if (token && typeof token === 'object' && token.privateKey) {
+    const extra = {
+      accept: 'application/json, text/event-stream',
+      'content-type': 'application/json',
+      ...(extraHeaders ?? {}),
+    }
+    if (sessionId != null) extra['mcp-session-id'] = sessionId
+    return injectSigned(app, token, {
+      method: 'POST',
+      url: MCP_PATH,
+      payload,
+      extraHeaders: extra,
+    })
+  }
   return app.inject({
     method: 'POST',
     url: MCP_PATH,
@@ -871,7 +885,7 @@ describe('issue #16 claim-confirmation for autonomous polling agents', { concurr
       const second = await createTaskOk(app, poster.cookies, taskPayload({ title: '第二张' }))
       const key = await mintAgentKey(app, poster.cookies, 'instructed')
 
-      const noBody = await claimTaskAutonomous(app, { token: key.token, publicId: first.brief.id })
+      const noBody = await claimTaskAutonomous(app, { token: key.identity, publicId: first.brief.id })
       assertClaim201(noBody, {
         forgeToken: INLINE_TOKEN,
         suggestedDir: first.brief.repo.suggested_dir,
@@ -879,7 +893,7 @@ describe('issue #16 claim-confirmation for autonomous polling agents', { concurr
       })
 
       const explicitFalse = await claimTaskAutonomous(app, {
-        token: key.token,
+        token: key.identity,
         publicId: second.brief.id,
         autonomous: false,
       })
@@ -896,9 +910,9 @@ describe('issue #16 claim-confirmation for autonomous polling agents', { concurr
       const poster = await loginGitea(app, stub, 'instructed-mcp')
       const { brief } = await createTaskOk(app, poster.cookies)
       const key = await mintAgentKey(app, poster.cookies, 'mcp-instructed')
-      const client = await readyMcp(app, key.token)
+      const client = await readyMcp(app, key.identity)
 
-      const called = await client.callTool(app, key.token, 'claim_task', { task_id: brief.id })
+      const called = await client.callTool(app, key.identity, 'claim_task', { task_id: brief.id })
       const envelope = assertToolOk(called.result)
       assertClaimEnvelope(envelope, {
         forgeToken: INLINE_TOKEN,
@@ -926,7 +940,7 @@ describe('issue #16 claim-confirmation for autonomous polling agents', { concurr
         createdAt: clock.unix(),
       })
 
-      const res = await claimTaskAutonomous(app, { token: key.token, publicId: brief.id })
+      const res = await claimTaskAutonomous(app, { token: key.identity, publicId: brief.id })
       assertClaim201(res, {
         forgeToken: INLINE_TOKEN,
         suggestedDir: brief.repo.suggested_dir,
@@ -942,16 +956,21 @@ describe('issue #16 claim-confirmation for autonomous polling agents', { concurr
       const stub = beginFetch(t)
       allowForgeToken(stub, INLINE_TOKEN)
       const member = await loginGitea(app, stub, 'pending-gate-owner')
-      const pending = await loginGithub(app, stub, 'pending-gate-claimer')
-      assert.equal(pending.body.status, '待批准')
       const { brief } = await createTaskOk(app, member.cookies)
       const db = openDb(t, sqlitePath)
-      const seeded = seedAgentKey(db, pending.body.id)
+      db.$client
+        .prepare(
+          `INSERT INTO users (provider, remote_id, username, display_name, status, permission_level, trusted_automation)
+           VALUES ('github', '60333', 'gh-leftover-gate', 'Leftover Gate', '待批准', 'claim_only', 0)`,
+        )
+        .run()
+      const leftoverId = db.$client.prepare("SELECT id FROM users WHERE username = 'gh-leftover-gate'").get().id
+      const seeded = seedAgentKey(db, leftoverId)
 
       const res = await claimTaskAutonomous(app, { token: seeded.token, publicId: brief.id, autonomous: true })
-      assert.equal(res.statusCode, 403, `pending autonomous claim: ${res.statusCode} ${res.body}`)
-      assert.equal(jsonBody(res)?.error, 'forbidden')
-      assert.equal(jsonBody(res)?.message, PENDING_CLAIM_MESSAGE)
+      assert.equal(res.statusCode, 401, `leftover ktk_ autonomous claim: ${res.statusCode} ${res.body}`)
+      assert.deepEqual(jsonBody(res), { error: 'unauthorized' })
+      assert.notEqual(res.statusCode, 202)
       assertNoForgeSecretMaterial(res, INLINE_TOKEN)
       assert.equal(eventsOfType(db, PENDING_CONFIRM_EVENT).length, 0)
     })
@@ -967,7 +986,7 @@ describe('issue #16 claim-confirmation for autonomous polling agents', { concurr
       const { brief } = await createTaskOk(app, poster.cookies)
       const key = await mintAgentKey(app, poster.cookies, 'poller')
 
-      const res = await claimTaskAutonomous(app, { token: key.token, publicId: brief.id, autonomous: true })
+      const res = await claimTaskAutonomous(app, { token: key.identity, publicId: brief.id, autonomous: true })
       assertPending202(res, { secretPlaintexts: [INLINE_TOKEN] })
 
       const db = openDb(t, sqlitePath)
@@ -976,7 +995,7 @@ describe('issue #16 claim-confirmation for autonomous polling agents', { concurr
       const parkedEvents = pendingConfirmEvents(db, brief.id)
       assert.equal(parkedEvents.length, 1, `expected one 认领待确认, got ${JSON.stringify(eventRows(db))}`)
       assert.equal(Number(parkedEvents[0].actor_user_id), Number(poster.body.id))
-      assert.deepEqual(parseDetails(parkedEvents[0]), { task_id: brief.id, agent_key_id: key.id })
+      assert.deepEqual(parseDetails(parkedEvents[0]), { task_id: brief.id, device_id: key.id })
 
       const task = taskRow(db, brief.id)
       assert.equal(task.status, '待认领')
@@ -996,9 +1015,9 @@ describe('issue #16 claim-confirmation for autonomous polling agents', { concurr
       const poster = await loginGitea(app, stub, 'auto-off-mcp')
       const { brief } = await createTaskOk(app, poster.cookies)
       const key = await mintAgentKey(app, poster.cookies, 'mcp-poller')
-      const client = await readyMcp(app, key.token)
+      const client = await readyMcp(app, key.identity)
 
-      const called = await client.callTool(app, key.token, 'claim_task', { task_id: brief.id, autonomous: true })
+      const called = await client.callTool(app, key.identity, 'claim_task', { task_id: brief.id, autonomous: true })
       assert.notEqual(
         called.result?.isError,
         true,
@@ -1022,9 +1041,9 @@ describe('issue #16 claim-confirmation for autonomous polling agents', { concurr
       const { brief } = await createTaskOk(app, poster.cookies)
       const key = await mintAgentKey(app, poster.cookies, 'idempotent')
 
-      const first = await claimTaskAutonomous(app, { token: key.token, publicId: brief.id, autonomous: true })
+      const first = await claimTaskAutonomous(app, { token: key.identity, publicId: brief.id, autonomous: true })
       assertPending202(first, { secretPlaintexts: [INLINE_TOKEN] })
-      const second = await claimTaskAutonomous(app, { token: key.token, publicId: brief.id, autonomous: true })
+      const second = await claimTaskAutonomous(app, { token: key.identity, publicId: brief.id, autonomous: true })
       assertPending202(second, { secretPlaintexts: [INLINE_TOKEN] })
       assert.deepEqual(jsonBody(first), jsonBody(second))
 
@@ -1051,7 +1070,7 @@ describe('issue #16 claim-confirmation for autonomous polling agents', { concurr
       const second = await createTaskOk(app, poster.cookies, taskPayload({ title: '第二张' }))
       const key = await mintAgentKey(app, poster.cookies, 'toggle-bot')
 
-      const stillOff = await claimTaskAutonomous(app, { token: key.token, publicId: first.brief.id, autonomous: true })
+      const stillOff = await claimTaskAutonomous(app, { token: key.identity, publicId: first.brief.id, autonomous: true })
       assertPending202(stillOff, { secretPlaintexts: [INLINE_TOKEN] })
 
       const on = await putSettings(app, poster.cookies, true)
@@ -1062,7 +1081,7 @@ describe('issue #16 claim-confirmation for autonomous polling agents', { concurr
       const meOn = await getMe(app, poster.cookies)
       assert.equal(jsonBody(meOn).trusted_automation, true)
 
-      const throughput = await claimTaskAutonomous(app, { token: key.token, publicId: first.brief.id, autonomous: true })
+      const throughput = await claimTaskAutonomous(app, { token: key.identity, publicId: first.brief.id, autonomous: true })
       assertClaim201(throughput, {
         forgeToken: INLINE_TOKEN,
         suggestedDir: first.brief.repo.suggested_dir,
@@ -1075,7 +1094,7 @@ describe('issue #16 claim-confirmation for autonomous polling agents', { concurr
       assertNoForgeSecretMaterial(off, INLINE_TOKEN)
 
       const backToPending = await claimTaskAutonomous(app, {
-        token: key.token,
+        token: key.identity,
         publicId: second.brief.id,
         autonomous: true,
       })
@@ -1120,7 +1139,7 @@ describe('issue #16 claim-confirmation for autonomous polling agents', { concurr
       const { brief } = await createTaskOk(app, owner.cookies)
       const key = await mintAgentKey(app, owner.cookies, 'approve-bot')
 
-      const parked = await claimTaskAutonomous(app, { token: key.token, publicId: brief.id, autonomous: true })
+      const parked = await claimTaskAutonomous(app, { token: key.identity, publicId: brief.id, autonomous: true })
       assertPending202(parked, { secretPlaintexts: [INLINE_TOKEN] })
 
       const listRes = await getClaimConfirmations(app, owner.cookies)
@@ -1140,23 +1159,24 @@ describe('issue #16 claim-confirmation for autonomous polling agents', { concurr
       const approved = confirmApprovedEvents(db, brief.id)
       assert.equal(approved.length, 1, `expected one 认领已确认, got ${JSON.stringify(eventRows(db))}`)
       assert.equal(Number(approved[0].actor_user_id), Number(owner.body.id))
-      assert.deepEqual(parseDetails(approved[0]), { task_id: brief.id, agent_key_id: key.id })
+      assert.deepEqual(parseDetails(approved[0]), { task_id: brief.id, device_id: key.id })
 
-      const retry = await claimTaskAutonomous(app, { token: key.token, publicId: brief.id, autonomous: true })
+      const retry = await claimTaskAutonomous(app, { token: key.identity, publicId: brief.id, autonomous: true })
       assertClaim201(retry, {
         forgeToken: INLINE_TOKEN,
         suggestedDir: brief.repo.suggested_dir,
         nowUnix: clock.unix(),
       })
 
-      const release = await app.inject({
+      const release = await injectSigned(app, key.identity, {
         method: 'POST',
         url: `/api/v1/tasks/${brief.id}/release`,
-        headers: bearerHeaders(key.token),
+        payload: {},
+        extraHeaders: { accept: 'application/json', 'content-type': 'application/json' },
       })
       assert.equal(release.statusCode, 200, `setup release: ${release.statusCode} ${release.body}`)
 
-      const staleReplay = await claimTaskAutonomous(app, { token: key.token, publicId: brief.id, autonomous: true })
+      const staleReplay = await claimTaskAutonomous(app, { token: key.identity, publicId: brief.id, autonomous: true })
       assert.equal(
         staleReplay.statusCode,
         202,
@@ -1170,9 +1190,9 @@ describe('issue #16 claim-confirmation for autonomous polling agents', { concurr
       const owner = await loginGitea(app, stub, 'mcp-approve-owner')
       const { brief } = await createTaskOk(app, owner.cookies)
       const key = await mintAgentKey(app, owner.cookies, 'mcp-approve-bot')
-      const client = await readyMcp(app, key.token)
+      const client = await readyMcp(app, key.identity)
 
-      const parked = await client.callTool(app, key.token, 'claim_task', { task_id: brief.id, autonomous: true })
+      const parked = await client.callTool(app, key.identity, 'claim_task', { task_id: brief.id, autonomous: true })
       const pendingBody = toolStructured(parked.result)
       assert.equal(pendingBody.pending, true)
       assert.equal(Object.hasOwn(pendingBody, 'token'), false)
@@ -1183,7 +1203,7 @@ describe('issue #16 claim-confirmation for autonomous polling agents', { concurr
       const approve = await approveConfirmation(app, owner.cookies, list[0].id)
       assert.equal(approve.statusCode, 200, `approve: ${approve.statusCode} ${approve.body}`)
 
-      const retry = await client.callTool(app, key.token, 'claim_task', { task_id: brief.id, autonomous: true })
+      const retry = await client.callTool(app, key.identity, 'claim_task', { task_id: brief.id, autonomous: true })
       const envelope = assertToolOk(retry.result)
       assertClaimEnvelope(envelope, {
         forgeToken: INLINE_TOKEN,
@@ -1201,7 +1221,7 @@ describe('issue #16 claim-confirmation for autonomous polling agents', { concurr
       const { brief } = await createTaskOk(app, owner.cookies)
       const key = await mintAgentKey(app, owner.cookies, 'reject-bot')
 
-      const parked = await claimTaskAutonomous(app, { token: key.token, publicId: brief.id, autonomous: true })
+      const parked = await claimTaskAutonomous(app, { token: key.identity, publicId: brief.id, autonomous: true })
       assertPending202(parked, { secretPlaintexts: [INLINE_TOKEN] })
       const listRes = await getClaimConfirmations(app, owner.cookies)
       const confirmationId = jsonBody(listRes).confirmations[0].id
@@ -1213,7 +1233,7 @@ describe('issue #16 claim-confirmation for autonomous polling agents', { concurr
       const db = openDb(t, sqlitePath)
       assert.equal(claimRevealEvents(db, brief.id).length, 0)
 
-      const retry = await claimTaskAutonomous(app, { token: key.token, publicId: brief.id, autonomous: true })
+      const retry = await claimTaskAutonomous(app, { token: key.identity, publicId: brief.id, autonomous: true })
       assertPending202(retry, { secretPlaintexts: [INLINE_TOKEN] })
 
       const listAfterRes = await getClaimConfirmations(app, owner.cookies)
@@ -1228,6 +1248,7 @@ describe('issue #16 claim-confirmation for autonomous polling agents', { concurr
 
     test("approve/reject on another user's confirmation id is 404; GET list only shows the current user's rows", async (t) => {
       const sqlitePath = sqliteFile(t)
+      withAdmins(t, 'gitlab:gl-other-user-b')
       const app = await createApp(t, sqlitePath)
       const stub = beginFetch(t)
       allowForgeToken(stub, INLINE_TOKEN)
@@ -1236,7 +1257,7 @@ describe('issue #16 claim-confirmation for autonomous polling agents', { concurr
       const { brief } = await createTaskOk(app, ownerA.cookies)
       const keyA = await mintAgentKey(app, ownerA.cookies, 'a-bot')
 
-      const parked = await claimTaskAutonomous(app, { token: keyA.token, publicId: brief.id, autonomous: true })
+      const parked = await claimTaskAutonomous(app, { token: keyA.identity, publicId: brief.id, autonomous: true })
       assertPending202(parked, { secretPlaintexts: [INLINE_TOKEN] })
       const listARes = await getClaimConfirmations(app, ownerA.cookies)
       const listA = jsonBody(listARes).confirmations
@@ -1266,7 +1287,7 @@ describe('issue #16 claim-confirmation for autonomous polling agents', { concurr
       const owner = await loginGitea(app, stub, 'session-auth-only')
       const { brief } = await createTaskOk(app, owner.cookies)
       const key = await mintAgentKey(app, owner.cookies, 'session-auth-bot')
-      const parked = await claimTaskAutonomous(app, { token: key.token, publicId: brief.id, autonomous: true })
+      const parked = await claimTaskAutonomous(app, { token: key.identity, publicId: brief.id, autonomous: true })
       assertPending202(parked, { secretPlaintexts: [INLINE_TOKEN] })
 
       const noSession = await app.inject({
@@ -1283,12 +1304,60 @@ describe('issue #16 claim-confirmation for autonomous polling agents', { concurr
       const bearerOnly = await app.inject({
         method: 'GET',
         url: '/api/v1/claim-confirmations',
-        headers: bearerHeaders(key.token),
+        headers: bearerHeaders(key.identity),
       })
       assert.notEqual(
         bearerOnly.statusCode,
         200,
         'Bearer Agent Key alone must not authorize the session-only claim-confirmations endpoint',
+      )
+    })
+
+    test('claimant-owned device skips #16: autonomous claim is 201 with token, no confirmation row', async (t) => {
+      const clock = freezeNow(t)
+      const { app, stub } = await boot(t)
+      const admin = await loginGitea(app, stub, 'claimant-skip-admin')
+      const { brief } = await createTaskOk(app, admin.cookies)
+      const identity = generateDeviceIdentity()
+      const unpaired = await injectSigned(app, identity, {
+        method: 'POST',
+        url: '/api/mcp',
+        payload: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'claimant-bot', version: '0' } },
+        }),
+        extraHeaders: { accept: 'application/json, text/event-stream', 'content-type': 'application/json' },
+      })
+      assert.equal(unpaired.statusCode, 202, `sight pending: ${unpaired.statusCode} ${unpaired.body}`)
+      const listed = await app.inject({
+        method: 'GET',
+        url: '/api/v1/devices/pending',
+        cookies: admin.cookies,
+        headers: jsonHeaders,
+      })
+      const deviceId = jsonBody(listed).devices[0].id
+      const bound = await app.inject({
+        method: 'POST',
+        url: `/api/v1/devices/${deviceId}/bind`,
+        cookies: admin.cookies,
+        headers: { accept: 'application/json', 'content-type': 'application/json' },
+        payload: { claimant_display_name: 'Skip Confirm Bot' },
+      })
+      assert.equal(bound.statusCode, 200, `bind claimant: ${bound.statusCode} ${bound.body}`)
+
+      const res = await claimTaskAutonomous(app, { identity, publicId: brief.id, autonomous: true })
+      assertClaim201(res, {
+        forgeToken: INLINE_TOKEN,
+        suggestedDir: brief.repo.suggested_dir,
+        nowUnix: clock.unix(),
+      })
+      const listedAfter = await getClaimConfirmations(app, admin.cookies)
+      assert.equal(
+        (jsonBody(listedAfter).confirmations ?? []).length,
+        0,
+        'claimant-owned autonomous claim must not create a #16 confirmation row',
       )
     })
   })

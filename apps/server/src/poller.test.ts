@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createDb } from './db.ts'
 import { pollPendingReviews } from './poller.ts'
+import { injectSigned, pairDeviceToSelf } from './device-proof.test-helpers.ts'
 
 // Issue #11. Seams copied from mcp.test.ts (do not import that file). This spec drives the real
 // MCP `submit_pr` tool to put a task into 待验收 with a real `submissions` row, then calls
@@ -298,19 +299,20 @@ function bearerHeaders(token) {
 }
 
 async function mintAgentKey(app, cookies, label = 'agent') {
-  const res = await app.inject({
-    method: 'POST',
-    url: '/api/v1/agent-keys',
-    cookies,
-    headers: jsonHeaders,
-    payload: { label },
-  })
-  assert.equal(res.statusCode, 201, `POST /api/v1/agent-keys: ${res.statusCode} ${res.body}`)
-  const body = jsonBody(res)
-  return { id: body.id, token: body.token }
+  const paired = await pairDeviceToSelf(app, cookies, { hostname: label })
+  return { id: paired.deviceId, identity: paired.identity, deviceId: paired.deviceId }
 }
 
-async function claimTaskHttp(app, { token, publicId }) {
+async function claimTaskHttp(app, { token, identity, publicId }) {
+  const proof = identity ?? (token && typeof token === 'object' && token.privateKey ? token : null)
+  if (proof != null) {
+    return injectSigned(app, proof, {
+      method: 'POST',
+      url: `/api/v1/tasks/${publicId}/claim`,
+      payload: {},
+      extraHeaders: { accept: 'application/json', 'content-type': 'application/json' },
+    })
+  }
   return app.inject({
     method: 'POST',
     url: `/api/v1/tasks/${publicId}/claim`,
@@ -339,7 +341,21 @@ function mcpHeaders({ token, sessionId, extra } = {}) {
   return headers
 }
 
-async function postMcp(app, { token, sessionId, payload }) {
+async function postMcp(app, { token, identity, sessionId, payload }) {
+  const proof = identity ?? (token && typeof token === 'object' && token.privateKey ? token : null)
+  if (proof != null) {
+    const extra = {
+      accept: 'application/json, text/event-stream',
+      'content-type': 'application/json',
+    }
+    if (sessionId != null) extra['mcp-session-id'] = sessionId
+    return injectSigned(app, proof, {
+      method: 'POST',
+      url: MCP_PATH,
+      payload,
+      extraHeaders: extra,
+    })
+  }
   return app.inject({ method: 'POST', url: MCP_PATH, headers: mcpHeaders({ token, sessionId }), payload })
 }
 
@@ -519,10 +535,10 @@ async function boot(t, sqlitePath) {
 // endpoint for that exact number before calling `pollPendingReviews`.
 async function createPendingReviewTask(app, stub, poster, key, { title, prNumber, summary }) {
   const brief = await createTaskOk(app, poster.cookies, taskPayload({ title }))
-  const claimed = await claimTaskHttp(app, { token: key.token, publicId: brief.id })
+  const claimed = await claimTaskHttp(app, { token: key.identity, publicId: brief.id })
   assert.equal(claimed.statusCode, 201, `setup claim: ${claimed.statusCode} ${claimed.body}`)
   const prUrl = `${FORGE_BASE_URL}/${REPO_FULL_NAME}/pulls/${prNumber}`
-  const submitted = await submitPrViaMcp(app, key.token, { taskId: brief.id, prUrl, summary })
+  const submitted = await submitPrViaMcp(app, key.identity, { taskId: brief.id, prUrl, summary })
   assert.equal(submitted.task.status, '待验收', `setup submit_pr: ${JSON.stringify(submitted)}`)
   return { publicId: brief.id, prUrl, prNumber: String(prNumber) }
 }

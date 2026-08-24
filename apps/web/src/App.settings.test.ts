@@ -144,6 +144,9 @@ async function mountApp(
   routes.set('GET /api/v1/agent-keys', () => jsonResponse(200, { keys: [] }))
   routes.set('GET /api/v1/credential-profiles', () => jsonResponse(200, { profiles: [] }))
   routes.set('GET /api/v1/tasks', () => jsonResponse(200, { tasks: [] }))
+  routes.set('GET /api/v1/me/devices', () => jsonResponse(200, { devices: [] }))
+  routes.set('GET /api/v1/devices/pending', () => jsonResponse(200, { devices: [] }))
+  routes.set('GET /api/v1/claimants', () => jsonResponse(200, { claimants: [] }))
   routes.set('GET /api/v1/claim-confirmations', () =>
     jsonResponse(200, { confirmations: options.confirmations ?? [] }),
   )

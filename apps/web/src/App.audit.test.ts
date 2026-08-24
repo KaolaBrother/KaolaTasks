@@ -207,6 +207,9 @@ async function mountMember(
   routes.set('GET /api/v1/tasks', () => jsonResponse(200, { tasks: [] }))
   routes.set('GET /api/v1/events', () => jsonResponse(200, { events }))
   routes.set('GET /api/v1/stats', () => jsonResponse(200, stats))
+  routes.set('GET /api/v1/me/devices', () => jsonResponse(200, { devices: [] }))
+  routes.set('GET /api/v1/devices/pending', () => jsonResponse(200, { devices: [] }))
+  routes.set('GET /api/v1/claimants', () => jsonResponse(200, { claimants: [] }))
 
   const wrapper = mount(App, { global: { plugins: [naive] } })
   await vi.waitFor(() => {

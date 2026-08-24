@@ -1,8 +1,9 @@
 import { transitionTaskStatus } from '@kaola/shared'
 import type { TaskStatus } from '@kaola/shared'
 import { eq } from 'drizzle-orm'
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
-import { addAgentBearerHook, sendBearerUnauthorized } from './agent-bearer.ts'
+import type { FastifyInstance, FastifyReply } from 'fastify'
+import { addDeviceProofHook, requireDeviceAuth, type AgentPrincipal } from './device-proof.ts'
+export type { AgentPrincipal } from './device-proof.ts'
 import {
   consumeApprovedConfirmation,
   findClaimConfirmations,
@@ -20,7 +21,7 @@ import {
   sweepExpiredLeases,
   unixNow,
 } from './leases.ts'
-import { type AgentKey, type User, credentialProfiles, submissions, tasks } from './schema.ts'
+import { credentialProfiles, submissions, tasks } from './schema.ts'
 import { selectTask, taskBrief } from './tasks.ts'
 import { decryptToken, insertAuditEvent, isVaultUnconfiguredError } from './vault.ts'
 import { attemptWriteback } from './writeback.ts'
@@ -33,8 +34,6 @@ const TOKEN_REVEAL_EVENT = 'token 揭示'
 const HEARTBEAT_EVENT = '心跳'
 export const CLONE_TOKEN_USAGE =
   'token 请通过环境变量或 git -c http.extraHeader 按次传递，不要写入 remote URL（会落盘到 .git/config）。'
-
-export type AgentPrincipal = { user: User; key: AgentKey }
 
 export type AgentServiceError = { error: string; message?: string }
 
@@ -66,13 +65,19 @@ function readAutonomous(body: unknown): boolean | undefined {
   return typeof value === 'boolean' ? value : undefined
 }
 
-function requireAgentAuth(request: FastifyRequest, reply: FastifyReply) {
-  const auth = request.agentAuth
-  if (auth == null) {
-    sendBearerUnauthorized(reply)
-    return undefined
+function actorUserId(auth: AgentPrincipal): number | null {
+  return auth.owner.kind === 'user' ? auth.owner.user.id : null
+}
+
+function ownerIsPendingUser(auth: AgentPrincipal): boolean {
+  return auth.owner.kind === 'user' && auth.owner.user.status === '待批准'
+}
+
+function ownerMatchesLease(auth: AgentPrincipal, lease: { claimerUserId: number | null; claimerClaimantId: number | null }): boolean {
+  if (auth.owner.kind === 'user') {
+    return lease.claimerUserId === auth.owner.user.id
   }
-  return auth
+  return lease.claimerClaimantId === auth.owner.claimant.id
 }
 
 function sendAgentResult<T>(reply: FastifyReply, result: AgentServiceResult<T>) {
@@ -99,8 +104,14 @@ export async function claimTask(
   publicId: string,
   autonomous?: boolean,
 ): Promise<AgentServiceResult<ClaimSuccessBody | ClaimPendingBody>> {
-  if (auth.user.status === '待批准') {
+  if (ownerIsPendingUser(auth)) {
     return { ok: false, httpStatus: 403, body: { error: 'forbidden', message: PENDING_CLAIM_MESSAGE } }
+  }
+  if (auth.owner.kind === 'user' && auth.owner.user.status !== 'active') {
+    return { ok: false, httpStatus: 403, body: { error: 'forbidden' } }
+  }
+  if (auth.owner.kind === 'claimant' && auth.owner.claimant.status !== 'active') {
+    return { ok: false, httpStatus: 403, body: { error: 'forbidden' } }
   }
 
   sweepExpiredLeases(db)
@@ -124,17 +135,20 @@ export async function claimTask(
 
   // Issue #16: autonomous claims from a not-yet-trusted user need a per-claim confirmation.
   // Instructed claims (autonomous not true) skip this entirely, ignoring any leftover row.
-  if (autonomous === true && !auth.user.trustedAutomation) {
-    const lookup = findClaimConfirmations(db, row.task.id, auth.user.id, auth.key.id)
+  if (
+    auth.owner.kind === 'user' &&
+    autonomous === true &&
+    !auth.owner.user.trustedAutomation
+  ) {
+    const lookup = findClaimConfirmations(db, row.task.id, auth.owner.user.id, auth.device.id)
     if (lookup.pending != null) {
       return { ok: true, httpStatus: 202, body: pendingConfirmationBody() }
     }
     if (lookup.approved != null) {
-      // Consume now so a later release + re-claim cannot ride the same approval a second time.
       consumeApprovedConfirmation(db, lookup.approved.id)
     } else {
-      insertPendingConfirmation(db, { taskId: row.task.id, userId: auth.user.id, agentKeyId: auth.key.id })
-      recordPendingConfirmEvent(db, { actorUserId: auth.user.id, publicId, agentKeyId: auth.key.id })
+      insertPendingConfirmation(db, { taskId: row.task.id, userId: auth.owner.user.id, deviceId: auth.device.id })
+      recordPendingConfirmEvent(db, { actorUserId: auth.owner.user.id, publicId, deviceId: auth.device.id })
       return { ok: true, httpStatus: 202, body: pendingConfirmationBody() }
     }
   }
@@ -142,9 +156,10 @@ export async function claimTask(
   let plaintext: string
   let revealDetails: {
     task_id: string
-    agent_key_id: number
+    device_id: number
     credential: 'inline' | 'profile'
     profile_id?: number
+    claimant_id?: number
   }
   try {
     if (row.task.credentialProfileId != null) {
@@ -159,9 +174,10 @@ export async function claimTask(
       plaintext = decryptToken(profile.tokenEncrypted)
       revealDetails = {
         task_id: publicId,
-        agent_key_id: auth.key.id,
+        device_id: auth.device.id,
         credential: 'profile',
         profile_id: profile.id,
+        ...(auth.owner.kind === 'claimant' ? { claimant_id: auth.owner.claimant.id } : {}),
       }
     } else {
       if (row.task.inlineTokenEncrypted == null) {
@@ -170,8 +186,9 @@ export async function claimTask(
       plaintext = decryptToken(row.task.inlineTokenEncrypted)
       revealDetails = {
         task_id: publicId,
-        agent_key_id: auth.key.id,
+        device_id: auth.device.id,
         credential: 'inline',
+        ...(auth.owner.kind === 'claimant' ? { claimant_id: auth.owner.claimant.id } : {}),
       }
     }
   } catch (err) {
@@ -195,23 +212,24 @@ export async function claimTask(
 
   const lease = insertActiveLease(db, {
     taskId: row.task.id,
-    claimerUserId: auth.user.id,
-    agentKeyId: auth.key.id,
+    claimerUserId: auth.owner.kind === 'user' ? auth.owner.user.id : null,
+    claimerClaimantId: auth.owner.kind === 'claimant' ? auth.owner.claimant.id : null,
+    deviceId: auth.device.id,
     now,
   })
 
   insertAuditEvent(db, {
     type: TOKEN_REVEAL_EVENT,
-    actorUserId: auth.user.id,
+    actorUserId: actorUserId(auth),
     details: revealDetails,
   })
   insertAuditEvent(db, {
     type: STATUS_TRANSITION_EVENT,
-    actorUserId: auth.user.id,
+    actorUserId: actorUserId(auth),
     details: { task_id: publicId, from, to },
   })
 
-  await attemptWriteback(db, updated, '认领', auth.user.id)
+  await attemptWriteback(db, updated, '认领', actorUserId(auth))
 
   const brief = taskBrief({ task: updated, posterUsername: row.posterUsername })
   return {
@@ -254,7 +272,7 @@ export function reportProgress(
   if (lease == null) {
     return { ok: false, httpStatus: 409, body: { error: 'conflict', message: TASK_NOT_CLAIMED_MESSAGE } }
   }
-  if (lease.claimerUserId !== auth.user.id) {
+  if (!ownerMatchesLease(auth, lease)) {
     return { ok: false, httpStatus: 403, body: { error: 'forbidden' } }
   }
 
@@ -262,7 +280,7 @@ export function reportProgress(
   const expiresAt = renewActiveLease(db, lease.id, now)
   insertAuditEvent(db, {
     type: HEARTBEAT_EVENT,
-    actorUserId: auth.user.id,
+    actorUserId: actorUserId(auth),
     details: { task_id: publicId, note: note ?? '' },
   })
 
@@ -297,7 +315,7 @@ export function releaseTask(
   if (lease == null) {
     return { ok: false, httpStatus: 409, body: { error: 'conflict', message: TASK_NOT_CLAIMED_MESSAGE } }
   }
-  if (lease.claimerUserId !== auth.user.id) {
+  if (!ownerMatchesLease(auth, lease)) {
     return { ok: false, httpStatus: 403, body: { error: 'forbidden' } }
   }
 
@@ -320,7 +338,7 @@ export function releaseTask(
       : { task_id: publicId, from, to, reason }
   insertAuditEvent(db, {
     type: STATUS_TRANSITION_EVENT,
-    actorUserId: auth.user.id,
+    actorUserId: actorUserId(auth),
     details,
   })
 
@@ -355,7 +373,7 @@ export async function submitPr(
   if (lease == null) {
     return { ok: false, httpStatus: 409, body: { error: 'conflict', message: TASK_NOT_CLAIMED_MESSAGE } }
   }
-  if (lease.claimerUserId !== auth.user.id) {
+  if (!ownerMatchesLease(auth, lease)) {
     return { ok: false, httpStatus: 403, body: { error: 'forbidden' } }
   }
 
@@ -392,11 +410,11 @@ export async function submitPr(
 
   insertAuditEvent(db, {
     type: STATUS_TRANSITION_EVENT,
-    actorUserId: auth.user.id,
+    actorUserId: actorUserId(auth),
     details: { task_id: publicId, from, to, pr_url: prUrl, summary },
   })
 
-  await attemptWriteback(db, updated, '提交PR', auth.user.id, prUrl)
+  await attemptWriteback(db, updated, '提交PR', actorUserId(auth), prUrl)
 
   return {
     ok: true,
@@ -410,11 +428,11 @@ export async function submitPr(
 }
 
 export function registerClaim(app: FastifyInstance, db: AppDb) {
-  app.register(async function claimBearerContext(child) {
-    addAgentBearerHook(child, db)
+  app.register(async function claimDeviceContext(child) {
+    addDeviceProofHook(child, db)
 
     child.post('/api/v1/tasks/:publicId/claim', async (request, reply) => {
-      const auth = requireAgentAuth(request, reply)
+      const auth = requireDeviceAuth(request, reply)
       if (auth == null) return
 
       const publicId = (request.params as { publicId: string }).publicId
@@ -422,7 +440,7 @@ export function registerClaim(app: FastifyInstance, db: AppDb) {
     })
 
     child.post('/api/v1/tasks/:publicId/progress', async (request, reply) => {
-      const auth = requireAgentAuth(request, reply)
+      const auth = requireDeviceAuth(request, reply)
       if (auth == null) return
 
       const publicId = (request.params as { publicId: string }).publicId
@@ -430,7 +448,7 @@ export function registerClaim(app: FastifyInstance, db: AppDb) {
     })
 
     child.post('/api/v1/tasks/:publicId/release', async (request, reply) => {
-      const auth = requireAgentAuth(request, reply)
+      const auth = requireDeviceAuth(request, reply)
       if (auth == null) return
 
       const publicId = (request.params as { publicId: string }).publicId

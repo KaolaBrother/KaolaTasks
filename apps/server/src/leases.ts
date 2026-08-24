@@ -22,7 +22,13 @@ export function selectActiveLease(db: AppDb, taskId: number): Lease | undefined 
 
 export function insertActiveLease(
   db: AppDb,
-  input: { taskId: number; claimerUserId: number; agentKeyId: number; now: number },
+  input: {
+    taskId: number
+    claimerUserId: number | null
+    claimerClaimantId: number | null
+    deviceId: number
+    now: number
+  },
 ): Lease {
   const expiresAt = input.now + LEASE_TTL_SECONDS
   const inserted = db
@@ -30,7 +36,9 @@ export function insertActiveLease(
     .values({
       taskId: input.taskId,
       claimerUserId: input.claimerUserId,
-      agentKeyId: input.agentKeyId,
+      claimerClaimantId: input.claimerClaimantId,
+      deviceId: input.deviceId,
+      agentKeyId: null,
       claimedAt: input.now,
       expiresAt,
       lastHeartbeat: input.now,

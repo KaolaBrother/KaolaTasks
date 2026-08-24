@@ -1,7 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { and, eq } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
-import { addAgentBearerHook, sendBearerUnauthorized } from './agent-bearer.ts'
 import { getSessionUser, sendUnauthorized } from './auth.ts'
 import type { AppDb } from './db.ts'
 import { type AgentKey, agentKeys } from './schema.ts'
@@ -103,21 +102,4 @@ export function registerAgentKeys(app: FastifyInstance, db: AppDb) {
     return reply.send({ ok: true })
   })
 
-  app.register(async function agentBearerContext(child) {
-    addAgentBearerHook(child, db)
-
-    child.get('/api/v1/agent/whoami', async (request, reply) => {
-      const auth = request.agentAuth
-      if (auth == null) {
-        return sendBearerUnauthorized(reply)
-      }
-      return reply.send({
-        id: auth.user.id,
-        key_id: auth.key.id,
-        label: auth.key.label,
-        status: auth.user.status,
-        permission_level: auth.user.permissionLevel,
-      })
-    })
-  })
 }

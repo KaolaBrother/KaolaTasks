@@ -1,6 +1,6 @@
 # 考拉任务（Kaola Tasks）设计文档
 
-> 版本：v0.2（2026-08-20）· 状态：草案；v0.2 增补：多源登录分级权限、认领即授权、Agent 侧 token 卫生、无 forge 账号认领者
+> 版本：v0.2（2026-08-24）· 状态：草案；v0.2 增补：多源登录、认领即授权、Agent 侧 token 卫生、无 forge 账号认领者；身份合同：认领者为无 Web 登录的命名身份，Agent 用本机设备证明（非 Agent Key Bearer）
 
 ---
 
@@ -25,15 +25,15 @@
 | D5 | 技术栈 | TypeScript 全栈：Vue 3 前端 + Node API + 官方 MCP TS SDK + Drizzle/SQLite |
 | D6 | 登录方式 | 通过团队自有 forge 的 OAuth 登录（GitLab 或 Gitea） |
 | D7 | Token 附着方式 | 凭证档案（Credential Profile）复用为主，允许单任务临时 token 覆盖 |
-| D8 | 登录与权限分级 | 多源 OAuth：GitLab/Gitea（自托管）= 完整权限；GitHub = 仅认领，且首次登录需任一正式成员批准；发布任务与凭证管理仅限自托管身份 |
+| D8 | 登录与权限分级 | Web 发布者/管理员为 OAuth `users` 且 `permission_level: full`（空库首次登录 bootstrap，之后未被邀请不建号；`KAOLA_ADMINS` 可选）。认领者不是 Web 账号。Agent 鉴权为本机设备证明，不是自助 Agent Key |
 
 ## 3. 角色与核心概念
 
-- **发布者（人）**：创建任务卡或从 Issue 导入，选择凭证档案，定义验收标准。
-- **认领者（人 + Agent）**：成员通过自己的 Agent 认领任务。默认需要人对认领做一次确认（可按用户关闭，用于受信自动化）。
-- **Agent**：任意 MCP 兼容运行时。通过考拉的 MCP Server 获取任务、汇报进度、提交 PR 链接。实际的 clone / 编码 / push / 开 PR 都由 Agent 用揭示的 token 直接对 forge 完成。
+- **发布者 / 管理员（人）**：通过团队 forge 的 OAuth 登录，落在 `users` 且 `permission_level: full`。创建任务卡或从 Issue 导入、选择凭证档案、定义验收标准；仅 `full` 可绑定/解除认领者与电脑。管理员可将一台电脑绑到自己（冒烟），不因此把认领者做成 Web 账号。
+- **认领者（命名身份）**：独立于 `users` 的认领身份，**没有 Web 登录**，不能进工作台。由管理员在绑定待授权电脑时命名。不是 OAuth 账号，也不是 `claim_only` 网页用户。
+- **Agent**：任意 MCP 兼容运行时。经本机 stdio 桥以设备证明调用考拉 MCP，获取任务、汇报进度、提交 PR 链接。实际的 clone / 编码 / push / 开 PR 都由 Agent 用揭示的 forge token 直接对 forge 完成。
 - **任务卡（Task Brief）**：结构化、机器可读的任务契约（见 §6），是平台相对"裸 Issue"的核心增值。
-- **租约（Lease）**：认领即租约，带 TTL 与心跳，防止任务被挂死占用。
+- **租约（Lease）**：认领即租约，带 TTL 与心跳，防止任务被挂死占用。绑定电脑本身不认领任务。
 
 ## 4. 系统架构
 
@@ -68,9 +68,9 @@ flowchart LR
 
 组件职责：
 
-1. **Web 前端（中文界面）** — 任务看板（列表/看板两种视图）、任务详情、发布向导、凭证档案管理、审计日志、个人 Agent Key 管理。
+1. **Web 前端（中文界面）** — 任务看板（列表/看板两种视图）、任务详情、发布向导、凭证档案管理、审计日志、电脑与认领者管理（「我的电脑」「待授权电脑」）。认领者不能登录工作台。
 2. **API Server** — 任务生命周期状态机、租约管理、认证鉴权、审计记录。REST 全量镜像 MCP 能力，供非 MCP 运行时或脚本使用。
-3. **MCP Server** — Agent 的唯一入口（见 §9）。成员在自己的 Agent 里配置一次考拉 MCP 端点 + 个人 API Key，之后一句"去考拉接单"即可。
+3. **MCP Server** — Agent 的入口（见 §9）。服务端仍是 Streamable HTTP；本机 `kaola-mcp` 用设备私钥签名后转发。配置一次 stdio `command` + 考拉 URL，之后一句"去考拉接单"即可。身份不是自助 Agent Key Bearer。
 4. **ForgeAdapter 层** — 统一接口、三份实现（见 §8）。GitLab / Gitea 均支持自定义 base URL（自托管）。
 5. **Token Vault** — 凭证加密存储与"认领时揭示"机制（见 §7）。
 6. **同步机制** — Webhook 优先，轮询兜底（自托管 forge 在内网/防火墙后时 webhook 可能打不进来，需可配置）。
@@ -170,8 +170,26 @@ Web「发布」页的收集规则（HTTP 仍是现有 `POST /api/v1/tasks` / `PO
 - **推荐 token 类型**：GitHub fine-grained PAT（限定单仓库）、GitLab Project Access Token、Gitea 仓库级 scoped token——三者都天然按仓库隔离。
 - **加密存储**：AES-256-GCM，主密钥来自环境变量/密钥文件，不入库、不入代码。
 - **认领时揭示（reveal-on-claim）**：token 只在 REST `POST /api/v1/tasks/:publicId/claim` `201` 与 MCP `claim_task` 成功时下发给认领 Agent；`list_tasks` / `get_task_brief` / 会话 GET 列表与详情 / `POST /api/v1/tasks/import` `200` 永不含 token。`GET /api/v1/credential-profiles/:id/issues` 是服务端解密后列 Issue（同轮询），**不是**第三条揭示通道：响应、日志、`events.details` 不得出现 token / ciphertext / `access_token`，也**不写** `token 揭示`（对比：现有 import 档案路径在解密后仍写 `token 揭示`，本路由不要照抄）。
-- **MCP 平时无仓库钥匙（用户模型）**：Cursor MCP 配置平时**不含**仓库 / forge token，也不含「这条任务的钥匙」。认领者不生成仓库钥匙，也不需要在 GitLab/GitHub 上有该仓账号。Agent 对某条任务调用 `claim_task` **成功之后**（REST claim `201` 同此），才从**该任务**拿到 forge token（信封顶层 `token`）以及 `clone`。换一个 `task_id` / `publicId` 拿到的是那条任务自己的 token，禁止把上一把写进 MCP 或 git remote 接着用。仓库内提交的 MCP 示例只含 URL，不含 secret。Agent Key（`ktk_…`）可从环境变量 `KAOLA_AGENT_KEY` 注入用户级 `~/.cursor/mcp.json` 的 `Authorization: Bearer …`；**forge token 不得出现在任何 mcp.json**，也不得填进 MCP `Authorization`。人手不必按任务改 mcp.json。
-- **认领即授权（MVP）**：Agent API Key 即用户授权——用户明确指示 Agent 认领时无需二次确认；"人确认认领"开关只针对自主轮询式 Agent（M3，Issue #16）。"待批准"状态的 GitHub 登录用户无法认领（见 §11）。
+- **两类凭证，互不混用**：
+  - **考拉设备证明**：每台机器一把 Ed25519 密钥。私钥只在该机 `~/.kaola/`（目录 `0700`、私钥文件 `0600`），**永不**写入 mcp.json，也**不是** forge PAT。服务端只存公钥与指纹。MCP/REST 认领路径用带签名的设备请求，不再用可复制的 Bearer `ktk_`。
+  - **Forge token**：仍只在 REST `POST /api/v1/tasks/:publicId/claim` `201` 顶层 `token` 与 MCP `claim_task` 成功顶层 `token` 揭示（见上条「认领时揭示」）。两条通道以外的会话 GET、import `200`、档案列 Issue、设备待授权 `202`、#16 `confirmation_required` `202` 均不含 forge token。
+- **MCP 平时无仓库钥匙（用户模型）**：Cursor MCP 配置平时**不含**仓库 / forge token，也不含「这条任务的钥匙」，**也不含**考拉设备私钥或 `ktk_…` / `KAOLA_AGENT_KEY`。认领者不生成仓库钥匙，也不需要在 GitLab/GitHub 上有该仓账号。Agent 对某条任务调用 `claim_task` **成功之后**（REST claim `201` 同此），才从**该任务**拿到 forge token（信封顶层 `token`）以及 `clone`。换一个 `task_id` / `publicId` 拿到的是那条任务自己的 token，禁止把上一把写进 MCP 或 git remote 接着用。仓库内提交的 MCP 示例是 stdio `command` + `--url`，不含任何 secret：
+
+  ```json
+  {
+    "mcpServers": {
+      "kaola-tasks": {
+        "command": "kaola-mcp",
+        "args": ["--url", "http://localhost:31415"]
+      }
+    }
+  }
+  ```
+
+  **forge token 不得出现在任何 mcp.json**。人手不必按任务改 mcp.json。MCP 身份不再是 Agent Key Bearer。
+- **未配对设备**：签名合法但尚未绑定 → HTTP `202` `{ error: 'authorization_required', pending: true, expires_at }`（待授权窗口 1 天），**不**下发 forge token、不建立租约。与 Issue #16 的 `202` `{ error: 'confirmation_required' }` 字符串不同：前者在身份钩子、电脑尚未授权；后者是已授权设备上自主认领等人确认。待授权设备不能 `list_tasks` / `claim_task`。绑定不自动认领、不推送 forge token。
+- **解除立即生效**：解除认领者或解除电脑、将 `users.status` 置为 `revoked`，均在**下一次**请求生效。重新登录不得复活 `revoked`。
+- **认领即授权（MVP）**：已绑定的设备即该认领身份（或绑到管理员自己时的 `full` 用户）的授权——人明确指示 Agent 认领时无需二次确认；"人确认认领"开关只针对绑到 Web 用户、且开启自主轮询的 Agent（M3，Issue #16）。待授权设备不能认领（见上）。
 - **Agent 侧 token 卫生**：REST 认领 `201` 与 MCP `claim_task` 成功共用同一信封；揭示通道仍只有这两处的顶层 `token`。`clone` 恰四键：`suggested_dir`（同 `task.repo.suggested_dir`，相对目录名，不是绝对路径，也不是「在此打开 Cursor」）、`token_usage`（原文：`token 请通过环境变量或 git -c http.extraHeader 按次传递，不要写入 remote URL（会落盘到 .git/config）。`）、`remote_url`（HTTPS git remote，**不含**用户名/密码/token：去掉 `repo.base_url` 末尾斜杠 + `/` + `repo.full_name` + `.git`；GitLab 子组 `full_name` 保留斜杠，如 `https://host/group/subgroup/app.git`；不要用 GitLab API 的 `%2F` 项目路径，也不要用 `api.github.com`）、`extra_header`（`{ "name": string, "value_pattern": string }`；`value_pattern` 含字面量 `${token}`，**不得**嵌入已揭示的 forge token）。Agent 把顶层 `token` 代入 `value_pattern`，等价于 `git -c http.extraHeader="<name>: <value>" clone <remote_url> <suggested_dir>`。token 仍走环境变量或 `git -c http.extraHeader` 按次传递，**不要**拼进 remote URL（会落盘到 `.git/config` 并在任务结束后残留）。不新增 MCP 工具；服务端不执行 git；§6 `repo` 仍五字段；`list_tasks` / `get_task_brief` / 会话 GET 永不带 `clone` 附加键或 token；`202` `confirmation_required` 仍无 `clone`/token。三家 `extra_header`：
 
   | forge | `name` | `value_pattern` |
@@ -180,7 +198,7 @@ Web「发布」页的收集规则（HTTP 仍是现有 `POST /api/v1/tasks` / `PO
   | gitlab | Authorization | Bearer ${token} |
   | gitea | Authorization | token ${token} |
 
-- **全量审计**：每次揭示记录"谁的哪个 Agent Key、何时、拿走了哪个档案的 token"；档案页提供一键吊销（删除档案 + 提示去 forge 侧撤销）。
+- **全量审计**：每次揭示记录哪台电脑、何时、拿走了哪个档案的 token（认领者为 `claimant` 时无 `users` 行）；档案页提供一键吊销（删除档案 + 提示去 forge 侧撤销）。
 - **无账号认领者（token 即访问权）**：认领者**不需要**在目标 forge 上有账号。Agent 用揭示的顶层 `token` 按 `clone` 四键克隆：目录 `clone.suggested_dir`，远端 `clone.remote_url`（无凭证的 HTTPS git URL），请求头按 `clone.extra_header`（见上表）把 token 代入 `value_pattern` 后走 `git -c http.extraHeader`，再向**同一仓库**推分支（不走 fork——fork 才需要账号）、再用同一 token 调 API 开 PR/MR。因此发布校验必须包含"能否推分支"。身份归属：PR 显示的是 token 所属身份（发布者或项目 bot），但 commit author 可自由设置为认领者姓名/邮箱（无需账号），PR 描述底部附"claimed by @认领者 via Kaola Tasks"，考拉侧审计日志保存真实认领记录。推荐用 GitLab Project Access Token（Developer 角色，`api` + `write_repository`）/ Gitea 仓库 token / GitHub fine-grained PAT 实现此模式。
 
   见上表。
@@ -233,28 +251,31 @@ type ListedIssue = { number: number; title: string; issue_url: string }
 
 ## 9. MCP 工具面
 
-MCP Server 以个人 API Key 鉴权（key 在 Web 端自助生成，绑定用户）：
+服务端 MCP 仍是 Streamable HTTP `POST /api/mcp`。鉴权是本机设备证明（stdio 桥 `kaola-mcp` 签名转发），**不是** Web 自助生成的 Agent Key Bearer。待授权设备在钩子层即 `202` `authorization_required`，不能列出或认领任务。`claim_task` 成功信封不变（任务卡 + 顶层 **揭示 token** + 租约 + `clone` 四键）。
 
 | 工具 | 参数 | 行为 |
 |------|------|------|
-| `list_tasks` | `status?` `tags?` `forge?` | 列出任务（不含 token） |
+| `list_tasks` | `status?` `tags?` `forge?` | 列出任务（不含 token）；待授权设备不可用 |
 | `get_task_brief` | `task_id` | 返回 §6 的完整 JSON（不含 token） |
-| `claim_task` | `task_id` `autonomous?` | 建立租约；返回任务卡 + **揭示 token** + 租约 TTL + `clone` 四键（`suggested_dir`、`token_usage`、`remote_url`、`extra_header`）。API Key 即授权，无需二次确认（自主轮询场景见 M3） |
+| `claim_task` | `task_id` `autonomous?` | 建立租约；返回任务卡 + **揭示 token** + 租约 TTL + `clone` 四键（`suggested_dir`、`token_usage`、`remote_url`、`extra_header`）。已绑定设备即授权，无需二次确认（自主轮询场景见 M3；#16 仅绑到 Web 用户的路径） |
 | `report_progress` | `task_id` `note` | 心跳续约 + 进度记录（展示在任务详情时间线） |
 | `submit_pr` | `task_id` `pr_url` `summary` | 提交交付物，任务转"待验收" |
 | `release_task` | `task_id` `reason` | 主动放弃，任务回"待认领" |
 
-REST 端点一一对应（`/api/v1/tasks` 等），另加 Web 端专用的档案管理、审计查询、OAuth 回调等接口。
+REST 认领/进度/释放与 MCP 同一套设备证明。另加 Web 端专用的档案管理、审计查询、OAuth 回调等接口。
 
 ## 10. 数据模型（Drizzle / SQLite）
 
 | 表 | 关键字段 |
 |----|----------|
-| `users` | forge OAuth 身份（provider, remote_id, username）、显示名、状态（active / 待批准）、权限级（full / claim_only） |
-| `agent_keys` | user_id、key_hash、label、last_used_at |
+| `users` | forge OAuth 身份（provider, remote_id, username）、显示名、状态（`active` / 遗留 `待批准` / `revoked`）、权限级（`full` / 遗留 `claim_only`）；策略列 `device_max_age_days`（默认 30，范围 1–365，无永久）、`max_devices`（默认 5）、`device_idle_days`（默认 0）。新 OAuth 不插入 `待批准`/`claim_only`。重新登录不得把 `revoked` 改回 `active` |
+| `claimants` | 无 Web 登录的认领身份：display_name、status（`active` / `revoked`）、同上三列策略默认值 |
+| `devices` | fingerprint、公钥、hostname（不可信）、status（`pending` / `active` / `expired` / `revoked`）。**活跃**设备的所有者恰好是 `claimant_id` 或 `user_id` 之一；**待授权**两者皆空。待授权窗口 `pending_expires_at`（首次见到起 1 天）；绑定后 `expires_at` 由所有者 `device_max_age_days` 自 `paired_at` 计算 |
+| `agent_keys` | 遗留：user_id、key_hash、label、last_used_at。MCP / 认领 / whoami 不再用 Agent Key Bearer |
 | `credential_profiles` | forge、base_url、repo_full_name、token_encrypted、scopes_checked、created_by |
 | `tasks` | §6 各字段 + status、credential_profile_id / inline_token_encrypted（二选一） |
-| `leases` | task_id、claimer_user_id、agent_key_id、claimed_at、expires_at、last_heartbeat、state |
+| `leases` | task_id、claimer 为 `claimer_user_id` 或 `claimer_claimant_id`、**`device_id`**、claimed_at、expires_at、last_heartbeat、state |
+| `claim_confirmations` | #16：task_id、user_id（仅绑到 Web 用户）、**`device_id`**、state、created_at |
 | `submissions` | task_id、lease_id、pr_url、summary、pr_state |
 | `events` | 审计与时间线：类型（状态迁移 / token 揭示 / 心跳 / 回写）、主体、时间、详情 JSON |
 
@@ -262,16 +283,21 @@ SQLite 足够内部团队规模；Drizzle 之上留好升级 Postgres 的余地�
 
 ## 11. 认证
 
-- **人（Web）**：多源 OAuth，无独立账号体系，首次登录自动建号，权限按登录来源分级：
+- **人（Web，发布者/管理员）**：多源 OAuth，无独立密码账号。GitLab / Gitea **不会**仅因登录来源而自动 `full`。规则：
 
-  | 能力 | GitLab / Gitea 登录（自托管 = 团队身份） | GitHub 登录 |
-  |------|------------------------------------------|-------------|
-  | 查看任务板 | ✓ | ✓ |
-  | 发布任务 / 管理凭证档案 | ✓ | ✗ |
-  | 认领任务 / 生成 Agent Key | ✓ | ✓（需先通过首登批准） |
+  - 空或未设 `KAOLA_ADMINS` 仍可启动。
+  - 库中尚无 `full`+`active` 用户时：第一次 Web OAuth 插入即为 `active`+`full`（三个提供方任一皆可）。
+  - 已有管理员之后，未被邀请的 OAuth **不插入** `users` 行（页面「未被邀请」），不再用 GitHub「待批准」排队。
+  - 若设置了 `KAOLA_ADMINS`（`provider:username` 或 `provider:id:<remote_id>`），所列身份在登录时成为 `full`。
+  - 重新登录不得复活 `revoked`。
+  - 仅 `full` 可绑定/解除认领者与电脑。绑定不自动认领、不推送 forge token。认领者没有会话，不能进工作台。
 
-  GitHub 账号任何人都能注册，而认领即 token 揭示，故 GitHub 登录首次进入"待批准"状态，由任一正式成员在 Web 端一键批准后方可认领。同一人多账号在 MVP 中视为多个用户，如有需要后续加身份关联。
-- **Agent（MCP/REST）**：Bearer API Key，用户在 Web 端自助生成/吊销，服务端只存哈希。
+  | 能力 | `users` 且 `active`+`full` | 认领者（无 Web 登录） |
+  |------|---------------------------|------------------------|
+  | 查看任务板 / 发布 / 凭证档案 / 绑定电脑 | ✓ | ✗ |
+  | 经 Agent 认领任务 | 冒烟：电脑绑到自己 | ✓（电脑绑到该认领者） |
+
+- **Agent（MCP/REST）**：每请求 Ed25519 设备签名，不是复制粘贴的 Bearer `ktk_`。未配对的合法签名 → `202` `authorization_required`（见 §7）。解除人或电脑在下一次请求生效。
 - **Webhook**：各 forge 的签名校验（GitHub HMAC、Gitea/GitLab secret token）。
 
 ## 12. 技术选型与仓库结构
@@ -285,7 +311,8 @@ SQLite 足够内部团队规模；Drizzle 之上留好升级 Postgres 的余地�
 KaolaTasks/
 ├─ apps/
 │  ├─ web/          # Vue 3 前端
-│  └─ server/       # Fastify API + MCP Server + webhook 接收
+│  ├─ server/       # Fastify API + MCP Server + webhook 接收
+│  └─ mcp/          # kaola-mcp：本机 stdio 桥，签名后转发 POST /api/mcp
 ├─ packages/
 │  ├─ shared/       # 类型、任务卡 schema（zod）、状态机定义
 │  └─ forge-adapters/

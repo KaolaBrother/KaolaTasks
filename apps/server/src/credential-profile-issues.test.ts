@@ -244,6 +244,21 @@ function openDb(t, sqlitePath) {
   return db
 }
 
+function seedLeftoverGithub(db, { remoteId, username, displayName, status, permissionLevel }) {
+  db.$client
+    .prepare(
+      `INSERT INTO users (provider, remote_id, username, display_name, status, permission_level, trusted_automation)
+       VALUES ('github', ?, ?, ?, ?, ?, 0)`,
+    )
+    .run(String(remoteId), username, displayName, status, permissionLevel)
+}
+
+async function loginLeftoverGithub(app, stub, { remoteId, login, name, label }) {
+  const leftoverToken = nextAccessToken(label)
+  stub.oauth.set(leftoverToken, { id: Number(remoteId), login, name })
+  return loginViaCallback(app, { ...PROVIDERS.github, accessToken: leftoverToken })
+}
+
 async function loginViaCallback(app, { decoratorName, callbackPath, accessToken }) {
   stubTokenExchange(app, decoratorName, accessToken)
   const callback = await app.inject({
@@ -283,30 +298,6 @@ async function loginGitlab(app, stub, label = 'gitlab') {
     name: `Git Lab ${label}`,
   })
   return loginViaCallback(app, { ...PROVIDERS.gitlab, accessToken })
-}
-
-async function loginGithub(app, stub, label = 'github') {
-  const accessToken = nextAccessToken(label)
-  stub.oauth.set(accessToken, {
-    id: 60000 + tokenSeq,
-    login: `gh-${label}`,
-    name: `Octo ${label}`,
-  })
-  return loginViaCallback(app, { ...PROVIDERS.github, accessToken })
-}
-
-async function approveUser(app, memberCookies, userId) {
-  const approve = await app.inject({
-    method: 'POST',
-    url: `/api/v1/users/${userId}/approve`,
-    cookies: memberCookies,
-    headers: jsonHeaders,
-  })
-  assert.ok(
-    approve.statusCode >= 200 && approve.statusCode < 300,
-    `approve should succeed, got ${approve.statusCode}: ${approve.body}`,
-  )
-  return approve
 }
 
 function jsonBody(res) {
@@ -449,10 +440,24 @@ describe('issue #19 GET /api/v1/credential-profiles/:id/issues', { concurrency: 
       assert.match(String(res.headers.location), /\/login(?:\?|$)/)
     })
 
-    test('待批准 GitHub user gets 403 forbidden with no message', async (t) => {
-      const app = await createApp(t)
+    test('leftover 待批准 GitHub user gets 403 forbidden with no message', async (t) => {
+      const sqlitePath = sqliteFile(t)
+      const db = openDb(t, sqlitePath)
+      seedLeftoverGithub(db, {
+        remoteId: 22401,
+        username: 'gh-issues-pending',
+        displayName: 'Pending Issues',
+        status: '待批准',
+        permissionLevel: 'claim_only',
+      })
+      const app = await createApp(t, sqlitePath)
       const stub = beginFetch(t)
-      const github = await loginGithub(app, stub, 'pending')
+      const github = await loginLeftoverGithub(app, stub, {
+        remoteId: 22401,
+        login: 'gh-issues-pending',
+        name: 'Pending Issues',
+        label: 'pending',
+      })
       assert.equal(github.body.status, '待批准')
       assert.equal(github.body.permission_level, 'claim_only')
       const afterLogin = stub.outbound.length
@@ -462,13 +467,26 @@ describe('issue #19 GET /api/v1/credential-profiles/:id/issues', { concurrency: 
       assert.equal(listGets(stub.outbound, afterLogin).length, 0)
     })
 
-    test('approved GitHub claim_only still gets 403 forbidden with no message', async (t) => {
-      const app = await createApp(t)
+    test('leftover active GitHub claim_only still gets 403 forbidden with no message', async (t) => {
+      const sqlitePath = sqliteFile(t)
+      const db = openDb(t, sqlitePath)
+      seedLeftoverGithub(db, {
+        remoteId: 22402,
+        username: 'gh-issues-claim-only',
+        displayName: 'Claim Only Issues',
+        status: 'active',
+        permissionLevel: 'claim_only',
+      })
+      const app = await createApp(t, sqlitePath)
       const stub = beginFetch(t)
       allowList(stub, GITEA_PROFILE_TOKEN, { body: giteaListJson() })
       const member = await loginGitea(app, stub, 'approver')
-      const github = await loginGithub(app, stub, 'claim-only')
-      await approveUser(app, member.cookies, github.body.id)
+      const github = await loginLeftoverGithub(app, stub, {
+        remoteId: 22402,
+        login: 'gh-issues-claim-only',
+        name: 'Claim Only Issues',
+        label: 'claim-only',
+      })
       const me = await app.inject({
         method: 'GET',
         url: '/api/v1/me',

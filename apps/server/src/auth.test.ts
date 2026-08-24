@@ -1,5 +1,9 @@
 import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { createDb } from './db.ts'
 
 // Binding names: kaola-workflow/bundle-3-6/.cache/technical-decisions.md
 const PENDING_STATUS = '待批准'
@@ -123,13 +127,52 @@ function stubTokenExchange(app, decoratorName, accessToken) {
   })
 }
 
-async function createApp(t) {
-  const app = buildApp()
+function sqliteFile(t) {
+  const dir = mkdtempSync(join(tmpdir(), 'kaola-auth-'))
+  const sqlitePath = join(dir, 'kaola.sqlite')
+  t.after(() => {
+    rmSync(dir, { recursive: true, force: true })
+  })
+  return sqlitePath
+}
+
+async function createApp(t, sqlitePath) {
+  const app = buildApp(sqlitePath ? { sqlitePath } : undefined)
   t.after(async () => {
     await app.close()
   })
   await app.ready()
   return app
+}
+
+function openDb(t, sqlitePath) {
+  const db = createDb(sqlitePath)
+  t.after(() => {
+    db.$client.close()
+  })
+  return db
+}
+
+function countUsers(db) {
+  return Number(db.$client.prepare('SELECT COUNT(*) AS n FROM users').get().n)
+}
+
+function seedUser(db, { provider, remoteId, username, displayName, status, permissionLevel }) {
+  db.$client
+    .prepare(
+      `INSERT INTO users (provider, remote_id, username, display_name, status, permission_level, trusted_automation)
+       VALUES (?, ?, ?, ?, ?, ?, 0)`,
+    )
+    .run(provider, String(remoteId), username, displayName, status, permissionLevel)
+  return db.$client.prepare('SELECT * FROM users WHERE provider = ? AND remote_id = ?').get(provider, String(remoteId))
+}
+
+async function completeOauthCallback(app, { decoratorName, callbackPath, accessToken }) {
+  stubTokenExchange(app, decoratorName, accessToken)
+  return app.inject({
+    method: 'GET',
+    url: `${callbackPath}?code=test-authorization-code`,
+  })
 }
 
 async function loginViaCallback(app, { decoratorName, callbackPath, accessToken }) {
@@ -244,7 +287,7 @@ describe('unauthenticated GET /api/v1/me', () => {
 })
 
 describe('OAuth callback first login', () => {
-  test('GitHub first login persists 待批准 claim_only user and a usable session', async (t) => {
+  test('GitHub first login persists active full user and a usable session', async (t) => {
     const app = await createApp(t)
     const profiles = new Map()
     stubUserinfoByAccessToken(t, profiles)
@@ -261,10 +304,10 @@ describe('OAuth callback first login', () => {
       remote_id: '4242',
       username: 'octo-cat',
       display_name: 'Octo Cat',
-      status: PENDING_STATUS,
-      permission_level: 'claim_only',
+      status: 'active',
+      permission_level: 'full',
     })
-    assert.equal(body.message, PENDING_CLAIM_MESSAGE)
+    assert.notEqual(body.message, PENDING_CLAIM_MESSAGE)
   })
 
   test('GitHub display_name falls back to login when name is null', async (t) => {
@@ -284,8 +327,8 @@ describe('OAuth callback first login', () => {
       remote_id: '7',
       username: 'no-name',
       display_name: 'no-name',
-      status: PENDING_STATUS,
-      permission_level: 'claim_only',
+      status: 'active',
+      permission_level: 'full',
     })
   })
 
@@ -370,8 +413,9 @@ describe('OAuth callback first login', () => {
     assert.equal(second.body.remote_id, '111')
   })
 
-  test('the same remote_id on GitHub and GitLab is two users', async (t) => {
-    const app = await createApp(t)
+  test('after a full user exists, GitLab OAuth with the same remote_id is uninvited and does not insert a second user', async (t) => {
+    const sqlitePath = sqliteFile(t)
+    const app = await createApp(t, sqlitePath)
     const profiles = new Map()
     stubUserinfoByAccessToken(t, profiles)
     const githubToken = nextAccessToken('github-shared-id')
@@ -380,25 +424,50 @@ describe('OAuth callback first login', () => {
     profiles.set(gitlabToken, { id: 1, username: 'gl-one', name: 'GL One' })
 
     const github = await loginViaCallback(app, { ...PROVIDERS.github, accessToken: githubToken })
-    const gitlab = await loginViaCallback(app, { ...PROVIDERS.gitlab, accessToken: gitlabToken })
+    assert.equal(github.body.status, 'active')
+    assert.equal(github.body.permission_level, 'full')
 
-    assert.notEqual(String(github.body.id), String(gitlab.body.id))
-    assert.equal(github.body.provider, 'github')
-    assert.equal(gitlab.body.provider, 'gitlab')
-    assert.equal(github.body.remote_id, '1')
-    assert.equal(gitlab.body.remote_id, '1')
+    const callback = await completeOauthCallback(app, { ...PROVIDERS.gitlab, accessToken: gitlabToken })
+    assert.match(String(callback.headers.location ?? callback.body), /uninvited|未被邀请/)
+    const cookies = cookieJar(callback)
+    const me = await app.inject({
+      method: 'GET',
+      url: '/api/v1/me',
+      cookies,
+      headers: { accept: 'application/json' },
+    })
+    assert.equal(me.statusCode, 401, `uninvited GitLab must not set a session: ${me.statusCode} ${me.body}`)
+
+    const db = openDb(t, sqlitePath)
+    assert.equal(countUsers(db), 1)
+    const row = db.$client.prepare('SELECT provider FROM users').get()
+    assert.equal(row.provider, 'github')
   })
 })
 
-describe('pending GitHub users and approve', () => {
-  test('pending GitHub user cannot POST /api/v1/users/:id/approve', async (t) => {
-    const app = await createApp(t)
+describe('leftover 待批准 GitHub users and approve', () => {
+  test('seeded leftover 待批准 GitHub user cannot POST /api/v1/users/:id/approve', async (t) => {
+    const sqlitePath = sqliteFile(t)
+    const db = openDb(t, sqlitePath)
+    const seeded = seedUser(db, {
+      provider: 'github',
+      remoteId: 222,
+      username: 'pending-cat',
+      displayName: 'Pending Cat',
+      status: PENDING_STATUS,
+      permissionLevel: 'claim_only',
+    })
+    const app = await createApp(t, sqlitePath)
     const profiles = new Map()
     stubUserinfoByAccessToken(t, profiles)
     const accessToken = nextAccessToken('github-cannot-approve')
     profiles.set(accessToken, { id: 222, login: 'pending-cat', name: 'Pending Cat' })
 
     const pending = await loginViaCallback(app, { ...PROVIDERS.github, accessToken })
+    assert.equal(String(pending.body.id), String(seeded.id))
+    assert.equal(pending.body.status, PENDING_STATUS)
+    assert.equal(pending.body.permission_level, 'claim_only')
+
     const approve = await app.inject({
       method: 'POST',
       url: `/api/v1/users/${pending.body.id}/approve`,
@@ -407,23 +476,23 @@ describe('pending GitHub users and approve', () => {
     })
     assert.ok(
       approve.statusCode === 401 || approve.statusCode === 403,
-      `pending GitHub user cannot approve (expected 401 or 403, got ${approve.statusCode}: ${approve.body})`,
+      `leftover 待批准 GitHub user cannot approve (expected 401 or 403, got ${approve.statusCode}: ${approve.body})`,
     )
-
-    const me = await app.inject({
-      method: 'GET',
-      url: '/api/v1/me',
-      cookies: pending.cookies,
-      headers: { accept: 'application/json' },
-    })
-    assert.equal(me.statusCode, 200)
-    assert.equal(me.json().status, PENDING_STATUS)
-    assert.equal(me.json().permission_level, 'claim_only')
-    assert.equal(me.json().message, PENDING_CLAIM_MESSAGE)
+    assert.equal(pending.body.message, PENDING_CLAIM_MESSAGE)
   })
 
-  test('an active full member can approve a GitHub user to active while leaving claim_only', async (t) => {
-    const app = await createApp(t)
+  test('an active full member can approve a leftover 待批准 GitHub user to active while leaving claim_only', async (t) => {
+    const sqlitePath = sqliteFile(t)
+    const db = openDb(t, sqlitePath)
+    seedUser(db, {
+      provider: 'github',
+      remoteId: 333,
+      username: 'needs-ok',
+      displayName: 'Needs Ok',
+      status: PENDING_STATUS,
+      permissionLevel: 'claim_only',
+    })
+    const app = await createApp(t, sqlitePath)
     const profiles = new Map()
     stubUserinfoByAccessToken(t, profiles)
 
@@ -462,60 +531,157 @@ describe('pending GitHub users and approve', () => {
     assert.equal(body.permission_level, 'claim_only')
     assert.notEqual(body.message, PENDING_CLAIM_MESSAGE)
   })
+})
 
-  test('approving does not reset on GitHub re-login, and claim_only still cannot approve others', async (t) => {
-    const app = await createApp(t)
+describe('closed join after a full user exists', () => {
+  test('uninvited GitHub OAuth after a GitLab full exists does not insert a user and does not set a session', async (t) => {
+    const sqlitePath = sqliteFile(t)
+    const app = await createApp(t, sqlitePath)
     const profiles = new Map()
     stubUserinfoByAccessToken(t, profiles)
+    const gitlabToken = nextAccessToken('gitlab-bootstrap')
+    const githubToken = nextAccessToken('github-uninvited')
+    profiles.set(gitlabToken, { id: 10, username: 'gl-admin', name: 'GL Admin' })
+    profiles.set(githubToken, { id: 11, login: 'gh-stranger', name: 'GH Stranger' })
 
-    const githubAToken = nextAccessToken('github-a')
-    const githubBToken = nextAccessToken('github-b')
-    const gitlabToken = nextAccessToken('gitlab-member')
-    const githubAReloginToken = nextAccessToken('github-a-relogin')
-    const githubProfileA = { id: 501, login: 'user-a', name: 'User A' }
-    profiles.set(githubAToken, githubProfileA)
-    profiles.set(githubAReloginToken, githubProfileA)
-    profiles.set(githubBToken, { id: 502, login: 'user-b', name: 'User B' })
-    profiles.set(gitlabToken, { id: 600, username: 'member', name: 'Member' })
-
-    const githubA = await loginViaCallback(app, { ...PROVIDERS.github, accessToken: githubAToken })
-    const githubB = await loginViaCallback(app, { ...PROVIDERS.github, accessToken: githubBToken })
     const member = await loginViaCallback(app, { ...PROVIDERS.gitlab, accessToken: gitlabToken })
+    assert.equal(member.body.permission_level, 'full')
+    const db = openDb(t, sqlitePath)
+    assert.equal(countUsers(db), 1)
 
-    const approveA = await app.inject({
-      method: 'POST',
-      url: `/api/v1/users/${githubA.body.id}/approve`,
-      cookies: member.cookies,
-      headers: { accept: 'application/json' },
-    })
-    assert.ok(approveA.statusCode >= 200 && approveA.statusCode < 300)
-
-    const reloginA = await loginViaCallback(app, {
-      ...PROVIDERS.github,
-      accessToken: githubAReloginToken,
-    })
-    assert.equal(String(reloginA.body.id), String(githubA.body.id))
-    assert.equal(reloginA.body.status, 'active')
-    assert.equal(reloginA.body.permission_level, 'claim_only')
-
-    const denied = await app.inject({
-      method: 'POST',
-      url: `/api/v1/users/${githubB.body.id}/approve`,
-      cookies: reloginA.cookies,
-      headers: { accept: 'application/json' },
-    })
-    assert.ok(
-      denied.statusCode === 401 || denied.statusCode === 403,
-      `claim_only user cannot approve (expected 401 or 403, got ${denied.statusCode}: ${denied.body})`,
-    )
-
-    const stillPending = await app.inject({
+    const callback = await completeOauthCallback(app, { ...PROVIDERS.github, accessToken: githubToken })
+    assert.match(String(callback.headers.location ?? callback.body), /uninvited|未被邀请/)
+    const me = await app.inject({
       method: 'GET',
       url: '/api/v1/me',
-      cookies: githubB.cookies,
+      cookies: cookieJar(callback),
       headers: { accept: 'application/json' },
     })
-    assert.equal(stillPending.json().status, PENDING_STATUS)
-    assert.equal(stillPending.json().permission_level, 'claim_only')
+    assert.equal(me.statusCode, 401, `uninvited GitHub must not set a session: ${me.statusCode} ${me.body}`)
+    assert.equal(countUsers(db), 1)
+  })
+
+  test('GitLab first login is not auto-full when a full user already exists', async (t) => {
+    const sqlitePath = sqliteFile(t)
+    const app = await createApp(t, sqlitePath)
+    const profiles = new Map()
+    stubUserinfoByAccessToken(t, profiles)
+    const giteaToken = nextAccessToken('gitea-bootstrap')
+    const gitlabToken = nextAccessToken('gitlab-late')
+    profiles.set(giteaToken, { id: 20, login: 'gt-admin', full_name: 'GT Admin' })
+    profiles.set(gitlabToken, { id: 21, username: 'gl-late', name: 'GL Late' })
+
+    const first = await loginViaCallback(app, { ...PROVIDERS.gitea, accessToken: giteaToken })
+    assert.equal(first.body.permission_level, 'full')
+
+    const callback = await completeOauthCallback(app, { ...PROVIDERS.gitlab, accessToken: gitlabToken })
+    const me = await app.inject({
+      method: 'GET',
+      url: '/api/v1/me',
+      cookies: cookieJar(callback),
+      headers: { accept: 'application/json' },
+    })
+    assert.equal(me.statusCode, 401, `late GitLab must not become auto-full: ${me.statusCode} ${me.body}`)
+    const db = openDb(t, sqlitePath)
+    assert.equal(countUsers(db), 1)
+    assert.equal(db.$client.prepare('SELECT provider FROM users').get().provider, 'gitea')
+  })
+
+  test('Gitea first login is not auto-full when a full user already exists', async (t) => {
+    const sqlitePath = sqliteFile(t)
+    const app = await createApp(t, sqlitePath)
+    const profiles = new Map()
+    stubUserinfoByAccessToken(t, profiles)
+    const gitlabToken = nextAccessToken('gitlab-first-full')
+    const giteaToken = nextAccessToken('gitea-late')
+    profiles.set(gitlabToken, { id: 30, username: 'gl-first', name: 'GL First' })
+    profiles.set(giteaToken, { id: 31, login: 'gt-late', full_name: 'GT Late' })
+
+    await loginViaCallback(app, { ...PROVIDERS.gitlab, accessToken: gitlabToken })
+    const callback = await completeOauthCallback(app, { ...PROVIDERS.gitea, accessToken: giteaToken })
+    const me = await app.inject({
+      method: 'GET',
+      url: '/api/v1/me',
+      cookies: cookieJar(callback),
+      headers: { accept: 'application/json' },
+    })
+    assert.equal(me.statusCode, 401, `late Gitea must not become auto-full: ${me.statusCode} ${me.body}`)
+    const db = openDb(t, sqlitePath)
+    assert.equal(countUsers(db), 1)
+  })
+})
+
+describe('KAOLA_ADMINS', () => {
+  test('empty KAOLA_ADMINS still buildApp()', async (t) => {
+    t.after(() => {
+      delete process.env.KAOLA_ADMINS
+    })
+    delete process.env.KAOLA_ADMINS
+    const app = await createApp(t)
+    const res = await app.inject({ method: 'GET', url: '/login' })
+    assert.equal(res.statusCode, 200, `empty KAOLA_ADMINS must still boot: ${res.statusCode} ${res.body}`)
+  })
+
+  test('KAOLA_ADMINS match still inserts full after bootstrap', async (t) => {
+    t.after(() => {
+      delete process.env.KAOLA_ADMINS
+    })
+    process.env.KAOLA_ADMINS = 'github:octo-admin'
+    const sqlitePath = sqliteFile(t)
+    const app = await createApp(t, sqlitePath)
+    const profiles = new Map()
+    stubUserinfoByAccessToken(t, profiles)
+    const gitlabToken = nextAccessToken('gitlab-first-admin')
+    const githubToken = nextAccessToken('github-whitelisted')
+    profiles.set(gitlabToken, { id: 40, username: 'gl-first', name: 'GL First' })
+    profiles.set(githubToken, { id: 41, login: 'octo-admin', name: 'Octo Admin' })
+
+    const first = await loginViaCallback(app, { ...PROVIDERS.gitlab, accessToken: gitlabToken })
+    assert.equal(first.body.permission_level, 'full')
+
+    const invited = await loginViaCallback(app, { ...PROVIDERS.github, accessToken: githubToken })
+    assertPersistedUser(invited.body, {
+      provider: 'github',
+      remote_id: '41',
+      username: 'octo-admin',
+      display_name: 'Octo Admin',
+      status: 'active',
+      permission_level: 'full',
+    })
+    const db = openDb(t, sqlitePath)
+    assert.equal(countUsers(db), 2)
+  })
+})
+
+describe('revoked re-login', () => {
+  test('revoked user re-login does not become active and does not set a session', async (t) => {
+    const sqlitePath = sqliteFile(t)
+    const db = openDb(t, sqlitePath)
+    seedUser(db, {
+      provider: 'github',
+      remoteId: 77,
+      username: 'revoked-cat',
+      displayName: 'Revoked Cat',
+      status: 'revoked',
+      permissionLevel: 'full',
+    })
+    const app = await createApp(t, sqlitePath)
+    const profiles = new Map()
+    stubUserinfoByAccessToken(t, profiles)
+    const accessToken = nextAccessToken('github-revoked')
+    profiles.set(accessToken, { id: 77, login: 'revoked-cat', name: 'Revoked Cat' })
+
+    const callback = await completeOauthCallback(app, { ...PROVIDERS.github, accessToken })
+    assert.match(String(callback.headers.location ?? callback.body), /revoked|已撤销|已吊销/)
+    const me = await app.inject({
+      method: 'GET',
+      url: '/api/v1/me',
+      cookies: cookieJar(callback),
+      headers: { accept: 'application/json' },
+    })
+    assert.equal(me.statusCode, 401, `revoked re-login must not set a session: ${me.statusCode} ${me.body}`)
+    const row = db.$client.prepare('SELECT status, permission_level FROM users WHERE remote_id = ?').get('77')
+    assert.equal(row.status, 'revoked')
+    assert.equal(row.permission_level, 'full')
   })
 })

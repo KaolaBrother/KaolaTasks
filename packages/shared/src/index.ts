@@ -79,3 +79,10 @@ export function transitionTaskStatus(from: string, to: string): string {
   }
   return to
 }
+
+export {
+  DEVICE_PROOF_PREFIX,
+  DEVICE_PROOF_SKEW_SECONDS,
+  deviceFingerprint,
+  deviceProofCanonical,
+} from './device-proof.ts'

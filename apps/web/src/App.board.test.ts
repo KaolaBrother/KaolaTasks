@@ -263,6 +263,9 @@ async function mountApp(me: Record<string, unknown> = ME_FULL, tasks: Brief[] = 
   routes.set('GET /api/v1/credential-profiles', () => jsonResponse(200, { profiles: PROFILES }))
   routes.set('GET /api/v1/tasks', () => jsonResponse(200, { tasks }))
   routes.set('POST /api/v1/tasks', () => jsonResponse(201, CREATED_BRIEF))
+  routes.set('GET /api/v1/me/devices', () => jsonResponse(200, { devices: [] }))
+  routes.set('GET /api/v1/devices/pending', () => jsonResponse(200, { devices: [] }))
+  routes.set('GET /api/v1/claimants', () => jsonResponse(200, { claimants: [] }))
 
   const wrapper = mount(App, { global: { plugins: [naive] } })
   await vi.waitFor(() => {

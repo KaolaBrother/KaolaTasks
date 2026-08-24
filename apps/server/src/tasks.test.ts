@@ -305,6 +305,31 @@ function openDb(t, sqlitePath) {
   return db
 }
 
+function withAdmins(t, spec) {
+  const previous = process.env.KAOLA_ADMINS
+  if (spec == null || spec === '') delete process.env.KAOLA_ADMINS
+  else process.env.KAOLA_ADMINS = spec
+  t.after(() => {
+    if (previous == null) delete process.env.KAOLA_ADMINS
+    else process.env.KAOLA_ADMINS = previous
+  })
+}
+
+function seedLeftoverGithub(db, { remoteId, username, displayName, status, permissionLevel }) {
+  db.$client
+    .prepare(
+      `INSERT INTO users (provider, remote_id, username, display_name, status, permission_level, trusted_automation)
+       VALUES ('github', ?, ?, ?, ?, ?, 0)`,
+    )
+    .run(String(remoteId), username, displayName, status, permissionLevel)
+}
+
+async function loginLeftoverGithub(app, stub, { remoteId, login, name, label }) {
+  const leftoverToken = nextAccessToken(label)
+  stub.oauth.set(leftoverToken, { id: Number(remoteId), login, name })
+  return loginViaCallback(app, { ...PROVIDERS.github, accessToken: leftoverToken })
+}
+
 async function loginViaCallback(app, { decoratorName, callbackPath, accessToken }) {
   stubTokenExchange(app, decoratorName, accessToken)
   const callback = await app.inject({
@@ -344,30 +369,6 @@ async function loginGitea(app, stub, label = 'gitea') {
     full_name: `Gi Tea ${label}`,
   })
   return loginViaCallback(app, { ...PROVIDERS.gitea, accessToken })
-}
-
-async function loginGithub(app, stub, label = 'github') {
-  const accessToken = nextAccessToken(label)
-  stub.oauth.set(accessToken, {
-    id: 60000 + tokenSeq,
-    login: `gh-${label}`,
-    name: `Octo ${label}`,
-  })
-  return loginViaCallback(app, { ...PROVIDERS.github, accessToken })
-}
-
-async function approveUser(app, memberCookies, userId) {
-  const approve = await app.inject({
-    method: 'POST',
-    url: `/api/v1/users/${userId}/approve`,
-    cookies: memberCookies,
-    headers: jsonHeaders,
-  })
-  assert.ok(
-    approve.statusCode >= 200 && approve.statusCode < 300,
-    `approve should succeed, got ${approve.statusCode}: ${approve.body}`,
-  )
-  return approve
 }
 
 function jsonBody(res) {
@@ -613,10 +614,24 @@ describe('issue #7 tasks HTTP surface', { concurrency: false }, () => {
       assert.equal(res.headers.location, '/login')
     })
 
-    test('待批准 GitHub user may read the board (§11 查看任务板 ✓) but not post', async (t) => {
-      const app = await createApp(t)
+    test('leftover 待批准 GitHub user may read the board (§11 查看任务板 ✓) but not post', async (t) => {
+      const sqlitePath = sqliteFile(t)
+      const db = openDb(t, sqlitePath)
+      seedLeftoverGithub(db, {
+        remoteId: 22501,
+        username: 'gh-tasks-pending',
+        displayName: 'Pending Poster',
+        status: '待批准',
+        permissionLevel: 'claim_only',
+      })
+      const app = await createApp(t, sqlitePath)
       const stub = beginFetch(t)
-      const github = await loginGithub(app, stub, 'pending-poster')
+      const github = await loginLeftoverGithub(app, stub, {
+        remoteId: 22501,
+        login: 'gh-tasks-pending',
+        name: 'Pending Poster',
+        label: 'pending-poster',
+      })
       assert.equal(github.body.status, '待批准')
 
       const listed = await listTasks(app, github.cookies)
@@ -628,14 +643,26 @@ describe('issue #7 tasks HTTP surface', { concurrency: false }, () => {
       assert.equal(jsonBody(created)?.error, 'forbidden')
     })
 
-    test('approved GitHub claim_only user may read the board but not post or patch', async (t) => {
+    test('leftover active GitHub claim_only user may read the board but not post or patch', async (t) => {
       const sqlitePath = sqliteFile(t)
+      const db = openDb(t, sqlitePath)
+      seedLeftoverGithub(db, {
+        remoteId: 22502,
+        username: 'gh-tasks-claim-only',
+        displayName: 'Claim Only',
+        status: 'active',
+        permissionLevel: 'claim_only',
+      })
       const app = await createApp(t, sqlitePath)
       const stub = beginFetch(t)
       allowForgeToken(stub, INLINE_TOKEN)
       const member = await loginGitea(app, stub, 'owner')
-      const github = await loginGithub(app, stub, 'claim-only')
-      await approveUser(app, member.cookies, github.body.id)
+      const github = await loginLeftoverGithub(app, stub, {
+        remoteId: 22502,
+        login: 'gh-tasks-claim-only',
+        name: 'Claim Only',
+        label: 'claim-only',
+      })
 
       const me = await app.inject({
         method: 'GET',
@@ -662,6 +689,7 @@ describe('issue #7 tasks HTTP surface', { concurrency: false }, () => {
     })
 
     test('only the 发布者 may cancel — another active full member gets 403', async (t) => {
+      withAdmins(t, 'gitea:gt-bystander')
       const app = await createApp(t)
       const stub = beginFetch(t)
       allowForgeToken(stub, INLINE_TOKEN)

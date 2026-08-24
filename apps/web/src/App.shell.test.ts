@@ -207,6 +207,9 @@ function stubMemberGets(
   routes.set('GET /api/v1/agent-keys', () => jsonResponse(200, { keys: [] }))
   routes.set('GET /api/v1/claim-confirmations', () => jsonResponse(200, { confirmations: [] }))
   routes.set('GET /api/v1/credential-profiles', () => jsonResponse(200, { profiles: [] }))
+  routes.set('GET /api/v1/me/devices', () => jsonResponse(200, { devices: [] }))
+  routes.set('GET /api/v1/devices/pending', () => jsonResponse(200, { devices: [] }))
+  routes.set('GET /api/v1/claimants', () => jsonResponse(200, { claimants: [] }))
 }
 
 async function mountApp(me: Record<string, unknown> = ME_FULL, tasks: Brief[] = []) {
@@ -339,7 +342,7 @@ function expectNeitherPosterButton(wrapper: VueWrapper) {
 // =============================================================================================
 
 describe('Workbench nav', () => {
-  it('full+active：workbench-nav 与四项都在，文案含看板/发布/钥匙/审计；pending 与 login 没有 workbench-nav', async () => {
+  it('full+active：workbench-nav 与四项都在，文案含看板/发布/电脑/审计；pending 与 login 没有 workbench-nav', async () => {
     const full = await mountApp(ME_FULL)
     expect(node(full.wrapper, 'workbench-nav').exists()).toBe(true)
     expect(node(full.wrapper, 'workbench-nav-board').exists()).toBe(true)
@@ -348,7 +351,8 @@ describe('Workbench nav', () => {
     expect(node(full.wrapper, 'workbench-nav-audit').exists()).toBe(true)
     expect(textOf(full.wrapper, 'workbench-nav-board')).toContain('看板')
     expect(textOf(full.wrapper, 'workbench-nav-publish')).toContain('发布')
-    expect(textOf(full.wrapper, 'workbench-nav-keys')).toContain('钥匙')
+    expect(textOf(full.wrapper, 'workbench-nav-keys')).toContain('电脑')
+    expect(textOf(full.wrapper, 'workbench-nav-keys')).not.toContain('钥匙')
     expect(textOf(full.wrapper, 'workbench-nav-audit')).toContain('审计')
     full.wrapper.unmount()
 
@@ -361,14 +365,15 @@ describe('Workbench nav', () => {
     login.wrapper.unmount()
   })
 
-  it('claim_only+active：看板/钥匙/审计导航存在，没有 workbench-nav-publish', async () => {
+  it('claim_only+active：看板/电脑/审计导航存在，没有 workbench-nav-publish', async () => {
     const { wrapper } = await mountApp(ME_CLAIM_ONLY)
     expect(node(wrapper, 'workbench-nav').exists()).toBe(true)
     expect(node(wrapper, 'workbench-nav-board').exists()).toBe(true)
     expect(node(wrapper, 'workbench-nav-keys').exists()).toBe(true)
     expect(node(wrapper, 'workbench-nav-audit').exists()).toBe(true)
     expect(textOf(wrapper, 'workbench-nav-board')).toContain('看板')
-    expect(textOf(wrapper, 'workbench-nav-keys')).toContain('钥匙')
+    expect(textOf(wrapper, 'workbench-nav-keys')).toContain('电脑')
+    expect(textOf(wrapper, 'workbench-nav-keys')).not.toContain('钥匙')
     expect(textOf(wrapper, 'workbench-nav-audit')).toContain('审计')
     expect(node(wrapper, 'workbench-nav-publish').exists()).toBe(false)
   })

@@ -24,38 +24,38 @@ sequenceDiagram
     K->>K: 任务变为已完成
 ```
 
-1. 用 GitLab 或 Gitea 登录（正式成员，可发任务）。
+1. 空库第一次用任意一家 OAuth 登录（GitHub / GitLab / Gitea）即成为 `active` + `full` 管理员（bootstrap）。之后未被邀请的账号不会建号（`/login?reason=uninvited`）。可选环境变量 `KAOLA_ADMINS`（`github:username` 或 `github:id:<remote_id>`，GitLab/Gitea 同形）在 bootstrap 之后仍可让匹配身份成为 `full`；空/未设仍可启动。
 2. 保存一份仓库凭证，填好任务后点「发布」。发布时会校验令牌能否读、推、开 PR。
-3. 认领者登录后生成 **Agent Key**，配到自己的 MCP 客户端。
-4. Agent 调用 `claim_task`，拿到一次性仓库令牌（有效租约默认 24 小时）。
-5. Agent 在目标仓库实现、推分支、开 PR，再调用 `submit_pr`。任务变为「待验收」。
-6. 你在 forge 上 review、合并。考拉默认每分钟看一次 PR 状态；也可以配 webhook 即时完结。
-7. 任务变为「已完成」。从 Issue 导入的任务会在源 Issue 上留一条状态评论。
+3. 认领者**不**生成 Agent Key，也**不**把 `ktk_` / forge token 写进 mcp.json。本机跑 `kaola-mcp --url http://localhost:31415`（或 `KAOLA_URL`），私钥只在 `~/.kaola/device.json`（可用 `KAOLA_HOME` 改目录）。
+4. Agent 第一次连上 MCP 时，服务端对未绑定电脑回答 HTTP `202` `{ "error": "authorization_required", "pending": true, "expires_at" }`（待授权，窗口 86400 秒）。管理员在工作台 **电脑** 页看到 **待授权电脑**，点 **绑到我自己**（或绑到 **认领者**），然后 Agent 再认领。
+5. 已绑定后 `claim_task` 成功才拿到一次性仓库令牌（有效租约默认 24 小时）。
+6. Agent 在目标仓库实现、推分支、开 PR，再调用 `submit_pr`。任务变为「待验收」。
+7. 你在 forge 上 review、合并。考拉默认每分钟看一次 PR 状态；也可以配 webhook 即时完结。
+8. 任务变为「已完成」。从 Issue 导入的任务会在源 Issue 上留一条状态评论。
 
-页面上**没有「认领」按钮**。认领只通过 Agent（MCP）或脚本里的 Bearer API。
+页面上**没有「认领」按钮**。认领只通过 Agent（本机设备证明签名的 MCP / REST），不是 Agent Key Bearer。
 
-认领者不需要在目标仓库上有账号——任务所附的令牌就是访问权。PR 会显示为令牌所属身份（发布者或 bot）。
+认领者（无 Web 登录的命名身份，或绑到管理员自己的电脑）不需要在目标仓库上有账号——任务所附的令牌就是访问权。PR 会显示为令牌所属身份（发布者或 bot）。
 
 ## 登录与权限
 
-| | GitLab / Gitea 登录 | GitHub 登录 |
-|--|--|--|
-| 看看板 | 可以 | 可以（待批准时只能看到「账号待批准」） |
-| 发任务、管凭证档案 | 可以 | 不可以 |
-| 生成 Agent Key、让 Agent 认领 | 可以 | 需先由正式成员在工作台「批准 GitHub 用户」 |
+空库**首次** OAuth 登录（三家任一）写入 `active` + `full`。库里已有 `active`+`full` 之后，未列入 `KAOLA_ADMINS` 的新身份**不会**建号（`/login?reason=uninvited`），GitLab / Gitea **不会**仅因登录来源自动 `full`。
 
-GitHub 账号谁都能注册，而认领会揭示仓库令牌，所以 GitHub 首次登录是「待批准」。同一人的 GitHub 号和 GitLab 号在考拉里是两个用户。
+| | 空库首次登录 | 已有管理员之后 |
+|--|--|--|
+| 看看板 / 发任务 | 该用户为 `full` | 仅已邀请（`KAOLA_ADMINS`）的新登录为 `full`；否则重定向 `uninvited` |
+| 认领 | 电脑绑到该用户或 **认领者** 后，由 Agent 认领 | 认领者不自助铸 Agent Key |
 
 任务状态：待认领 → 进行中 → 待验收 → 已完成；也可以已退回（可重新打开）或已取消。
 
 ## 人在浏览器里做什么
 
-打开 **http://localhost:31415**（开发时请用 `localhost`，不要用 `127.0.0.1`，否则登录 cookie 对不上）。工作台是四栏：**看板 / 发布 / 钥匙 / 审计**（窄屏下导航改成横排）。
+打开 **http://localhost:31415**（开发时请用 `localhost`，不要用 `127.0.0.1`，否则登录 cookie 对不上）。工作台是四栏：**看板 / 发布 / 电脑 / 审计**（窄屏下导航改成横排）。
 
 **发布者（GitLab / Gitea）**
 
 1. 登录后进入工作台。
-2. 在「钥匙」栏的「凭证档案」里按 forge + 仓库地址 + 仓库全名保存加密令牌（推荐），或在单条任务里临时贴令牌。GitHub / GitLab 的仓库地址会预填；Gitea 留空自填。
+2. 在「电脑」栏的「凭证档案」里按 forge + 仓库地址 + 仓库全名保存加密令牌（推荐），或在单条任务里临时贴令牌。GitHub / GitLab 的仓库地址会预填；Gitea 留空自填。
 3. 「发布」栏：平台自有填标题、说明；从 Issue 导入则点「导入」，成功后只读卡片展示标题/正文/URL（不收集验收标准等附加项）。凭证选共享档案时，仓库由档案带出（不再手填 Forge / 仓库地址 / 仓库）；来源为导入时从下拉选择 Issue。凭证选一次性 token 时仍手填仓库，并粘贴 Issue URL。分支和目录在「高级」里。
 4. 在「看板」里用列表 / 看板查看进度（可按状态、标签、Forge 筛选）。自己发的任务可在详情「取消」，或把已退回的「重新开放」。
 5. 「审计」栏看审计日志和团队统计。
@@ -64,29 +64,30 @@ GitHub 账号谁都能注册，而认领会揭示仓库令牌，所以 GitHub �
 
 **认领者**
 
-1. 登录（GitHub 用户需先被批准）。
-2. 在「钥匙」栏生成 Agent Key。明文只显示一次，前缀 `ktk_`，请立刻保存。
-3. 按下一节把 Key 配进 MCP 客户端。
-4. 若 Agent **自己轮询、主动**去认领，「钥匙」栏会出现「待确认认领」；点批准后 Agent 再认领才会拿到仓库令牌。你口头让 Agent 去认领时，有 Key 即授权，不必再确认。
-5. 「受信自动化」打开后，该用户的自主认领不再排队确认。默认关闭。
+认领者不是 Web 自助账号，不铸 Agent Key。管理员在 **电脑** 页把 **待授权电脑** 绑到自己（**绑到我自己**，`{ "bind_to_self": true }`）或绑到命名 **认领者**（恰好一个键：`claimant_id` 或 `claimant_display_name`）。
+
+若 Agent **自己轮询、主动**去认领（已绑定电脑，且绑的是 Web 用户），「电脑」栏仍可能出现「待确认认领」（#16）；点批准后 Agent 再认领才会拿到仓库令牌。你口头让 Agent 去认领时，已绑定即授权，不必再确认。
+
+「受信自动化」打开后，该用户的自主认领不再排队确认。默认关闭。
 
 ## Agent 怎么接单
 
-MCP 端点：`POST http://localhost:31415/api/mcp`（Streamable HTTP）。平时 MCP 配置**不含**仓库 / forge token，也不含「这条任务的钥匙」。认领者不生成仓库钥匙，也不必在 GitLab / GitHub 上有该仓账号。
+MCP 端点：`POST http://localhost:31415/api/mcp`（Streamable HTTP）。身份是本机 Ed25519 设备证明，请求头 `X-Kaola-Key`、`X-Kaola-Ts`、`X-Kaola-Nonce`、`X-Kaola-Sig`（可选 `X-Kaola-Hostname`）。stdio 桥 `kaola-mcp` 代签。平时 MCP 配置**不含**仓库 / forge token，也不含设备私钥或 `ktk_`。
 
-提交进 git 的 MCP 示例**只含 URL**，不含任何 secret、不含 Agent Key 占位、不含 forge PAT：
+提交进 git 的 MCP 示例（`apps/mcp/examples/mcp.json`）**只有 command + `--url`**：
 
 ```json
 {
   "mcpServers": {
     "kaola-tasks": {
-      "url": "http://localhost:31415/api/mcp"
+      "command": "kaola-mcp",
+      "args": ["--url", "http://localhost:31415"]
     }
   }
 }
 ```
 
-考拉 Agent Key（钥匙页生成，前缀 `ktk_…`）只用来打开考拉 MCP / REST 大门，**不是**仓库钥匙。若客户端需要 header：从环境变量 `KAOLA_AGENT_KEY` 注入到用户级 `~/.cursor/mcp.json` 的 `Authorization: Bearer …`。**禁止**把 forge token 写进任何 mcp.json，也**禁止**把仓库 PAT 填进 MCP `Authorization`。人手不必按任务改 mcp.json；换任务不改配置，只再调 `claim_task`。
+**禁止**把 forge token 或 `ktk_` 写进任何 mcp.json。人手不必按任务改 mcp.json；换任务不改配置，只再调 `claim_task`。未绑定的合法签名在钩子层即 `202` `{ "error": "authorization_required", "pending": true, "expires_at" }`，不能列出或认领。
 
 六个工具：
 
@@ -101,7 +102,7 @@ MCP 端点：`POST http://localhost:31415/api/mcp`（Streamable HTTP）。平时
 
 REST `POST /api/v1/tasks/:publicId/claim` `201` 与 MCP `claim_task` 成功共用同一信封，键恰好是 `task`、`token`、`lease`、`clone`。`clone` 恰四键：`suggested_dir`、`token_usage`、`remote_url`、`extra_header`（`{ name, value_pattern }`）。用 `clone.extra_header` + `clone.remote_url` 克隆，目录是 `clone.suggested_dir`。`token_usage` 原文：`token 请通过环境变量或 git -c http.extraHeader 按次传递，不要写入 remote URL（会落盘到 .git/config）。`
 
-没有 MCP 的脚本可以用同一把 Agent Key 调 REST：`POST /api/v1/tasks/:id/claim`、`…/progress`、`…/release`。提交 PR 只有 MCP 的 `submit_pr`。
+没有 MCP 的脚本用同一套设备证明头调 REST：`POST /api/v1/tasks/:publicId/claim`、`…/progress`、`…/release`。提交 PR 只有 MCP 的 `submit_pr`。遗留 `ktk_` Bearer **不能**作为 MCP/认领身份（`401` `{ "error": "unauthorized" }`，`WWW-Authenticate: Kaola-Device`）。
 
 ## 本机跑起来
 
@@ -119,6 +120,8 @@ pnpm install
 - `OAUTH_GITEA_CLIENT_ID` / `OAUTH_GITEA_CLIENT_SECRET` / `OAUTH_GITEA_BASE_URL`
 
 发任务或保存凭证还需要 `VAULT_MASTER_KEY`：64 位十六进制（32 字节）。缺了会在保存凭证时报错，进程仍能起来。
+
+可选 `KAOLA_ADMINS`：逗号/空白分隔的 `github:username` 或 `github:id:<remote_id>`（`gitlab` / `gitea` 同形）。空或未设仍可 `buildApp()`；空库首次登录不依赖它。可选 `KAOLA_HOME` 覆盖设备身份目录（默认 `~/.kaola`）。
 
 建议一并设置：
 

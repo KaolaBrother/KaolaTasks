@@ -14,7 +14,7 @@
         <n-layout-content class="app-content">
           <n-card title="登录" v-if="view === 'login'" class="gate-card">
             <n-space vertical>
-              <n-text>使用团队 forge 账号登录。GitLab / Gitea 为正式成员；GitHub 首次登录需批准后方可认领任务。</n-text>
+              <n-text>使用团队 forge 账号登录。未被邀请则无法进入工作台。</n-text>
               <n-space>
                 <n-button
                   class="has-ripple primary-fill"
@@ -429,29 +429,110 @@
                     </div>
                   </n-space>
 
-                  <n-divider v-if="canManageKeys">Agent Key</n-divider>
-                  <n-space v-if="canManageKeys" vertical>
-                    <n-text>自助生成与吊销个人 Agent API Key。明文仅在创建时显示一次，服务端只存哈希。</n-text>
-                    <n-space class="keys-inline" align="center">
-                      <n-input v-model:value="keyLabel" placeholder="备注（可选）" style="width: 220px" />
-                      <n-button
-                        class="has-ripple primary-fill"
-                        type="primary"
-                        :loading="keyCreating"
-                        @pointerdown="onRipple"
-                        @click="createAgentKey"
-                      >生成 Agent Key</n-button>
+                  <n-divider v-if="canApprove">我的电脑</n-divider>
+                  <div v-if="canApprove" data-testid="devices-mine">
+                    <n-space vertical>
+                      <n-text strong>我的电脑</n-text>
+                      <n-text v-if="mineDevices.length === 0" class="empty-copy">暂无已绑定的电脑。</n-text>
+                      <n-space
+                        v-for="device in mineDevices"
+                        :key="device.id"
+                        class="claim-row"
+                        align="center"
+                      >
+                        <n-text>
+                          {{ device.hostname }} · {{ device.fingerprint }} · {{ device.expires_at }}
+                        </n-text>
+                        <n-button
+                          data-testid="device-revoke"
+                          class="has-ripple"
+                          size="small"
+                          @pointerdown="onRipple"
+                          @click="revokeDevice(device.id)"
+                        >解除这台电脑</n-button>
+                      </n-space>
                     </n-space>
-                    <n-alert v-if="newKeyToken" type="warning" title="请立即复制，关闭后无法再次查看">
-                      {{ newKeyToken }}
-                    </n-alert>
-                    <n-text v-if="keyMessage" :type="keyOk ? 'success' : 'error'">{{ keyMessage }}</n-text>
-                    <n-text v-if="agentKeys.length === 0" class="empty-copy">暂无 Agent Key。</n-text>
-                    <n-space v-for="key in agentKeys" :key="key.id" align="center">
-                      <n-text>#{{ key.id }} {{ key.label || '（无备注）' }} · {{ formatLastUsed(key.last_used_at) }}</n-text>
-                      <n-button size="small" class="has-ripple" @pointerdown="onRipple" @click="revokeAgentKey(key.id)">吊销</n-button>
+                  </div>
+
+                  <n-divider v-if="canApprove">待授权电脑</n-divider>
+                  <div v-if="canApprove" data-testid="devices-pending">
+                    <n-space vertical>
+                      <n-text strong>待授权电脑</n-text>
+                      <n-text v-if="pendingDevices.length === 0" class="empty-copy">暂无待授权电脑。</n-text>
+                      <n-space
+                        v-for="device in pendingDevices"
+                        :key="device.id"
+                        class="claim-row"
+                        align="center"
+                      >
+                        <n-text>
+                          {{ device.hostname }} · {{ device.fingerprint }} · {{ device.expires_at }}
+                        </n-text>
+                      </n-space>
+                      <template v-if="pendingDevices.length > 0">
+                        <n-space class="keys-inline" align="center">
+                          <n-input
+                            data-testid="device-bind-claimant-name"
+                            v-model:value="bindClaimantName"
+                            placeholder="认领者显示名"
+                            style="width: 220px"
+                          />
+                          <n-select
+                            data-testid="device-bind-claimant-select"
+                            v-model:value="bindClaimantId"
+                            :options="claimantSelectOptions"
+                            clearable
+                            placeholder="选择已有认领者"
+                            style="width: 220px"
+                          />
+                          <n-button
+                            data-testid="device-bind-submit"
+                            class="has-ripple primary-fill"
+                            type="primary"
+                            :loading="deviceBinding"
+                            @pointerdown="onRipple"
+                            @click="submitBindClaimant"
+                          >绑定</n-button>
+                          <n-button
+                            data-testid="device-bind-self"
+                            class="has-ripple"
+                            :loading="deviceBinding"
+                            @pointerdown="onRipple"
+                            @click="bindDeviceToSelf"
+                          >绑到我自己</n-button>
+                        </n-space>
+                        <n-text v-if="claimants.length === 0" class="empty-copy">
+                          暂无认领者，请输入显示名新建。
+                        </n-text>
+                      </template>
+                      <n-text v-if="deviceBindMessage" :type="deviceBindOk ? 'success' : 'error'">
+                        {{ deviceBindMessage }}
+                      </n-text>
                     </n-space>
-                  </n-space>
+                  </div>
+
+                  <n-divider v-if="canApprove">认领者</n-divider>
+                  <div v-if="canApprove" data-testid="claimants-list">
+                    <n-space vertical>
+                      <n-text strong>认领者</n-text>
+                      <n-text v-if="claimants.length === 0" class="empty-copy">暂无认领者。</n-text>
+                      <n-space
+                        v-for="claimant in claimants"
+                        :key="claimant.id"
+                        class="claim-row"
+                        align="center"
+                      >
+                        <n-text>{{ claimant.display_name }}</n-text>
+                        <n-button
+                          data-testid="claimant-revoke"
+                          class="has-ripple"
+                          size="small"
+                          @pointerdown="onRipple"
+                          @click="revokeClaimant(claimant.id)"
+                        >解除认领者</n-button>
+                      </n-space>
+                    </n-space>
+                  </div>
 
                   <n-divider v-if="canApprove">凭证档案</n-divider>
                   <n-space v-if="canApprove" vertical>
@@ -504,18 +585,6 @@
                     </n-space>
                   </n-space>
 
-                  <n-divider v-if="canApprove">批准 GitHub 用户</n-divider>
-                  <n-space v-if="canApprove" class="keys-inline" align="center">
-                    <n-input v-model:value="approveId" placeholder="GitHub 用户数字 id" />
-                    <n-button
-                      class="has-ripple primary-fill"
-                      type="primary"
-                      :loading="approving"
-                      @pointerdown="onRipple"
-                      @click="approveUser"
-                    >批准</n-button>
-                  </n-space>
-                  <n-text v-if="approveResult" :type="approveOk ? 'success' : 'error'">{{ approveResult }}</n-text>
                 </n-space>
               </div>
 
@@ -646,10 +715,24 @@ type Me = {
   message?: string
 }
 
-type AgentKeyRow = {
+type DeviceRow = {
   id: number
-  label: string
-  last_used_at: number | null
+  hostname: string
+  fingerprint: string
+  status?: string
+  created_at: string
+  paired_at?: string | null
+  expires_at: string
+  last_seen?: string | null
+}
+
+type ClaimantRow = {
+  id: number
+  display_name: string
+  status: string
+  device_max_age_days: number
+  max_devices: number
+  device_idle_days: number
 }
 
 type ProfileRow = {
@@ -713,17 +796,15 @@ const LIVE_EVENT_TYPES = ['token 揭示', '状态迁移', '心跳', '变更', '�
 
 const me = ref<Me | null>(null)
 const loaded = ref(false)
-const approveId = ref('')
-const approving = ref(false)
-const approveResult = ref('')
-const approveOk = ref(false)
 
-const keyLabel = ref('')
-const keyCreating = ref(false)
-const newKeyToken = ref('')
-const keyMessage = ref('')
-const keyOk = ref(false)
-const agentKeys = ref<AgentKeyRow[]>([])
+const mineDevices = ref<DeviceRow[]>([])
+const pendingDevices = ref<DeviceRow[]>([])
+const claimants = ref<ClaimantRow[]>([])
+const bindClaimantName = ref('')
+const bindClaimantId = ref<number | null>(null)
+const deviceBinding = ref(false)
+const deviceBindMessage = ref('')
+const deviceBindOk = ref(false)
 
 const profileForge = ref<ForgeKind>('gitlab')
 const profileBaseUrl = ref('')
@@ -835,7 +916,7 @@ const navItems = computed(() => {
     items.push({ id: 'publish', label: '发布', testid: 'workbench-nav-publish' })
   }
   items.push(
-    { id: 'keys', label: '钥匙', testid: 'workbench-nav-keys' },
+    { id: 'keys', label: '电脑', testid: 'workbench-nav-keys' },
     { id: 'audit', label: '审计', testid: 'workbench-nav-audit' },
   )
   return items
@@ -845,6 +926,13 @@ const navCurrentIndex = computed(() => {
   const index = navItems.value.findIndex((item) => item.id === workbenchPane.value)
   return index < 0 ? 0 : index
 })
+
+const claimantSelectOptions = computed(() =>
+  claimants.value.map((claimant) => ({
+    label: claimant.display_name,
+    value: claimant.id,
+  })),
+)
 
 const taskProfileOptions = computed(() =>
   profiles.value.map((profile) => ({
@@ -1090,11 +1178,6 @@ const statsByUsername = computed(() => {
   return Object.entries(map).map(([username, count]) => ({ username, count }))
 })
 
-function formatLastUsed(value: number | null): string {
-  if (value == null) return '从未使用'
-  return `最近使用 ${new Date(value * 1000).toLocaleString('zh-CN')}`
-}
-
 function tasksForColumn(status: string): BoardTask[] {
   return filteredBoardTasks.value.filter((task) => task.status === status)
 }
@@ -1301,11 +1384,13 @@ onMounted(async () => {
     await loadStats()
   }
   if (canManageKeys.value) {
-    await loadAgentKeys()
     await loadClaimConfirmations()
   }
   if (canApprove.value) {
     await loadProfiles()
+    await loadMineDevices()
+    await loadPendingDevices()
+    await loadClaimants()
   }
 })
 
@@ -1371,104 +1456,120 @@ async function rejectClaimConfirmation(id: number, event?: Event) {
   }
 }
 
-async function approveUser() {
-  const id = approveId.value.trim()
-  if (!id) {
-    approveOk.value = false
-    approveResult.value = '请填写待批准用户 ID'
-    return
-  }
-  approving.value = true
-  approveResult.value = ''
+async function loadMineDevices() {
   try {
-    const res = await fetch(`/api/v1/users/${encodeURIComponent(id)}/approve`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { Accept: 'application/json' },
-    })
-    if (!res.ok) {
-      approveOk.value = false
-      approveResult.value = `批准失败（${res.status}）`
-      return
-    }
-    approveOk.value = true
-    approveResult.value = '已批准，该用户可认领任务（GitHub 仍为仅认领）'
-    approveId.value = ''
-  } catch {
-    approveOk.value = false
-    approveResult.value = '批准请求失败'
-  } finally {
-    approving.value = false
-  }
-}
-
-async function loadAgentKeys() {
-  try {
-    const res = await fetch('/api/v1/agent-keys', {
+    const res = await fetch('/api/v1/me/devices', {
       credentials: 'include',
       headers: { Accept: 'application/json' },
     })
     if (!res.ok) return
     const body = await readJson(res)
-    agentKeys.value = Array.isArray(body?.keys) ? (body.keys as AgentKeyRow[]) : []
+    mineDevices.value = Array.isArray(body?.devices) ? (body.devices as DeviceRow[]) : []
   } catch {
-    agentKeys.value = []
+    mineDevices.value = []
   }
 }
 
-async function createAgentKey() {
-  keyCreating.value = true
-  keyMessage.value = ''
-  newKeyToken.value = ''
+async function loadPendingDevices() {
   try {
-    const res = await fetch('/api/v1/agent-keys', {
-      method: 'POST',
-      credentials: 'include',
-      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ label: keyLabel.value }),
-    })
-    const body = await readJson(res)
-    if (!res.ok) {
-      keyOk.value = false
-      keyMessage.value =
-        typeof body?.message === 'string' ? body.message : `生成失败（${res.status}）`
-      return
-    }
-    if (typeof body?.token === 'string') {
-      newKeyToken.value = body.token
-    }
-    keyOk.value = true
-    keyMessage.value = '已生成，请立即复制明文 Key。'
-    keyLabel.value = ''
-    await loadAgentKeys()
-  } catch {
-    keyOk.value = false
-    keyMessage.value = '生成请求失败'
-  } finally {
-    keyCreating.value = false
-  }
-}
-
-async function revokeAgentKey(id: number) {
-  keyMessage.value = ''
-  try {
-    const res = await fetch(`/api/v1/agent-keys/${id}`, {
-      method: 'DELETE',
+    const res = await fetch('/api/v1/devices/pending', {
       credentials: 'include',
       headers: { Accept: 'application/json' },
     })
+    if (!res.ok) return
+    const body = await readJson(res)
+    pendingDevices.value = Array.isArray(body?.devices) ? (body.devices as DeviceRow[]) : []
+  } catch {
+    pendingDevices.value = []
+  }
+}
+
+async function loadClaimants() {
+  try {
+    const res = await fetch('/api/v1/claimants', {
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+    })
+    if (!res.ok) return
+    const body = await readJson(res)
+    claimants.value = Array.isArray(body?.claimants) ? (body.claimants as ClaimantRow[]) : []
+  } catch {
+    claimants.value = []
+  }
+}
+
+function pendingBindTargetId(): number | undefined {
+  return pendingDevices.value[0]?.id
+}
+
+async function postJson(url: string, body: Record<string, unknown>): Promise<Response> {
+  return fetch(url, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+}
+
+async function refreshDeviceLists() {
+  await loadMineDevices()
+  await loadPendingDevices()
+  await loadClaimants()
+}
+
+async function bindPendingDevice(body: Record<string, unknown>) {
+  const id = pendingBindTargetId()
+  if (id == null) return
+  deviceBinding.value = true
+  deviceBindMessage.value = ''
+  try {
+    const res = await postJson(`/api/v1/devices/${id}/bind`, body)
     if (!res.ok) {
-      keyOk.value = false
-      keyMessage.value = `吊销失败（${res.status}）`
+      deviceBindOk.value = false
+      deviceBindMessage.value = `绑定失败（${res.status}）`
       return
     }
-    if (newKeyToken.value) newKeyToken.value = ''
-    keyOk.value = true
-    keyMessage.value = '已吊销，该 Key 立即失效。'
-    await loadAgentKeys()
+    await res.json().catch(() => null)
+    deviceBindOk.value = true
+    deviceBindMessage.value = '已绑定。'
+    bindClaimantName.value = ''
+    bindClaimantId.value = null
+    await refreshDeviceLists()
   } catch {
-    keyOk.value = false
-    keyMessage.value = '吊销请求失败'
+    deviceBindOk.value = false
+    deviceBindMessage.value = '绑定请求失败'
+  } finally {
+    deviceBinding.value = false
+  }
+}
+
+async function bindDeviceToSelf() {
+  await bindPendingDevice({ bind_to_self: true })
+}
+
+async function submitBindClaimant() {
+  if (bindClaimantId.value != null) {
+    await bindPendingDevice({ claimant_id: bindClaimantId.value })
+    return
+  }
+  await bindPendingDevice({ claimant_display_name: bindClaimantName.value })
+}
+
+async function revokeDevice(id: number) {
+  try {
+    const res = await postJson(`/api/v1/devices/${id}/revoke`, {})
+    if (res.ok) await loadMineDevices()
+  } catch {
+    // ignore
+  }
+}
+
+async function revokeClaimant(id: number) {
+  try {
+    const res = await postJson(`/api/v1/claimants/${id}/revoke`, {})
+    if (res.ok) await loadClaimants()
+  } catch {
+    // ignore
   }
 }
 

@@ -32,6 +32,7 @@ declare module 'fastify' {
     githubOAuth2: OAuth2Decorator
     gitlabOAuth2: OAuth2Decorator
     giteaOAuth2: OAuth2Decorator
+    kaolaAdmins?: AdminMatcher[]
   }
 
   interface Session {
@@ -106,6 +107,39 @@ function userinfoUrl(provider: UserProvider, gitlabBaseUrl: string, giteaBaseUrl
   return `${giteaBaseUrl}/api/v1/user`
 }
 
+type AdminMatcher = { provider: UserProvider; username?: string; remoteId?: string }
+
+function parseKaolaAdmins(raw: string | undefined): AdminMatcher[] {
+  if (raw == null || raw.trim() === '') return []
+  const parts = raw.split(/[,\s]+/).map((p) => p.trim()).filter((p) => p !== '')
+  const out: AdminMatcher[] = []
+  for (const part of parts) {
+    const segs = part.split(':')
+    const provider = segs[0]
+    if (provider !== 'github' && provider !== 'gitlab' && provider !== 'gitea') {
+      throw new Error(`malformed KAOLA_ADMINS entry: ${part}`)
+    }
+    if (segs.length === 2 && segs[1] !== '' && segs[1] !== 'id') {
+      out.push({ provider, username: segs[1] })
+      continue
+    }
+    if (segs.length === 3 && segs[1] === 'id' && segs[2] !== '') {
+      out.push({ provider, remoteId: segs[2] })
+      continue
+    }
+    throw new Error(`malformed KAOLA_ADMINS entry: ${part}`)
+  }
+  return out
+}
+
+function adminMatches(matchers: AdminMatcher[], provider: UserProvider, username: string, remoteId: string): boolean {
+  return matchers.some(
+    (m) =>
+      m.provider === provider &&
+      ((m.username != null && m.username === username) || (m.remoteId != null && m.remoteId === remoteId)),
+  )
+}
+
 function mapProfile(provider: UserProvider, profile: Record<string, unknown>) {
   if (provider === 'github') {
     const username = String(profile.login)
@@ -113,8 +147,6 @@ function mapProfile(provider: UserProvider, profile: Record<string, unknown>) {
       remoteId: String(profile.id),
       username,
       displayName: nonemptyString(profile.name) ?? username,
-      status: PENDING_STATUS as User['status'],
-      permissionLevel: 'claim_only' as const,
     }
   }
   if (provider === 'gitlab') {
@@ -122,8 +154,6 @@ function mapProfile(provider: UserProvider, profile: Record<string, unknown>) {
       remoteId: String(profile.id),
       username: String(profile.username),
       displayName: String(profile.name),
-      status: 'active' as const,
-      permissionLevel: 'full' as const,
     }
   }
   const username = String(profile.login)
@@ -131,16 +161,23 @@ function mapProfile(provider: UserProvider, profile: Record<string, unknown>) {
     remoteId: String(profile.id),
     username,
     displayName: nonemptyString(profile.full_name) ?? username,
-    status: 'active' as const,
-    permissionLevel: 'full' as const,
   }
 }
 
-function upsertUser(
+function countActiveFull(db: AppDb): number {
+  return db
+    .select()
+    .from(users)
+    .all()
+    .filter((row) => row.permissionLevel === 'full' && row.status === 'active').length
+}
+
+function completeUserLogin(
   db: AppDb,
   provider: UserProvider,
   profile: ReturnType<typeof mapProfile>,
-): User {
+  admins: AdminMatcher[],
+): { user?: User; redirect: string } {
   const existing = db
     .select()
     .from(users)
@@ -155,11 +192,21 @@ function upsertUser(
       })
       .where(eq(users.id, existing.id))
       .run()
-    return {
+    const updated = {
       ...existing,
       username: profile.username,
       displayName: profile.displayName,
     }
+    if (updated.status === 'revoked') {
+      return { redirect: '/login?reason=revoked' }
+    }
+    return { user: updated, redirect: '/' }
+  }
+
+  const invited = adminMatches(admins, provider, profile.username, profile.remoteId)
+  const bootstrap = countActiveFull(db) === 0
+  if (!invited && !bootstrap) {
+    return { redirect: '/login?reason=uninvited' }
   }
 
   const inserted = db
@@ -169,8 +216,8 @@ function upsertUser(
       remoteId: profile.remoteId,
       username: profile.username,
       displayName: profile.displayName,
-      status: profile.status,
-      permissionLevel: profile.permissionLevel,
+      status: 'active',
+      permissionLevel: 'full',
     })
     .returning()
     .get()
@@ -178,7 +225,7 @@ function upsertUser(
   if (inserted == null) {
     throw new Error('failed to insert user')
   }
-  return inserted
+  return { user: inserted, redirect: '/' }
 }
 
 export function getSessionUser(db: AppDb, request: FastifyRequest): User | undefined {
@@ -274,13 +321,18 @@ async function completeOAuthLogin(
     return reply.code(502).send({ error: 'userinfo_invalid' })
   }
   const mapped = mapProfile(provider, raw as Record<string, unknown>)
-  const user = upsertUser(db, provider, mapped)
-  request.session.userId = user.id
+  const outcome = completeUserLogin(db, provider, mapped, app.kaolaAdmins ?? [])
+  if (outcome.user == null) {
+    return reply.redirect(outcome.redirect)
+  }
+  request.session.userId = outcome.user.id
   await request.session.save()
-  return reply.redirect('/')
+  return reply.redirect(outcome.redirect)
 }
 
 export function registerAuth(app: FastifyInstance, db: AppDb) {
+  const kaolaAdmins = parseKaolaAdmins(process.env.KAOLA_ADMINS)
+  app.decorate('kaolaAdmins', kaolaAdmins)
   const sessionSecret = requireEnv('SESSION_SECRET')
   const publicUrl = trimTrailingSlash(process.env.PUBLIC_URL ?? 'http://localhost:31415')
   const githubClientId = requireEnv('OAUTH_GITHUB_CLIENT_ID')
@@ -377,7 +429,7 @@ export function registerAuth(app: FastifyInstance, db: AppDb) {
   // Issue #16: 待批准 sessions get the same 401 as no session — they never see the toggle.
   app.put('/api/v1/me/settings', async (request, reply) => {
     const user = getSessionUser(db, request)
-    if (user == null || user.status === PENDING_STATUS) {
+    if (user == null || user.status === PENDING_STATUS || user.status === 'revoked') {
       return sendUnauthorized(request, reply)
     }
 

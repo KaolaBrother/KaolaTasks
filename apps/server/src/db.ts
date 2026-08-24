@@ -3,7 +3,9 @@ import { drizzle } from 'drizzle-orm/better-sqlite3'
 import {
   agentKeys,
   claimConfirmations,
+  claimants,
   credentialProfiles,
+  devices,
   events,
   leases,
   submissions,
@@ -21,15 +23,27 @@ CREATE TABLE IF NOT EXISTS users (
   status TEXT NOT NULL,
   permission_level TEXT NOT NULL,
   trusted_automation INTEGER NOT NULL DEFAULT 0,
+  device_max_age_days INTEGER NOT NULL DEFAULT 30,
+  max_devices INTEGER NOT NULL DEFAULT 5,
+  device_idle_days INTEGER NOT NULL DEFAULT 0,
   UNIQUE (provider, remote_id)
 )
 `
 
-// Issue #16: a sqlite file created before this issue has a `users` table without this column.
-// `CREATE TABLE IF NOT EXISTS` above is a no-op against that existing table, so the column is
-// added out-of-band and duplicate-column errors (already-migrated file) are swallowed.
 const USERS_ADD_TRUSTED_AUTOMATION_DDL = `
 ALTER TABLE users ADD COLUMN trusted_automation INTEGER NOT NULL DEFAULT 0
+`
+
+const USERS_ADD_DEVICE_MAX_AGE_DDL = `
+ALTER TABLE users ADD COLUMN device_max_age_days INTEGER NOT NULL DEFAULT 30
+`
+
+const USERS_ADD_MAX_DEVICES_DDL = `
+ALTER TABLE users ADD COLUMN max_devices INTEGER NOT NULL DEFAULT 5
+`
+
+const USERS_ADD_DEVICE_IDLE_DDL = `
+ALTER TABLE users ADD COLUMN device_idle_days INTEGER NOT NULL DEFAULT 0
 `
 
 function isDuplicateColumnError(err: unknown): boolean {
@@ -39,6 +53,14 @@ function isDuplicateColumnError(err: unknown): boolean {
     'message' in err &&
     /duplicate column name/i.test(String((err as { message: unknown }).message))
   )
+}
+
+function tryAddColumn(sqlite: InstanceType<typeof Database>, ddl: string): void {
+  try {
+    sqlite.exec(ddl)
+  } catch (err) {
+    if (!isDuplicateColumnError(err)) throw err
+  }
 }
 
 const AGENT_KEYS_DDL = `
@@ -107,13 +129,23 @@ const LEASES_DDL = `
 CREATE TABLE IF NOT EXISTS leases (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   task_id INTEGER NOT NULL,
-  claimer_user_id INTEGER NOT NULL,
-  agent_key_id INTEGER NOT NULL,
+  claimer_user_id INTEGER,
+  claimer_claimant_id INTEGER,
+  device_id INTEGER NOT NULL,
+  agent_key_id INTEGER,
   claimed_at INTEGER NOT NULL,
   expires_at INTEGER NOT NULL,
   last_heartbeat INTEGER NOT NULL,
   state TEXT NOT NULL
 )
+`
+
+const LEASES_ADD_DEVICE_ID_DDL = `
+ALTER TABLE leases ADD COLUMN device_id INTEGER NOT NULL DEFAULT 0
+`
+
+const LEASES_ADD_CLAIMER_CLAIMANT_ID_DDL = `
+ALTER TABLE leases ADD COLUMN claimer_claimant_id INTEGER
 `
 
 const LEASES_ONE_ACTIVE_INDEX_DDL = `
@@ -137,28 +169,66 @@ CREATE TABLE IF NOT EXISTS claim_confirmations (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   task_id INTEGER NOT NULL,
   user_id INTEGER NOT NULL,
-  agent_key_id INTEGER NOT NULL,
+  device_id INTEGER NOT NULL,
+  agent_key_id INTEGER,
   state TEXT NOT NULL,
   created_at INTEGER NOT NULL
+)
+`
+
+const CLAIM_CONFIRMATIONS_ADD_DEVICE_ID_DDL = `
+ALTER TABLE claim_confirmations ADD COLUMN device_id INTEGER NOT NULL DEFAULT 0
+`
+
+const CLAIMANTS_DDL = `
+CREATE TABLE IF NOT EXISTS claimants (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  display_name TEXT NOT NULL,
+  status TEXT NOT NULL,
+  device_max_age_days INTEGER NOT NULL DEFAULT 30,
+  max_devices INTEGER NOT NULL DEFAULT 5,
+  device_idle_days INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+)
+`
+
+const DEVICES_DDL = `
+CREATE TABLE IF NOT EXISTS devices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  fingerprint TEXT NOT NULL UNIQUE,
+  public_key TEXT NOT NULL,
+  hostname TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL,
+  claimant_id INTEGER,
+  user_id INTEGER,
+  created_at INTEGER NOT NULL,
+  pending_expires_at INTEGER,
+  paired_at INTEGER,
+  expires_at INTEGER,
+  last_seen INTEGER
 )
 `
 
 export function createDb(path = ':memory:') {
   const sqlite = new Database(path)
   sqlite.exec(USERS_DDL)
-  try {
-    sqlite.exec(USERS_ADD_TRUSTED_AUTOMATION_DDL)
-  } catch (err) {
-    if (!isDuplicateColumnError(err)) throw err
-  }
+  tryAddColumn(sqlite, USERS_ADD_TRUSTED_AUTOMATION_DDL)
+  tryAddColumn(sqlite, USERS_ADD_DEVICE_MAX_AGE_DDL)
+  tryAddColumn(sqlite, USERS_ADD_MAX_DEVICES_DDL)
+  tryAddColumn(sqlite, USERS_ADD_DEVICE_IDLE_DDL)
   sqlite.exec(AGENT_KEYS_DDL)
   sqlite.exec(CREDENTIAL_PROFILES_DDL)
   sqlite.exec(TASKS_DDL)
   sqlite.exec(EVENTS_DDL)
   sqlite.exec(LEASES_DDL)
+  tryAddColumn(sqlite, LEASES_ADD_DEVICE_ID_DDL)
+  tryAddColumn(sqlite, LEASES_ADD_CLAIMER_CLAIMANT_ID_DDL)
   sqlite.exec(LEASES_ONE_ACTIVE_INDEX_DDL)
   sqlite.exec(SUBMISSIONS_DDL)
   sqlite.exec(CLAIM_CONFIRMATIONS_DDL)
+  tryAddColumn(sqlite, CLAIM_CONFIRMATIONS_ADD_DEVICE_ID_DDL)
+  sqlite.exec(CLAIMANTS_DDL)
+  sqlite.exec(DEVICES_DDL)
   return drizzle(sqlite, {
     schema: {
       users,
@@ -169,6 +239,8 @@ export function createDb(path = ':memory:') {
       leases,
       submissions,
       claimConfirmations,
+      claimants,
+      devices,
     },
   })
 }

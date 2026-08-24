@@ -158,6 +158,31 @@ function openDb(t, sqlitePath) {
   return db
 }
 
+function withAdmins(t, spec) {
+  const previous = process.env.KAOLA_ADMINS
+  if (spec == null || spec === '') delete process.env.KAOLA_ADMINS
+  else process.env.KAOLA_ADMINS = spec
+  t.after(() => {
+    if (previous == null) delete process.env.KAOLA_ADMINS
+    else process.env.KAOLA_ADMINS = previous
+  })
+}
+
+function seedLeftoverGithub(db, { remoteId, username, displayName, status, permissionLevel }) {
+  db.$client
+    .prepare(
+      `INSERT INTO users (provider, remote_id, username, display_name, status, permission_level, trusted_automation)
+       VALUES ('github', ?, ?, ?, ?, ?, 0)`,
+    )
+    .run(String(remoteId), username, displayName, status, permissionLevel)
+}
+
+async function loginLeftoverGithub(app, profiles, { remoteId, login, name, label }) {
+  const leftoverToken = nextAccessToken(label)
+  profiles.set(leftoverToken, { id: Number(remoteId), login, name })
+  return loginViaCallback(app, { ...PROVIDERS.github, accessToken: leftoverToken })
+}
+
 async function loginViaCallback(app, { decoratorName, callbackPath, accessToken }) {
   stubTokenExchange(app, decoratorName, accessToken)
   const callback = await app.inject({
@@ -203,16 +228,6 @@ async function loginGitea(app, profiles, label = 'gitea') {
     full_name: `Gi Tea ${label}`,
   })
   return loginViaCallback(app, { ...PROVIDERS.gitea, accessToken })
-}
-
-async function loginGithub(app, profiles, label = 'github') {
-  const accessToken = nextAccessToken(label)
-  profiles.set(accessToken, {
-    id: 60000 + tokenSeq,
-    login: `gh-${label}`,
-    name: `Octo ${label}`,
-  })
-  return loginViaCallback(app, { ...PROVIDERS.github, accessToken })
 }
 
 function jsonBody(res) {
@@ -407,6 +422,7 @@ describe('credential profile CRUD (session, active full)', () => {
   })
 
   test('duplicate (forge, base_url, repo_full_name) returns 409 conflict', async (t) => {
+    withAdmins(t, 'gitlab:gl-dup-b')
     const app = await createApp(t)
     const profiles = beginUserinfo(t)
     const first = await loginGitlab(app, profiles, 'dup-a')
@@ -452,6 +468,7 @@ describe('credential profile CRUD (session, active full)', () => {
   })
 
   test('any active full member lists and deletes team-shared profiles', async (t) => {
+    withAdmins(t, 'gitea:gt-share-peer')
     const app = await createApp(t)
     const profiles = beginUserinfo(t)
     const owner = await loginGitlab(app, profiles, 'share-owner')
@@ -475,10 +492,24 @@ describe('credential profile CRUD (session, active full)', () => {
 })
 
 describe('permission gate (profiles are active+full only)', () => {
-  test('pending GitHub user gets 403 forbidden on POST/GET/DELETE', async (t) => {
-    const app = await createApp(t)
+  test('leftover 待批准 GitHub user gets 403 forbidden on POST/GET/DELETE', async (t) => {
+    const sqlitePath = sqliteFile(t)
+    const db = openDb(t, sqlitePath)
+    seedLeftoverGithub(db, {
+      remoteId: 22301,
+      username: 'gh-vault-pending',
+      displayName: 'Pending Vault',
+      status: '待批准',
+      permissionLevel: 'claim_only',
+    })
+    const app = await createApp(t, sqlitePath)
     const profiles = beginUserinfo(t)
-    const pending = await loginGithub(app, profiles, 'pending')
+    const pending = await loginLeftoverGithub(app, profiles, {
+      remoteId: 22301,
+      login: 'gh-vault-pending',
+      name: 'Pending Vault',
+      label: 'pending',
+    })
     assert.equal(pending.body.status, '待批准')
     assert.equal(pending.body.permission_level, 'claim_only')
 
@@ -495,22 +526,25 @@ describe('permission gate (profiles are active+full only)', () => {
     assert.equal(jsonBody(deleted)?.error, 'forbidden')
   })
 
-  test('approved GitHub claim_only still gets 403 forbidden on POST/GET/DELETE', async (t) => {
-    const app = await createApp(t)
-    const profiles = beginUserinfo(t)
-    const github = await loginGithub(app, profiles, 'claim-only')
-    const member = await loginGitlab(app, profiles, 'approver')
-
-    const approve = await app.inject({
-      method: 'POST',
-      url: `/api/v1/users/${github.body.id}/approve`,
-      cookies: member.cookies,
-      headers: jsonHeaders,
+  test('leftover active GitHub claim_only still gets 403 forbidden on POST/GET/DELETE', async (t) => {
+    const sqlitePath = sqliteFile(t)
+    const db = openDb(t, sqlitePath)
+    seedLeftoverGithub(db, {
+      remoteId: 22302,
+      username: 'gh-vault-claim-only',
+      displayName: 'Claim Only Vault',
+      status: 'active',
+      permissionLevel: 'claim_only',
     })
-    assert.ok(
-      approve.statusCode >= 200 && approve.statusCode < 300,
-      `approve should succeed, got ${approve.statusCode}: ${approve.body}`,
-    )
+    const app = await createApp(t, sqlitePath)
+    const profiles = beginUserinfo(t)
+    const member = await loginGitlab(app, profiles, 'approver')
+    const github = await loginLeftoverGithub(app, profiles, {
+      remoteId: 22302,
+      login: 'gh-vault-claim-only',
+      name: 'Claim Only Vault',
+      label: 'claim-only',
+    })
     const me = await app.inject({
       method: 'GET',
       url: '/api/v1/me',

@@ -9,11 +9,14 @@ export const users = sqliteTable(
     remoteId: text('remote_id').notNull(),
     username: text('username').notNull(),
     displayName: text('display_name').notNull(),
-    status: text('status', { enum: ['active', '待批准'] }).notNull(),
+    status: text('status', { enum: ['active', '待批准', 'revoked'] }).notNull(),
     permissionLevel: text('permission_level', { enum: ['full', 'claim_only'] }).notNull(),
     // Issue #16: default off — autonomous claims from this user need a per-claim confirmation
     // until the user opts in via PUT /api/v1/me/settings.
     trustedAutomation: integer('trusted_automation', { mode: 'boolean' }).notNull().default(false),
+    deviceMaxAgeDays: integer('device_max_age_days').notNull().default(30),
+    maxDevices: integer('max_devices').notNull().default(5),
+    deviceIdleDays: integer('device_idle_days').notNull().default(0),
   },
   (t) => [unique('users_provider_remote_id').on(t.provider, t.remoteId)],
 )
@@ -95,8 +98,10 @@ export const events = sqliteTable('events', {
 export const leases = sqliteTable('leases', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   taskId: integer('task_id').notNull(),
-  claimerUserId: integer('claimer_user_id').notNull(),
-  agentKeyId: integer('agent_key_id').notNull(),
+  claimerUserId: integer('claimer_user_id'),
+  claimerClaimantId: integer('claimer_claimant_id'),
+  deviceId: integer('device_id').notNull(),
+  agentKeyId: integer('agent_key_id'),
   claimedAt: integer('claimed_at').notNull(),
   expiresAt: integer('expires_at').notNull(),
   lastHeartbeat: integer('last_heartbeat').notNull(),
@@ -119,11 +124,41 @@ export const claimConfirmations = sqliteTable('claim_confirmations', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   taskId: integer('task_id').notNull(),
   userId: integer('user_id').notNull(),
-  agentKeyId: integer('agent_key_id').notNull(),
+  deviceId: integer('device_id').notNull(),
+  agentKeyId: integer('agent_key_id'),
   state: text('state', { enum: ['pending', 'approved', 'rejected'] }).notNull(),
   createdAt: integer('created_at').notNull(),
 })
 
+
+export const claimants = sqliteTable('claimants', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  displayName: text('display_name').notNull(),
+  status: text('status', { enum: ['active', 'revoked'] }).notNull(),
+  deviceMaxAgeDays: integer('device_max_age_days').notNull().default(30),
+  maxDevices: integer('max_devices').notNull().default(5),
+  deviceIdleDays: integer('device_idle_days').notNull().default(0),
+  createdAt: integer('created_at').notNull(),
+})
+
+export const devices = sqliteTable(
+  'devices',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    fingerprint: text('fingerprint').notNull(),
+    publicKey: text('public_key').notNull(),
+    hostname: text('hostname').notNull().default(''),
+    status: text('status', { enum: ['pending', 'active', 'expired', 'revoked'] }).notNull(),
+    claimantId: integer('claimant_id'),
+    userId: integer('user_id'),
+    createdAt: integer('created_at').notNull(),
+    pendingExpiresAt: integer('pending_expires_at'),
+    pairedAt: integer('paired_at'),
+    expiresAt: integer('expires_at'),
+    lastSeen: integer('last_seen'),
+  },
+  (t) => [unique('devices_fingerprint').on(t.fingerprint)],
+)
 export type User = typeof users.$inferSelect
 export type UserProvider = User['provider']
 export type AgentKey = typeof agentKeys.$inferSelect
@@ -134,3 +169,5 @@ export type AuditEvent = typeof events.$inferSelect
 export type Lease = typeof leases.$inferSelect
 export type Submission = typeof submissions.$inferSelect
 export type ClaimConfirmation = typeof claimConfirmations.$inferSelect
+export type Claimant = typeof claimants.$inferSelect
+export type Device = typeof devices.$inferSelect

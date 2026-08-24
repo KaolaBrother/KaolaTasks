@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseTaskBrief } from '@kaola/shared'
 import { createDb } from './db.ts'
+import { injectSigned, pairDeviceToSelf, generateDeviceIdentity } from './device-proof.test-helpers.ts'
 
 // Issue #9 REST claim / progress / release. Seams copied from tasks.test.ts (do not import that file).
 const GITLAB_BASE_URL = 'https://gitlab.example.test'
@@ -24,7 +25,6 @@ const PROFILE_TOKEN = 'gitea-PROFILE-SHARED-TOKEN-vv31'
 const GITHUB_FORGE_TOKEN = 'github-INLINE-ONE-OFF-TOKEN-gh01'
 const GITLAB_FORGE_TOKEN = 'gitlab-INLINE-ONE-OFF-TOKEN-gl01'
 
-const PENDING_CLAIM_MESSAGE = '你的账号待正式成员批准后方可认领任务。'
 const TASK_ALREADY_CLAIMED_MESSAGE = '任务已被认领。'
 const TASK_NOT_CLAIMED_MESSAGE = '任务未被认领。'
 const TOKEN_REVEAL_EVENT = 'token 揭示'
@@ -34,8 +34,6 @@ const TTL_SECONDS = 86400
 const FROZEN_MS = Date.UTC(2026, 7, 21, 4, 0, 0)
 const CLONE_TOKEN_USAGE =
   'token 请通过环境变量或 git -c http.extraHeader 按次传递，不要写入 remote URL（会落盘到 .git/config）。'
-const AGENT_KEY_RE = /^ktk_[0-9a-f]{64}$/
-
 const BRIEF_KEYS = [
   'id',
   'title',
@@ -260,6 +258,16 @@ function sqliteFile(t) {
   return sqlitePath
 }
 
+function withAdmins(t, spec) {
+  const previous = process.env.KAOLA_ADMINS
+  if (spec == null || spec === '') delete process.env.KAOLA_ADMINS
+  else process.env.KAOLA_ADMINS = spec
+  t.after(() => {
+    if (previous == null) delete process.env.KAOLA_ADMINS
+    else process.env.KAOLA_ADMINS = previous
+  })
+}
+
 async function createApp(t, sqlitePath) {
   const app = buildApp(sqlitePath ? { sqlitePath } : undefined)
   t.after(async () => {
@@ -337,30 +345,6 @@ async function loginGitea(app, stub, label = 'gitea') {
     full_name: `Gi Tea ${label}`,
   })
   return loginViaCallback(app, { ...PROVIDERS.gitea, accessToken })
-}
-
-async function loginGithub(app, stub, label = 'github') {
-  const accessToken = nextAccessToken(label)
-  stub.oauth.set(accessToken, {
-    id: 60000 + tokenSeq,
-    login: `gh-${label}`,
-    name: `Octo ${label}`,
-  })
-  return loginViaCallback(app, { ...PROVIDERS.github, accessToken })
-}
-
-async function approveUser(app, memberCookies, userId) {
-  const approve = await app.inject({
-    method: 'POST',
-    url: `/api/v1/users/${userId}/approve`,
-    cookies: memberCookies,
-    headers: jsonHeaders,
-  })
-  assert.ok(
-    approve.statusCode >= 200 && approve.statusCode < 300,
-    `approve should succeed, got ${approve.statusCode}: ${approve.body}`,
-  )
-  return approve
 }
 
 function jsonBody(res) {
@@ -468,17 +452,28 @@ function bearerHeaders(token) {
 }
 
 async function mintAgentKey(app, cookies, label = 'agent') {
-  const res = await app.inject({
+  const paired = await pairDeviceToSelf(app, cookies, { hostname: label })
+  return { id: paired.deviceId, identity: paired.identity, deviceId: paired.deviceId }
+}
+
+async function claimTask(app, { identity, token, publicId, cookies, payload }) {
+  const url = `/api/v1/tasks/${publicId}/claim`
+  if (identity != null) {
+    return injectSigned(app, identity, {
+      method: 'POST',
+      url,
+      payload: payload ?? {},
+      extraHeaders: { accept: 'application/json', 'content-type': 'application/json' },
+    })
+  }
+  const headers = token != null ? bearerHeaders(token) : jsonHeaders
+  return app.inject({
     method: 'POST',
-    url: '/api/v1/agent-keys',
+    url,
+    headers,
     cookies,
-    headers: jsonHeaders,
-    payload: { label },
+    payload,
   })
-  assert.equal(res.statusCode, 201, `POST /api/v1/agent-keys: ${res.statusCode} ${res.body}`)
-  const body = jsonBody(res)
-  assert.match(String(body?.token ?? ''), AGENT_KEY_RE)
-  return { id: body.id, token: body.token, label: body.label }
 }
 
 function hashAgentKey(plaintext) {
@@ -496,30 +491,38 @@ function seedAgentKey(db, userId, label = 'seeded-pending') {
   return { id: Number(row.id), token, keyHash, label }
 }
 
-async function claimTask(app, { token, publicId, cookies }) {
-  const headers = token != null ? bearerHeaders(token) : jsonHeaders
-  return app.inject({
-    method: 'POST',
-    url: `/api/v1/tasks/${publicId}/claim`,
-    headers,
-    cookies,
-  })
-}
-
-async function progressTask(app, { token, publicId, payload }) {
+async function progressTask(app, { identity, token, publicId, payload }) {
+  const url = `/api/v1/tasks/${publicId}/progress`
+  if (identity != null) {
+    return injectSigned(app, identity, {
+      method: 'POST',
+      url,
+      payload: payload ?? {},
+      extraHeaders: { accept: 'application/json', 'content-type': 'application/json' },
+    })
+  }
   const req = {
     method: 'POST',
-    url: `/api/v1/tasks/${publicId}/progress`,
+    url,
     headers: bearerHeaders(token),
   }
   if (payload !== undefined) req.payload = payload
   return app.inject(req)
 }
 
-async function releaseTask(app, { token, publicId, payload }) {
+async function releaseTask(app, { identity, token, publicId, payload }) {
+  const url = `/api/v1/tasks/${publicId}/release`
+  if (identity != null) {
+    return injectSigned(app, identity, {
+      method: 'POST',
+      url,
+      payload: payload ?? {},
+      extraHeaders: { accept: 'application/json', 'content-type': 'application/json' },
+    })
+  }
   const req = {
     method: 'POST',
-    url: `/api/v1/tasks/${publicId}/release`,
+    url,
     headers: bearerHeaders(token),
   }
   if (payload !== undefined) req.payload = payload
@@ -674,7 +677,7 @@ function assertRelease200(res, { forgeTokens }) {
 function assertBearerUnauthorized(res) {
   assert.equal(res.statusCode, 401, `expected 401, got ${res.statusCode}: ${res.body}`)
   assert.deepEqual(jsonBody(res), { error: 'unauthorized' })
-  assert.match(String(res.headers['www-authenticate'] ?? ''), /Bearer/)
+  assert.match(String(res.headers['www-authenticate'] ?? ''), /Kaola-Device/)
 }
 
 function illegalTransitionMessage(from, to) {
@@ -698,7 +701,7 @@ function eventsOfType(db, type) {
 function claimRevealEvents(db, publicId) {
   return eventsOfType(db, TOKEN_REVEAL_EVENT).filter((event) => {
     const details = parseDetails(event)
-    return details?.task_id === publicId && details?.agent_key_id != null
+    return details?.task_id === publicId && details?.device_id != null
   })
 }
 
@@ -729,7 +732,7 @@ function forceStatus(db, publicId, status) {
 function leaseRows(db, taskPk) {
   return db.$client
     .prepare(
-      'SELECT task_id, claimer_user_id, agent_key_id, claimed_at, expires_at, last_heartbeat, state FROM leases WHERE task_id = ?',
+      'SELECT task_id, claimer_user_id, device_id, claimed_at, expires_at, last_heartbeat, state FROM leases WHERE task_id = ?',
     )
     .all(taskPk)
 }
@@ -750,18 +753,19 @@ function assertEventOmitsSecrets(event, ...secrets) {
   }
 }
 
-function assertLiveLease(row, { taskPk, userId, keyId, nowUnix }) {
+function assertLiveLease(row, { taskPk, userId, deviceId, nowUnix }) {
   assert.ok(row, 'expected a leases row')
   assert.equal(Number(row.task_id), Number(taskPk))
   assert.equal(Number(row.claimer_user_id), Number(userId))
-  assert.equal(Number(row.agent_key_id), Number(keyId))
+  assert.equal(Number(row.device_id), Number(deviceId))
   assert.equal(Number(row.claimed_at), nowUnix)
   assert.equal(Number(row.expires_at), nowUnix + TTL_SECONDS)
   assert.equal(Number(row.last_heartbeat), nowUnix)
   assert.equal(row.state, 'active')
 }
 
-async function boot(t) {
+async function boot(t, { admins } = {}) {
+  if (admins) withAdmins(t, admins)
   const app = await createApp(t)
   const stub = beginFetch(t)
   allowForgeToken(stub, INLINE_TOKEN)
@@ -770,8 +774,8 @@ async function boot(t) {
 }
 
 describe('issue #9 lease-based claiming', { concurrency: false }, () => {
-  describe('authentication — Bearer only', () => {
-    test('unauthenticated claim, progress, and release are 401 unauthorized with WWW-Authenticate Bearer', async (t) => {
+  describe('authentication — device proof', () => {
+    test('unauthenticated claim, progress, and release are 401 unauthorized with WWW-Authenticate Kaola-Device', async (t) => {
       const { app, stub } = await boot(t)
       const poster = await loginGitea(app, stub, 'unauth-poster')
       const { brief } = await createTaskOk(app, poster.cookies)
@@ -790,7 +794,30 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       }
     })
 
-    test('wrong and non-Bearer credentials are 401 with WWW-Authenticate Bearer', async (t) => {
+    test('signed unpaired device proof on claim is 202 authorization_required with no token and no lease', async (t) => {
+      const sqlitePath = sqliteFile(t)
+      const app = await createApp(t, sqlitePath)
+      const stub = beginFetch(t)
+      allowForgeToken(stub, INLINE_TOKEN)
+      const poster = await loginGitea(app, stub, 'unpaired-poster')
+      const { brief } = await createTaskOk(app, poster.cookies)
+      const identity = generateDeviceIdentity()
+
+      const res = await claimTask(app, { identity, publicId: brief.id })
+      assert.equal(res.statusCode, 202, `unpaired claim: ${res.statusCode} ${res.body}`)
+      const body = jsonBody(res)
+      assert.equal(body.error, 'authorization_required')
+      assert.equal(body.pending, true)
+      assert.equal(typeof body.expires_at, 'string')
+      assert.equal(Object.hasOwn(body, 'token'), false, `202 must omit forge token: ${res.body}`)
+      assertNoForgeSecretMaterial(res, INLINE_TOKEN)
+      const db = openDb(t, sqlitePath)
+      assert.equal(eventsOfType(db, TOKEN_REVEAL_EVENT).length, 0)
+      const task = taskRow(db, brief.id)
+      assert.equal(activeLeaseRows(db, task.id).length, 0)
+    })
+
+    test('wrong and non-device credentials are 401 with WWW-Authenticate Kaola-Device', async (t) => {
       const { app, stub } = await boot(t)
       const poster = await loginGitea(app, stub, 'wrong-bearer')
       const { brief } = await createTaskOk(app, poster.cookies)
@@ -848,7 +875,7 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       await createTaskOk(app, poster.cookies)
       const key = await mintAgentKey(app, poster.cookies, 'claimer')
 
-      const res = await claimTask(app, { token: key.token, publicId: 'kt-2026-9999' })
+      const res = await claimTask(app, { identity: key.identity, publicId: 'kt-2026-9999' })
       assert.equal(res.statusCode, 404, `claim unknown: ${res.statusCode} ${res.body}`)
       assert.deepEqual(jsonBody(res), { error: 'not_found' })
       assertNoForgeSecretMaterial(res, INLINE_TOKEN)
@@ -861,7 +888,7 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       const key = await mintAgentKey(app, poster.cookies, 'claimer')
 
       for (const raw of ['1', '0', '-1']) {
-        const res = await claimTask(app, { token: key.token, publicId: raw })
+        const res = await claimTask(app, { identity: key.identity, publicId: raw })
         assert.equal(res.statusCode, 404, `claim /${raw}: ${res.statusCode} ${res.body}`)
         assert.deepEqual(jsonBody(res), { error: 'not_found' })
       }
@@ -877,7 +904,7 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       const key = await mintAgentKey(app, poster.cookies, 'inline-bot')
 
       const outbound = recordOutboundFetch()
-      const res = await claimTask(app, { token: key.token, publicId: brief.id })
+      const res = await claimTask(app, { identity: key.identity, publicId: brief.id })
       const body = assertClaim201(res, {
         forgeToken: INLINE_TOKEN,
         suggestedDir: brief.repo.suggested_dir,
@@ -899,7 +926,7 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       )
       const key = await mintAgentKey(app, poster.cookies, 'profile-bot')
 
-      const res = await claimTask(app, { token: key.token, publicId: brief.id })
+      const res = await claimTask(app, { identity: key.identity, publicId: brief.id })
       const body = assertClaim201(res, {
         forgeToken: PROFILE_TOKEN,
         suggestedDir: brief.repo.suggested_dir,
@@ -929,7 +956,7 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       assert.notEqual(firstBrief.id, secondBrief.id)
       const key = await mintAgentKey(app, poster.cookies, 'switch-bot')
 
-      const first = await claimTask(app, { token: key.token, publicId: firstBrief.id })
+      const first = await claimTask(app, { identity: key.identity, publicId: firstBrief.id })
       const firstBody = assertClaim201(first, {
         forgeToken: INLINE_TOKEN,
         suggestedDir: firstBrief.repo.suggested_dir,
@@ -939,7 +966,7 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       assert.deepEqual(firstBody.task.credential, { inline: true })
       assert.notEqual(firstBody.token, PROFILE_TOKEN)
 
-      const second = await claimTask(app, { token: key.token, publicId: secondBrief.id })
+      const second = await claimTask(app, { identity: key.identity, publicId: secondBrief.id })
       const secondBody = assertClaim201(second, {
         forgeToken: PROFILE_TOKEN,
         suggestedDir: secondBrief.repo.suggested_dir,
@@ -973,7 +1000,7 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
         }),
       )
       const key = await mintAgentKey(app, poster.cookies, 'github-bot')
-      const res = await claimTask(app, { token: key.token, publicId: brief.id })
+      const res = await claimTask(app, { identity: key.identity, publicId: brief.id })
       const body = assertClaim201(res, {
         forgeToken: GITHUB_FORGE_TOKEN,
         suggestedDir: 'widget',
@@ -1006,7 +1033,7 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
         }),
       )
       const key = await mintAgentKey(app, poster.cookies, 'gitlab-bot')
-      const res = await claimTask(app, { token: key.token, publicId: brief.id })
+      const res = await claimTask(app, { identity: key.identity, publicId: brief.id })
       const body = assertClaim201(res, {
         forgeToken: GITLAB_FORGE_TOKEN,
         suggestedDir: 'app',
@@ -1044,7 +1071,7 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       assertBriefShape(brief)
       assert.equal(brief.repo.base_url.endsWith('/'), true, 'this case only pins strip when publish stores a trailing slash')
       const key = await mintAgentKey(app, poster.cookies, 'slash-bot')
-      const res = await claimTask(app, { token: key.token, publicId: brief.id })
+      const res = await claimTask(app, { identity: key.identity, publicId: brief.id })
       const body = assertClaim201(res, {
         forgeToken: INLINE_TOKEN,
         suggestedDir: brief.repo.suggested_dir,
@@ -1060,7 +1087,7 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       const { brief } = await createTaskOk(app, poster.cookies)
       const key = await mintAgentKey(app, poster.cookies, 'getter')
 
-      const claimed = await claimTask(app, { token: key.token, publicId: brief.id })
+      const claimed = await claimTask(app, { identity: key.identity, publicId: brief.id })
       assert.equal(claimed.statusCode, 201, `claim: ${claimed.statusCode} ${claimed.body}`)
       assert.equal(jsonBody(claimed).task.status, '进行中')
 
@@ -1082,75 +1109,97 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
   })
 
   describe('AuthZ', () => {
-    test('pending 待批准 seeded Agent Key is 403, does not reveal the forge token, and writes no token 揭示', async (t) => {
+    test('leftover ktk_ Bearer is 401 unauthorized, not a claim identity, and writes no token 揭示', async (t) => {
       const sqlitePath = sqliteFile(t)
       const app = await createApp(t, sqlitePath)
       const stub = beginFetch(t)
       allowForgeToken(stub, INLINE_TOKEN)
       const member = await loginGitea(app, stub, 'pending-owner')
-      const pending = await loginGithub(app, stub, 'pending-claimer')
-      assert.equal(pending.body.status, '待批准')
-      assert.equal(pending.body.permission_level, 'claim_only')
-
-      const generated = await app.inject({
-        method: 'POST',
-        url: '/api/v1/agent-keys',
-        cookies: pending.cookies,
-        headers: jsonHeaders,
-        payload: { label: 'blocked' },
-      })
-      assert.equal(generated.statusCode, 403, 'pending users cannot POST /api/v1/agent-keys')
-
       const { brief } = await createTaskOk(app, member.cookies)
       const db = openDb(t, sqlitePath)
+      const leftover = db.$client
+        .prepare(
+          `INSERT INTO users (provider, remote_id, username, display_name, status, permission_level, trusted_automation)
+           VALUES ('github', '60111', 'gh-leftover-claimer', 'Leftover', '待批准', 'claim_only', 0)`,
+        )
+        .run()
+      const leftoverId = leftover.lastInsertRowid
+      const seeded = seedAgentKey(db, leftoverId)
       assert.equal(claimRevealEvents(db, brief.id).length, 0)
-      const seeded = seedAgentKey(db, pending.body.id)
 
       const res = await claimTask(app, { token: seeded.token, publicId: brief.id })
-      assert.equal(res.statusCode, 403, `pending claim: ${res.statusCode} ${res.body}`)
-      assert.equal(jsonBody(res)?.error, 'forbidden')
-      assert.equal(jsonBody(res)?.message, PENDING_CLAIM_MESSAGE)
+      assert.equal(res.statusCode, 401, `leftover ktk_ claim: ${res.statusCode} ${res.body}`)
+      assert.deepEqual(jsonBody(res), { error: 'unauthorized' })
+      assert.notEqual(res.statusCode, 202)
       assertNoForgeSecretMaterial(res, INLINE_TOKEN)
       assert.equal(claimRevealEvents(db, brief.id).length, 0)
       assert.equal(eventsOfType(db, TOKEN_REVEAL_EVENT).length, 0)
     })
 
-    test('approved GitHub claim_only can claim', async (t) => {
-      const clock = freezeNow(t)
-      const { app, stub } = await boot(t)
+    test('leftover claim_only session cannot bind a device, and leftover ktk_ cannot claim', async (t) => {
+      const sqlitePath = sqliteFile(t)
+      const app = await createApp(t, sqlitePath)
+      const stub = beginFetch(t)
+      allowForgeToken(stub, INLINE_TOKEN)
       const member = await loginGitea(app, stub, 'claim-only-owner')
-      const github = await loginGithub(app, stub, 'claim-only-agent')
-      await approveUser(app, member.cookies, github.body.id)
-      const me = await app.inject({
+      const { brief } = await createTaskOk(app, member.cookies)
+      const db = openDb(t, sqlitePath)
+      db.$client
+        .prepare(
+          `INSERT INTO users (provider, remote_id, username, display_name, status, permission_level, trusted_automation)
+           VALUES ('github', '60112', 'gh-leftover-claim-only', 'Claim Only', 'active', 'claim_only', 0)`,
+        )
+        .run()
+      const leftoverId = db.$client.prepare("SELECT id FROM users WHERE username = 'gh-leftover-claim-only'").get().id
+      const leftoverToken = nextAccessToken('leftover-claim-only')
+      stub.oauth.set(leftoverToken, { id: 60112, login: 'gh-leftover-claim-only', name: 'Claim Only' })
+      const leftoverLogin = await loginViaCallback(app, { ...PROVIDERS.github, accessToken: leftoverToken })
+      assert.equal(leftoverLogin.body.status, 'active')
+      assert.equal(leftoverLogin.body.permission_level, 'claim_only')
+      assert.equal(Number(leftoverLogin.body.id), Number(leftoverId))
+
+      const identity = generateDeviceIdentity()
+      await claimTask(app, { identity, publicId: brief.id })
+      const pending = await app.inject({
         method: 'GET',
-        url: '/api/v1/me',
-        cookies: github.cookies,
+        url: '/api/v1/devices/pending',
+        cookies: leftoverLogin.cookies,
         headers: jsonHeaders,
       })
-      assert.equal(me.json().status, 'active')
-      assert.equal(me.json().permission_level, 'claim_only')
+      assert.equal(pending.statusCode, 403, `claim_only cannot list pending: ${pending.statusCode} ${pending.body}`)
 
-      const { brief } = await createTaskOk(app, member.cookies)
-      const key = await mintAgentKey(app, github.cookies, 'gh-claim-only')
-      const res = await claimTask(app, { token: key.token, publicId: brief.id })
-      const body = assertClaim201(res, {
-        forgeToken: INLINE_TOKEN,
-        suggestedDir: brief.repo.suggested_dir,
-        nowUnix: clock.unix(),
+      const listedAsFull = await app.inject({
+        method: 'GET',
+        url: '/api/v1/devices/pending',
+        cookies: member.cookies,
+        headers: jsonHeaders,
       })
-      assert.equal(body.task.status, '进行中')
+      const row = jsonBody(listedAsFull)?.devices?.[0]
+      const bind = await app.inject({
+        method: 'POST',
+        url: `/api/v1/devices/${row?.id ?? 1}/bind`,
+        cookies: leftoverLogin.cookies,
+        headers: { accept: 'application/json', 'content-type': 'application/json' },
+        payload: { bind_to_self: true },
+      })
+      assert.equal(bind.statusCode, 403, `claim_only cannot bind: ${bind.statusCode} ${bind.body}`)
+
+      const seeded = seedAgentKey(db, leftoverId)
+      const res = await claimTask(app, { token: seeded.token, publicId: brief.id })
+      assert.equal(res.statusCode, 401, `leftover ktk_ claim: ${res.statusCode} ${res.body}`)
+      assertNoForgeSecretMaterial(res, INLINE_TOKEN)
     })
 
     test('active full can claim', async (t) => {
       const clock = freezeNow(t)
-      const { app, stub } = await boot(t)
+      const { app, stub } = await boot(t, { admins: 'gitea:gt-full-claimer' })
       const poster = await loginGitlab(app, stub, 'full-poster')
       const claimer = await loginGitea(app, stub, 'full-claimer')
       assert.equal(claimer.body.status, 'active')
       assert.equal(claimer.body.permission_level, 'full')
       const { brief } = await createTaskOk(app, poster.cookies)
       const key = await mintAgentKey(app, claimer.cookies, 'full-bot')
-      const res = await claimTask(app, { token: key.token, publicId: brief.id })
+      const res = await claimTask(app, { identity: key.identity, publicId: brief.id })
       assertClaim201(res, {
         forgeToken: INLINE_TOKEN,
         suggestedDir: brief.repo.suggested_dir,
@@ -1162,6 +1211,7 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
   describe('conflicts / illegal states', () => {
     test('second claim while 进行中 is 409 conflict, no token, and no second reveal', async (t) => {
       const sqlitePath = sqliteFile(t)
+      withAdmins(t, 'gitlab:gl-second-claimer')
       const app = await createApp(t, sqlitePath)
       const stub = beginFetch(t)
       allowForgeToken(stub, INLINE_TOKEN)
@@ -1171,19 +1221,19 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       const firstKey = await mintAgentKey(app, poster.cookies, 'holder')
       const otherKey = await mintAgentKey(app, other.cookies, 'rival')
 
-      const first = await claimTask(app, { token: firstKey.token, publicId: brief.id })
+      const first = await claimTask(app, { identity: firstKey.identity, publicId: brief.id })
       assert.equal(first.statusCode, 201, `first claim: ${first.statusCode} ${first.body}`)
       assert.equal(jsonBody(first).token, INLINE_TOKEN)
 
       const db = openDb(t, sqlitePath)
       assert.equal(claimRevealEvents(db, brief.id).length, 1)
 
-      const retry = await claimTask(app, { token: firstKey.token, publicId: brief.id })
+      const retry = await claimTask(app, { identity: firstKey.identity, publicId: brief.id })
       assert.equal(retry.statusCode, 409, `same-key retry: ${retry.statusCode} ${retry.body}`)
       assert.deepEqual(jsonBody(retry), { error: 'conflict', message: TASK_ALREADY_CLAIMED_MESSAGE })
       assertNoForgeSecretMaterial(retry, INLINE_TOKEN)
 
-      const rival = await claimTask(app, { token: otherKey.token, publicId: brief.id })
+      const rival = await claimTask(app, { identity: otherKey.identity, publicId: brief.id })
       assert.equal(rival.statusCode, 409, `rival claim: ${rival.statusCode} ${rival.body}`)
       assert.deepEqual(jsonBody(rival), { error: 'conflict', message: TASK_ALREADY_CLAIMED_MESSAGE })
       assertNoForgeSecretMaterial(rival, INLINE_TOKEN)
@@ -1198,7 +1248,7 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       assert.equal(cancelled.statusCode, 200)
       const key = await mintAgentKey(app, poster.cookies, 'too-late')
 
-      const res = await claimTask(app, { token: key.token, publicId: brief.id })
+      const res = await claimTask(app, { identity: key.identity, publicId: brief.id })
       assert.equal(res.statusCode, 409, `claim cancelled: ${res.statusCode} ${res.body}`)
       assert.deepEqual(jsonBody(res), {
         error: 'illegal_transition',
@@ -1218,7 +1268,7 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       const db = openDb(t, sqlitePath)
       forceStatus(db, brief.id, '待验收')
 
-      const res = await claimTask(app, { token: key.token, publicId: brief.id })
+      const res = await claimTask(app, { identity: key.identity, publicId: brief.id })
       assert.equal(res.statusCode, 409, `claim 待验收: ${res.statusCode} ${res.body}`)
       assert.deepEqual(jsonBody(res), {
         error: 'illegal_transition',
@@ -1228,22 +1278,22 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
     })
 
     test('progress and release by a non-holder are 403 forbidden', async (t) => {
-      const { app, stub } = await boot(t)
+      const { app, stub } = await boot(t, { admins: 'gitlab:gl-bystander' })
       const poster = await loginGitea(app, stub, 'holder')
       const other = await loginGitlab(app, stub, 'bystander')
       const { brief } = await createTaskOk(app, poster.cookies)
       const holderKey = await mintAgentKey(app, poster.cookies, 'holder-key')
       const otherKey = await mintAgentKey(app, other.cookies, 'bystander-key')
 
-      const claimed = await claimTask(app, { token: holderKey.token, publicId: brief.id })
+      const claimed = await claimTask(app, { identity: holderKey.identity, publicId: brief.id })
       assert.equal(claimed.statusCode, 201, `claim: ${claimed.statusCode} ${claimed.body}`)
 
-      const progressed = await progressTask(app, { token: otherKey.token, publicId: brief.id, payload: { note: 'nope' } })
+      const progressed = await progressTask(app, { identity: otherKey.identity, publicId: brief.id, payload: { note: 'nope' } })
       assert.equal(progressed.statusCode, 403, `non-holder progress: ${progressed.statusCode} ${progressed.body}`)
       assert.equal(jsonBody(progressed)?.error, 'forbidden')
       assertNoForgeSecretMaterial(progressed, INLINE_TOKEN)
 
-      const released = await releaseTask(app, { token: otherKey.token, publicId: brief.id, payload: { reason: 'nope' } })
+      const released = await releaseTask(app, { identity: otherKey.identity, publicId: brief.id, payload: { reason: 'nope' } })
       assert.equal(released.statusCode, 403, `non-holder release: ${released.statusCode} ${released.body}`)
       assert.equal(jsonBody(released)?.error, 'forbidden')
       assertNoForgeSecretMaterial(released, INLINE_TOKEN)
@@ -1258,12 +1308,12 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       const { brief } = await createTaskOk(app, poster.cookies)
       const key = await mintAgentKey(app, poster.cookies, 'idle')
 
-      const progressed = await progressTask(app, { token: key.token, publicId: brief.id })
+      const progressed = await progressTask(app, { identity: key.identity, publicId: brief.id })
       assert.equal(progressed.statusCode, 409, `progress unused: ${progressed.statusCode} ${progressed.body}`)
       assert.deepEqual(jsonBody(progressed), { error: 'conflict', message: TASK_NOT_CLAIMED_MESSAGE })
       assertNoForgeSecretMaterial(progressed, INLINE_TOKEN)
 
-      const released = await releaseTask(app, { token: key.token, publicId: brief.id })
+      const released = await releaseTask(app, { identity: key.identity, publicId: brief.id })
       assert.equal(released.statusCode, 409, `release unused: ${released.statusCode} ${released.body}`)
       assert.deepEqual(jsonBody(released), { error: 'conflict', message: TASK_NOT_CLAIMED_MESSAGE })
       assertNoForgeSecretMaterial(released, INLINE_TOKEN)
@@ -1275,16 +1325,16 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       const { brief } = await createTaskOk(app, poster.cookies)
       const key = await mintAgentKey(app, poster.cookies, 'holder')
 
-      const claimed = await claimTask(app, { token: key.token, publicId: brief.id })
+      const claimed = await claimTask(app, { identity: key.identity, publicId: brief.id })
       assert.equal(claimed.statusCode, 201, `claim: ${claimed.statusCode} ${claimed.body}`)
-      const released = await releaseTask(app, { token: key.token, publicId: brief.id })
+      const released = await releaseTask(app, { identity: key.identity, publicId: brief.id })
       assertRelease200(released, { forgeTokens: [INLINE_TOKEN] })
 
-      const progressed = await progressTask(app, { token: key.token, publicId: brief.id, payload: { note: 'late' } })
+      const progressed = await progressTask(app, { identity: key.identity, publicId: brief.id, payload: { note: 'late' } })
       assert.equal(progressed.statusCode, 409, `progress after release: ${progressed.statusCode} ${progressed.body}`)
       assert.deepEqual(jsonBody(progressed), { error: 'conflict', message: TASK_NOT_CLAIMED_MESSAGE })
 
-      const again = await releaseTask(app, { token: key.token, publicId: brief.id })
+      const again = await releaseTask(app, { identity: key.identity, publicId: brief.id })
       assert.equal(again.statusCode, 409, `second release: ${again.statusCode} ${again.body}`)
       assert.deepEqual(jsonBody(again), { error: 'conflict', message: TASK_NOT_CLAIMED_MESSAGE })
     })
@@ -1301,7 +1351,7 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       const { brief } = await createTaskOk(app, poster.cookies)
       const key = await mintAgentKey(app, poster.cookies, 'heart')
 
-      const claimed = await claimTask(app, { token: key.token, publicId: brief.id })
+      const claimed = await claimTask(app, { identity: key.identity, publicId: brief.id })
       const claimedBody = assertClaim201(claimed, {
         forgeToken: INLINE_TOKEN,
         suggestedDir: brief.repo.suggested_dir,
@@ -1309,7 +1359,7 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       })
 
       clock.advanceMs(3600 * 1000)
-      const progressed = await progressTask(app, { token: key.token, publicId: brief.id })
+      const progressed = await progressTask(app, { identity: key.identity, publicId: brief.id })
       const body = assertProgress200(progressed, { nowUnix: clock.unix(), forgeTokens: [INLINE_TOKEN] })
       assert.notEqual(body.lease.expires_at, claimedBody.lease.expires_at)
 
@@ -1338,15 +1388,15 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       const { brief } = await createTaskOk(app, poster.cookies)
       const key = await mintAgentKey(app, poster.cookies, 'noted')
 
-      const claimed = await claimTask(app, { token: key.token, publicId: brief.id })
+      const claimed = await claimTask(app, { identity: key.identity, publicId: brief.id })
       assert.equal(claimed.statusCode, 201, `claim: ${claimed.statusCode} ${claimed.body}`)
 
-      const empty = await progressTask(app, { token: key.token, publicId: brief.id, payload: { note: '' } })
+      const empty = await progressTask(app, { identity: key.identity, publicId: brief.id, payload: { note: '' } })
       assertProgress200(empty, { nowUnix: clock.unix(), forgeTokens: [INLINE_TOKEN] })
 
       clock.advanceMs(60 * 1000)
       const noted = await progressTask(app, {
-        token: key.token,
+        identity: key.identity,
         publicId: brief.id,
         payload: { note: '正在写分页测试' },
       })
@@ -1370,10 +1420,10 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       const { brief } = await createTaskOk(app, poster.cookies)
       const key = await mintAgentKey(app, poster.cookies, 'releaser')
 
-      const claimed = await claimTask(app, { token: key.token, publicId: brief.id })
+      const claimed = await claimTask(app, { identity: key.identity, publicId: brief.id })
       assert.equal(claimed.statusCode, 201, `claim: ${claimed.statusCode} ${claimed.body}`)
 
-      const released = await releaseTask(app, { token: key.token, publicId: brief.id })
+      const released = await releaseTask(app, { identity: key.identity, publicId: brief.id })
       assertRelease200(released, { forgeTokens: [INLINE_TOKEN] })
 
       const db = openDb(t, sqlitePath)
@@ -1403,11 +1453,11 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       const { brief } = await createTaskOk(app, poster.cookies)
       const key = await mintAgentKey(app, poster.cookies, 'releaser')
 
-      const claimed = await claimTask(app, { token: key.token, publicId: brief.id })
+      const claimed = await claimTask(app, { identity: key.identity, publicId: brief.id })
       assert.equal(claimed.statusCode, 201, `claim: ${claimed.statusCode} ${claimed.body}`)
 
       const released = await releaseTask(app, {
-        token: key.token,
+        identity: key.identity,
         publicId: brief.id,
         payload: { reason: '换人做' },
       })
@@ -1436,7 +1486,7 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       const { brief } = await createTaskOk(app, poster.cookies)
       const key = await mintAgentKey(app, poster.cookies, 'expiring')
 
-      const claimed = await claimTask(app, { token: key.token, publicId: brief.id })
+      const claimed = await claimTask(app, { identity: key.identity, publicId: brief.id })
       assert.equal(claimed.statusCode, 201, `claim: ${claimed.statusCode} ${claimed.body}`)
       assert.equal(jsonBody(claimed).task.status, '进行中')
 
@@ -1496,11 +1546,11 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       const { brief } = await createTaskOk(app, poster.cookies)
       const key = await mintAgentKey(app, poster.cookies, 'late-heart')
 
-      const claimed = await claimTask(app, { token: key.token, publicId: brief.id })
+      const claimed = await claimTask(app, { identity: key.identity, publicId: brief.id })
       assert.equal(claimed.statusCode, 201, `claim: ${claimed.statusCode} ${claimed.body}`)
 
       clock.advanceMs(TTL_SECONDS * 1000)
-      const progressed = await progressTask(app, { token: key.token, publicId: brief.id, payload: { note: 'too late' } })
+      const progressed = await progressTask(app, { identity: key.identity, publicId: brief.id, payload: { note: 'too late' } })
       assert.equal(progressed.statusCode, 409, `progress after TTL: ${progressed.statusCode} ${progressed.body}`)
       assert.deepEqual(jsonBody(progressed), { error: 'conflict', message: TASK_NOT_CLAIMED_MESSAGE })
       assertNoForgeSecretMaterial(progressed, INLINE_TOKEN)
@@ -1517,6 +1567,7 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
     test('after expiry a different Agent Key can claim again and writes a second token 揭示', async (t) => {
       const clock = freezeNow(t)
       const sqlitePath = sqliteFile(t)
+      withAdmins(t, 'gitlab:gl-expiry-reclaim-other')
       const app = await createApp(t, sqlitePath)
       const stub = beginFetch(t)
       allowForgeToken(stub, INLINE_TOKEN)
@@ -1526,11 +1577,11 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       const firstKey = await mintAgentKey(app, poster.cookies, 'first')
       const secondKey = await mintAgentKey(app, other.cookies, 'second')
 
-      const first = await claimTask(app, { token: firstKey.token, publicId: brief.id })
+      const first = await claimTask(app, { identity: firstKey.identity, publicId: brief.id })
       assert.equal(first.statusCode, 201, `first claim: ${first.statusCode} ${first.body}`)
 
       clock.advanceMs(TTL_SECONDS * 1000)
-      const second = await claimTask(app, { token: secondKey.token, publicId: brief.id })
+      const second = await claimTask(app, { identity: secondKey.identity, publicId: brief.id })
       assertClaim201(second, {
         forgeToken: INLINE_TOKEN,
         suggestedDir: brief.repo.suggested_dir,
@@ -1540,20 +1591,20 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       const db = openDb(t, sqlitePath)
       const reveals = claimRevealEvents(db, brief.id)
       assert.equal(reveals.length, 2, `expected two claim reveals, got ${JSON.stringify(reveals.map(parseDetails))}`)
-      assert.equal(Number(parseDetails(reveals[0]).agent_key_id), Number(firstKey.id))
-      assert.equal(Number(parseDetails(reveals[1]).agent_key_id), Number(secondKey.id))
+      assert.equal(Number(parseDetails(reveals[0]).device_id), Number(firstKey.id))
+      assert.equal(Number(parseDetails(reveals[1]).device_id), Number(secondKey.id))
 
       const task = taskRow(db, brief.id)
       assert.equal(task.status, '进行中')
       const leases = leaseRows(db, task.id)
       assert.equal(leases.filter((row) => row.state === 'expired').length, 1)
       assert.equal(activeLeaseRows(db, task.id).length, 1)
-      assert.equal(Number(activeLeaseRows(db, task.id)[0].agent_key_id), Number(secondKey.id))
+      assert.equal(Number(activeLeaseRows(db, task.id)[0].device_id), Number(secondKey.id))
     })
   })
 
   describe('reveal audit', () => {
-    test('inline claim writes token 揭示 { task_id, agent_key_id, credential: inline } and 状态迁移 待认领→进行中', async (t) => {
+    test('inline claim writes token 揭示 { task_id, device_id, credential: inline } and 状态迁移 待认领→进行中', async (t) => {
       const sqlitePath = sqliteFile(t)
       const app = await createApp(t, sqlitePath)
       const stub = beginFetch(t)
@@ -1562,7 +1613,7 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       const { brief } = await createTaskOk(app, poster.cookies)
       const key = await mintAgentKey(app, poster.cookies, 'inline-audit')
 
-      const claimed = await claimTask(app, { token: key.token, publicId: brief.id })
+      const claimed = await claimTask(app, { identity: key.identity, publicId: brief.id })
       assert.equal(claimed.statusCode, 201, `claim: ${claimed.statusCode} ${claimed.body}`)
       assert.equal(jsonBody(claimed).token, INLINE_TOKEN)
 
@@ -1572,11 +1623,11 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       assert.equal(Number(reveals[0].actor_user_id), Number(poster.body.id))
       assert.deepEqual(parseDetails(reveals[0]), {
         task_id: brief.id,
-        agent_key_id: key.id,
+        device_id: key.id,
         credential: 'inline',
       })
       assert.equal(Object.hasOwn(parseDetails(reveals[0]), 'profile_id'), false)
-      assertEventOmitsSecrets(reveals[0], INLINE_TOKEN, key.token)
+      assertEventOmitsSecrets(reveals[0], INLINE_TOKEN, key.identity.publicKeySpkiB64)
 
       const started = statusTransitionEvents(db, brief.id).filter((event) => parseDetails(event)?.to === '进行中')
       assert.equal(started.length, 1)
@@ -1602,7 +1653,7 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       )
       const key = await mintAgentKey(app, poster.cookies, 'profile-audit')
 
-      const claimed = await claimTask(app, { token: key.token, publicId: brief.id })
+      const claimed = await claimTask(app, { identity: key.identity, publicId: brief.id })
       assert.equal(claimed.statusCode, 201, `claim: ${claimed.statusCode} ${claimed.body}`)
       assert.equal(jsonBody(claimed).token, PROFILE_TOKEN)
 
@@ -1612,11 +1663,11 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       assert.equal(reveals.length, 1)
       assert.deepEqual(parseDetails(reveals[0]), {
         task_id: brief.id,
-        agent_key_id: key.id,
+        device_id: key.id,
         credential: 'profile',
         profile_id: Number(profile.id),
       })
-      assertEventOmitsSecrets(reveals[0], PROFILE_TOKEN, key.token, ciphertext)
+      assertEventOmitsSecrets(reveals[0], PROFILE_TOKEN, key.identity.publicKeySpkiB64, ciphertext)
     })
   })
 
@@ -1624,6 +1675,7 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
     test('successful claim inserts one active lease keyed by tasks.id PK; at most one active row per task', async (t) => {
       const clock = freezeNow(t)
       const sqlitePath = sqliteFile(t)
+      withAdmins(t, 'gitlab:gl-lease-rival')
       const app = await createApp(t, sqlitePath)
       const stub = beginFetch(t)
       allowForgeToken(stub, INLINE_TOKEN)
@@ -1631,7 +1683,7 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       const { brief } = await createTaskOk(app, poster.cookies)
       const key = await mintAgentKey(app, poster.cookies, 'lease-bot')
 
-      const claimed = await claimTask(app, { token: key.token, publicId: brief.id })
+      const claimed = await claimTask(app, { identity: key.identity, publicId: brief.id })
       assert.equal(claimed.statusCode, 201, `claim: ${claimed.statusCode} ${claimed.body}`)
 
       const db = openDb(t, sqlitePath)
@@ -1642,17 +1694,17 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       assertLiveLease(leases[0], {
         taskPk: task.id,
         userId: poster.body.id,
-        keyId: key.id,
+        deviceId: key.id,
         nowUnix: clock.unix(),
       })
       assert.equal(activeLeaseRows(db, task.id).length, 1)
 
       const rival = await loginGitlab(app, stub, 'lease-rival')
       const rivalKey = await mintAgentKey(app, rival.cookies, 'rival')
-      const second = await claimTask(app, { token: rivalKey.token, publicId: brief.id })
+      const second = await claimTask(app, { identity: rivalKey.identity, publicId: brief.id })
       assert.equal(second.statusCode, 409)
       assert.equal(activeLeaseRows(db, task.id).length, 1)
-      assert.equal(Number(activeLeaseRows(db, task.id)[0].agent_key_id), Number(key.id))
+      assert.equal(Number(activeLeaseRows(db, task.id)[0].device_id), Number(key.id))
     })
   })
 })

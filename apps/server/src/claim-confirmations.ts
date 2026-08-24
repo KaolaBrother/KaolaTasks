@@ -23,7 +23,7 @@ export function findClaimConfirmations(
   db: AppDb,
   taskId: number,
   userId: number,
-  agentKeyId: number,
+  deviceId: number,
 ): ClaimConfirmationLookup {
   const rows = db
     .select()
@@ -32,7 +32,7 @@ export function findClaimConfirmations(
       and(
         eq(claimConfirmations.taskId, taskId),
         eq(claimConfirmations.userId, userId),
-        eq(claimConfirmations.agentKeyId, agentKeyId),
+        eq(claimConfirmations.deviceId, deviceId),
       ),
     )
     .all()
@@ -44,14 +44,15 @@ export function findClaimConfirmations(
 
 export function insertPendingConfirmation(
   db: AppDb,
-  input: { taskId: number; userId: number; agentKeyId: number },
+  input: { taskId: number; userId: number; deviceId: number },
 ): ClaimConfirmation {
   const inserted = db
     .insert(claimConfirmations)
     .values({
       taskId: input.taskId,
       userId: input.userId,
-      agentKeyId: input.agentKeyId,
+      deviceId: input.deviceId,
+      agentKeyId: null,
       state: 'pending',
       createdAt: unixNow(),
     })
@@ -71,12 +72,12 @@ export function consumeApprovedConfirmation(db: AppDb, id: number): void {
 
 export function recordPendingConfirmEvent(
   db: AppDb,
-  input: { actorUserId: number; publicId: string; agentKeyId: number },
+  input: { actorUserId: number; publicId: string; deviceId: number },
 ): void {
   insertAuditEvent(db, {
     type: PENDING_CONFIRM_EVENT,
     actorUserId: input.actorUserId,
-    details: { task_id: input.publicId, agent_key_id: input.agentKeyId },
+    details: { task_id: input.publicId, device_id: input.deviceId },
   })
 }
 
@@ -136,7 +137,7 @@ export function registerClaimConfirmations(app: FastifyInstance, db: AppDb) {
     if (id == null) return reply.code(404).send({ error: 'not_found' })
 
     const row = db
-      .select({ agentKeyId: claimConfirmations.agentKeyId, publicId: tasks.publicId })
+      .select({ deviceId: claimConfirmations.deviceId, publicId: tasks.publicId })
       .from(claimConfirmations)
       .innerJoin(tasks, eq(claimConfirmations.taskId, tasks.id))
       .where(and(eq(claimConfirmations.id, id), eq(claimConfirmations.userId, user.id)))
@@ -147,7 +148,7 @@ export function registerClaimConfirmations(app: FastifyInstance, db: AppDb) {
     insertAuditEvent(db, {
       type: CONFIRM_APPROVED_EVENT,
       actorUserId: user.id,
-      details: { task_id: row.publicId, agent_key_id: row.agentKeyId },
+      details: { task_id: row.publicId, device_id: row.deviceId },
     })
 
     return reply.send({ ok: true })
