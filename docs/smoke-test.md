@@ -4,7 +4,7 @@
 
 续测前先读「怎么分工」，再看进度表。标了 **配合** 的步骤：自动化跑不了（OAuth 授权页、浏览器会话、只显示一次的令牌、页面点选）。到这些步必须**停下来和人一起做**，不要自己猜、不要让人把 Secret 贴到聊天里。
 
-认领侧契约以 GitHub [#23](https://github.com/KaolaBrother/KaolaTasks/issues/23) **最新评论**为准（不要重开 #22）。代码落地前，#12 起会停在等待态，不要用生成 `ktk_…` 或往 mcp.json 贴 Bearer 来绕过。
+认领侧契约以 GitHub [#23](https://github.com/KaolaBrother/KaolaTasks/issues/23) **最新评论**为准（不要重开 #22）。本轮 #12 起已按电脑配对活测到闭环。
 
 ## 怎么分工
 
@@ -52,20 +52,20 @@
 | 8 | 工作台添加 GitLab 凭证档案 | **配合** | 完成 | SQLite `credential_profiles` id=1：`gitlab` / `https://gitlab.com` / `KaolaBrother/kaola-tasks-smoke`；`events` 有 `变更` create。换进程后仍要重新登录才能在页面里看到 |
 | 9 | 从 Issue 导入并发布 | **配合** | 完成 | 任务 `kt-2026-0001`：标题 `smoke: append a line to README`，`imported` / `gitlab` / `KaolaBrother/kaola-tasks-smoke`，状态 `待认领` |
 | 10 | 认领者生成 Agent Key | — | **取消** | 不要生成 `ktk_…`，不要 `KAOLA_AGENT_KEY`，不要往 mcp.json 贴 Bearer。考拉身份按 [#23](https://github.com/KaolaBrother/KaolaTasks/issues/23) 走电脑配对。仓库 token 已由发布者附在任务上（#6–#8） |
-| 11 | 本机装考拉 MCP（无密钥） | 自动 | 部分完成 | 2026-08-24：`~/.cursor/mcp.json` 的 `kaola-tasks` 只有 URL，无 Bearer、无 forge token（这是对的）。落地后应改为 stdio `kaola-mcp --url http://localhost:31415`（见 `apps/mcp/examples/mcp.json`）。**代码已落地：** 未绑定合法签名是 `POST /api/mcp` HTTP `202` `{ error: 'authorization_required', pending: true, expires_at }`，不是用 `ktk_` 换 200 |
-| 12 | Agent 第一次 MCP：申请这台电脑 | 自动 | 未做 | **接单从这里开始**。调 `list_tasks`（或开始 `claim_task`）。对不上身份/电脑 → **等待态** `202` `{ error: 'authorization_required', pending: true, expires_at }`（窗口 86400 秒）。**无**仓库 token、**无**租约，看板仍 `待认领`。本机 `~/.kaola/device.json`（私钥不上聊天、不上服务端）。SQLite `devices` 一条 `pending`。未过期再调 MCP 只复用这条 |
-| 13 | 管理员一天内把电脑绑到自己 | **配合** | 未做 | 人用首次 OAuth 的管理员（本轮 `KaolaBrother`）打开 **电脑** 页 **待授权电脑**，点 **绑到我自己**（`POST /api/v1/devices/:id/bind` `{ bind_to_self: true }`）。限 **1 天**。超时作废，须 Agent 重新走 #12。绑定**不会**自动 claim，也**不会**下发仓库 token |
-| 14 | Agent 再查一轮；人指定任务 | **配合** | 未做 | 同一把本机密钥再调 MCP。配对成功后才能真正 `list_tasks`。人指定 `kt-2026-0001`（`smoke: append a line to README`）。`get_task_brief` **不含** token。`repo`：`gitlab` / `https://gitlab.com` / `KaolaBrother/kaola-tasks-smoke`，`suggested_dir` `kaola-tasks-smoke`。在**新目录新 session**测认领 |
-| 15 | 指示认领 `claim_task` | 自动（已配对） | 未做 | 只传 `task_id`，**不要** `autonomous`。成功：看板 `进行中`；顶层 `token` 是**这一条任务**的 GitLab PAT（发布者附上的）。不写进 mcp.json、不写进 remote URL。网页没有认领按钮 |
-| 16 | 本机 clone GitLab，改 README | 自动（人确认任务后） | 未做 | 只用 #15 揭示的 token，按 `clone.extra_header` + `clone.remote_url` 进 `clone.suggested_dir`。这是该 Issue 的临时仓库权，用完不落盘。`README.md` 末尾加一行 `Smoke test OK.` |
-| 17 | 推分支、开 MR，再 `submit_pr` | **配合** | 未做 | 同一 token 推分支、用 GitLab API 开 MR（认领者不必在该仓有自己的 GitLab 账号）。MCP `submit_pr` 交 `pr_url`；任务应变 `待验收` |
-| 18 | 合并 MR，看任务变已完成 | **配合** | 未做 | 人在 GitLab 点 Merge。默认约 60s 轮询；导入型应给源 Issue `#1` 回写评论 |
+| 11 | 本机装考拉 MCP（无密钥） | 自动 | 完成 | 2026-08-24：`~/.cursor/mcp.json` 的 `kaola-tasks` 改为 stdio 桥 `apps/mcp/bin/kaola-mcp.mjs --url http://localhost:31415`（`cwd` `apps/mcp`，无 Bearer、无 forge token、无 `ktk_`）。PATH 上没有裸 `kaola-mcp`，故用仓库内绝对路径。模式 0600 |
+| 12 | Agent 第一次 MCP：申请这台电脑 | 自动 | 完成 | 2026-08-24：`initialize` 与 `list_tasks` 均为等待态（桥 stderr `MCP authorization_required`；JSON-RPC `-32000` `authorization_required pending until 2026-08-25T06:44:16.000Z`）。无仓库 token。SQLite `devices` id=1 `pending`，窗口 86400s，`claimant_id`/`user_id` 空；本机 `~/.kaola/device.json` mode 600。第二次询问过期时间未刷新。`kt-2026-0001` 仍 `待认领`，`leases` 0。无新的 `token 揭示` |
+| 13 | 管理员一天内把电脑绑到自己 | **配合** | 完成 | 2026-08-24 07:15Z：`devices` id=1 `active`，`user_id=1`（KaolaBrother），`expires` 30 天；`events` `电脑授权`。第一次点绑未落库（会话空、待授权列表空时按钮是空操作）。第二次绑上 |
+| 14 | Agent 再查一轮；人指定任务 | **配合** | 完成 | 配对后 `list_tasks` / `get_task_brief` HTTP 200，**无** token。人指定 `kt-2026-0001`。`repo` gitlab / `https://gitlab.com` / `KaolaBrother/kaola-tasks-smoke`，`suggested_dir` `kaola-tasks-smoke` |
+| 15 | 指示认领 `claim_task` | 自动（已配对） | 完成 | 只传 `task_id`，无 `autonomous`。第一次因旧库 `leases.agent_key_id NOT NULL` 失败（任务被写成 `进行中` 但无租约）；已给 `createDb` 加重建迁移，任务打回 `待认领` 后重试成功：`进行中`，顶层 token 为 `glpat-…`，`clone` 四键齐，`leases.device_id=1` `agent_key_id` 空。token 未进 mcp.json / remote URL。有 `token 揭示` 与认领 `回写` |
+| 16 | 本机 clone GitLab，改 README | 自动（人确认任务后） | 完成 | 目录 `/tmp/kaola-smoke-work/kaola-tasks-smoke`。**GitLab.com git HTTP 不接受信封里的 `Authorization: Bearer ${token}`**（401，`WWW-Authenticate: Basic`）。API 用 Bearer 为 200。clone/push 改用 extraHeader `Authorization: Basic`（oauth2:token），**未**写入 remote URL；`.git/config` 无 token。`README.md` 末行 `Smoke test OK.` |
+| 17 | 推分支、开 MR，再 `submit_pr` | **配合** | 完成 | 分支 `kaola/kt-2026-0001-smoke`；GitLab API 开 [MR !1](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/merge_requests/1)；MCP `submit_pr` 后任务 `待验收`，又一条 `回写` |
+| 18 | 合并 MR，看任务变已完成 | **配合** | 完成 | 2026-08-24 07:59Z：人 Merge 后轮询把任务打成 `已完成`（`actor_user_id` 空）；`submissions.pr_state` `merged`。源 Issue #1 三条回写：认领 / 提交PR / 完成（完成评论含 `kt-2026-0001` 与 MR !1） |
 
 ## 当前停在哪
 
-**#1–#9 完成（发布者已附仓库 token）；#10 取消；#11 MCP 无密钥配置已写入 Cursor（应改为 `kaola-mcp --url`）。** 板上仍是 `kt-2026-0001` / `待认领`。
+**本轮冒烟 #1–#18 完成（#10 取消）。** 板上 `kt-2026-0001` / `已完成`。闭环：发布 → 电脑配对 → claim 揭示仓库 token → clone/MR → 合并 → 回写。
 
-**下一步是活测 #12：** 认领 Agent 用 `kaola-mcp --url` 调 MCP；未绑定则 `202` `authorization_required`；管理员在 **电脑** 页 **绑到我自己**；Agent 再 claim。不要生成 Agent Key。
+收尾见文末「测完可收」。旧库 `leases` 重建已进 `createDb`。GitLab git extraHeader Bearer 与实测不符，本轮未改信封。
 
 **不要**生成 Agent Key，**不要**配 `KAOLA_AGENT_KEY`，**不要**重开或改 #22。
 
@@ -75,7 +75,7 @@
 |----|--------|----------------|
 | clone 信封四键含 `remote_url` + 按 forge 的 `extra_header` | GitHub [#20](https://github.com/KaolaBrother/KaolaTasks/issues/20) | 代码已落地；冒烟仍用 `clone.remote_url` + `clone.extra_header`。本表步骤未重跑 |
 | 发布页导入后只读展示 Issue，去掉验收/路径/优先级等表单项 | GitHub [#21](https://github.com/KaolaBrother/KaolaTasks/issues/21) | 代码已落地；本轮冒烟发布步骤未重跑 |
-| 电脑配对 + 管理员一天内绑定；claim 才下发仓库 token | GitHub [#23](https://github.com/KaolaBrother/KaolaTasks/issues/23) | **代码已落地。** 活测从本表 #12 起：`kaola-mcp --url` → `202` pending → **电脑** **绑到我自己** → 再 claim。不要用 `ktk_…` 绕过 |
+| 电脑配对 + 管理员一天内绑定；claim 才下发仓库 token | GitHub [#23](https://github.com/KaolaBrother/KaolaTasks/issues/23) | **本轮冒烟已闭环到已完成。** 旧 sqlite `leases.agent_key_id NOT NULL` 会挡 claim（`createDb` 已重建）。GitLab.com **git** 不吃 Bearer extraHeader，要 Basic；API 仍是 Bearer |
 
 ## 坑（续测别踩）
 
@@ -87,7 +87,7 @@
 - 第一次 MCP 对不上身份时必须是**等待管理员**，不是匿名成功，也不是用生成钥匙来换 200。批准之后必须 **Agent 再查一轮** 才算配对成功；批准瞬间不会 claim。
 - 待批准窗口 **1 天**，同一公钥在 pending 内重复询问不续期。超时须重新走 #12。
 - Cloud Agent / 云端 Runtime 访问不了 `localhost:31415`。接单用本机 Cursor / 本机 Claude Code / 本机 Codex。
-- clone 不要把 token 写进 remote URL。用 `clone.remote_url` + `clone.extra_header`（gitea `token ${token}`，GitLab `Bearer ${token}`），目录 `clone.suggested_dir`。
+- clone 不要把 token 写进 remote URL。目录 `clone.suggested_dir`。GitHub/Gitea 按信封 `extra_header`。**GitLab.com git HTTP 实测要 Basic（`oauth2:token`），信封里的 `Authorization: Bearer ${token}` 会被 401**；同一 token 调 GitLab **API** 用 Bearer 是成功的。
 - 会话在 Fastify 内存里，不在 SQLite。换进程后要重新登录才能在网页批准电脑（又是 **配合**）。
 - GitLab 回调若出现 `Response Error: 400 Bad Request`：是 `/oauth/token` 被拒（常为未走 PKCE，或 secret 用 HTTP Basic 编码失败）。从首页重新点登录，不要刷新回调 URL。GitLab 应用回调必须是 `http://localhost:31415/login/gitlab/callback`。
 

@@ -63,6 +63,83 @@ function tryAddColumn(sqlite: InstanceType<typeof Database>, ddl: string): void 
   }
 }
 
+type SqliteTableColumn = { name: string; notnull: number }
+
+function tableColumns(
+  sqlite: InstanceType<typeof Database>,
+  table: string,
+): SqliteTableColumn[] {
+  return sqlite.prepare(`PRAGMA table_info(${table})`).all() as SqliteTableColumn[]
+}
+
+function columnIsNotNull(
+  columns: SqliteTableColumn[],
+  name: string,
+): boolean {
+  const column = columns.find((row) => row.name === name)
+  return column != null && column.notnull === 1
+}
+
+function rebuildLeasesIfAgentKeyStillRequired(sqlite: InstanceType<typeof Database>): void {
+  const columns = tableColumns(sqlite, 'leases')
+  if (columns.length === 0) return
+  if (!columnIsNotNull(columns, 'agent_key_id') && !columnIsNotNull(columns, 'claimer_user_id')) {
+    return
+  }
+  sqlite.exec(`
+    CREATE TABLE leases__rebuild (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id INTEGER NOT NULL,
+      claimer_user_id INTEGER,
+      claimer_claimant_id INTEGER,
+      device_id INTEGER NOT NULL,
+      agent_key_id INTEGER,
+      claimed_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL,
+      last_heartbeat INTEGER NOT NULL,
+      state TEXT NOT NULL
+    );
+    INSERT INTO leases__rebuild (
+      id, task_id, claimer_user_id, claimer_claimant_id, device_id, agent_key_id,
+      claimed_at, expires_at, last_heartbeat, state
+    )
+    SELECT
+      id, task_id, claimer_user_id, claimer_claimant_id, device_id, agent_key_id,
+      claimed_at, expires_at, last_heartbeat, state
+    FROM leases;
+    DROP TABLE leases;
+    ALTER TABLE leases__rebuild RENAME TO leases;
+    CREATE UNIQUE INDEX IF NOT EXISTS leases_one_active_per_task
+      ON leases(task_id) WHERE state = 'active';
+  `)
+}
+
+function rebuildClaimConfirmationsIfAgentKeyStillRequired(
+  sqlite: InstanceType<typeof Database>,
+): void {
+  const columns = tableColumns(sqlite, 'claim_confirmations')
+  if (columns.length === 0) return
+  if (!columnIsNotNull(columns, 'agent_key_id')) return
+  sqlite.exec(`
+    CREATE TABLE claim_confirmations__rebuild (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      device_id INTEGER NOT NULL,
+      agent_key_id INTEGER,
+      state TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+    INSERT INTO claim_confirmations__rebuild (
+      id, task_id, user_id, device_id, agent_key_id, state, created_at
+    )
+    SELECT id, task_id, user_id, device_id, agent_key_id, state, created_at
+    FROM claim_confirmations;
+    DROP TABLE claim_confirmations;
+    ALTER TABLE claim_confirmations__rebuild RENAME TO claim_confirmations;
+  `)
+}
+
 const AGENT_KEYS_DDL = `
 CREATE TABLE IF NOT EXISTS agent_keys (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -223,10 +300,12 @@ export function createDb(path = ':memory:') {
   sqlite.exec(LEASES_DDL)
   tryAddColumn(sqlite, LEASES_ADD_DEVICE_ID_DDL)
   tryAddColumn(sqlite, LEASES_ADD_CLAIMER_CLAIMANT_ID_DDL)
+  rebuildLeasesIfAgentKeyStillRequired(sqlite)
   sqlite.exec(LEASES_ONE_ACTIVE_INDEX_DDL)
   sqlite.exec(SUBMISSIONS_DDL)
   sqlite.exec(CLAIM_CONFIRMATIONS_DDL)
   tryAddColumn(sqlite, CLAIM_CONFIRMATIONS_ADD_DEVICE_ID_DDL)
+  rebuildClaimConfirmationsIfAgentKeyStillRequired(sqlite)
   sqlite.exec(CLAIMANTS_DDL)
   sqlite.exec(DEVICES_DDL)
   return drizzle(sqlite, {
