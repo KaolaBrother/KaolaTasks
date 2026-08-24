@@ -908,6 +908,50 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       assert.deepEqual(body.task.credential, { profile_id: String(profile.id) })
     })
 
+    test('claiming a second publicId returns that task\'s token, not the first task\'s', async (t) => {
+      const clock = freezeNow(t)
+      const { app, stub } = await boot(t)
+      const poster = await loginGitea(app, stub, 'switch-task-token')
+      const profile = await postProfile(app, poster.cookies)
+      const { brief: firstBrief } = await createTaskOk(
+        app,
+        poster.cookies,
+        taskPayload({ title: 'first publicId inline token' }),
+      )
+      const { brief: secondBrief } = await createTaskOk(
+        app,
+        poster.cookies,
+        taskPayload({
+          title: 'second publicId profile token',
+          credential: { profile_id: profile.id },
+        }),
+      )
+      assert.notEqual(firstBrief.id, secondBrief.id)
+      const key = await mintAgentKey(app, poster.cookies, 'switch-bot')
+
+      const first = await claimTask(app, { token: key.token, publicId: firstBrief.id })
+      const firstBody = assertClaim201(first, {
+        forgeToken: INLINE_TOKEN,
+        suggestedDir: firstBrief.repo.suggested_dir,
+        nowUnix: clock.unix(),
+      })
+      assert.equal(firstBody.task.id, firstBrief.id)
+      assert.deepEqual(firstBody.task.credential, { inline: true })
+      assert.notEqual(firstBody.token, PROFILE_TOKEN)
+
+      const second = await claimTask(app, { token: key.token, publicId: secondBrief.id })
+      const secondBody = assertClaim201(second, {
+        forgeToken: PROFILE_TOKEN,
+        suggestedDir: secondBrief.repo.suggested_dir,
+        nowUnix: clock.unix(),
+      })
+      assert.equal(secondBody.task.id, secondBrief.id)
+      assert.deepEqual(secondBody.task.credential, { profile_id: String(profile.id) })
+      assert.notEqual(secondBody.token, firstBody.token)
+      assert.equal(secondBody.token, PROFILE_TOKEN)
+      assert.equal(firstBody.token, INLINE_TOKEN)
+    })
+
     test('claiming a github task returns Bearer extra_header and a web-origin remote_url, not api.github.com', async (t) => {
       const clock = freezeNow(t)
       const { app, stub } = await boot(t)

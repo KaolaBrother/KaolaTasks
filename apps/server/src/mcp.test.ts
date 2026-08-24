@@ -1097,6 +1097,47 @@ describe('issue #10 MCP server', { concurrency: false }, () => {
       })
     })
 
+    test('claim_task on a second task_id returns that task\'s token, not the first task\'s', async (t) => {
+      const clock = freezeNow(t)
+      const { app, stub } = await boot(t)
+      const poster = await loginGitea(app, stub, 'mcp-switch-task-token')
+      const { brief: firstBrief } = await createTaskOk(
+        app,
+        poster.cookies,
+        taskPayload({ title: 'mcp first task_id inline' }),
+      )
+      const { brief: secondBrief } = await createTaskOk(
+        app,
+        poster.cookies,
+        taskPayload({
+          title: 'mcp second task_id other inline',
+          credential: { token: PROFILE_TOKEN },
+        }),
+      )
+      assert.notEqual(firstBrief.id, secondBrief.id)
+      const key = await mintAgentKey(app, poster.cookies, 'mcp-switch-bot')
+      const client = await readyMcp(app, key.token)
+
+      const first = await client.callTool(app, key.token, 'claim_task', { task_id: firstBrief.id })
+      const firstBody = assertClaimEnvelope(assertToolOk(first.result), {
+        forgeToken: INLINE_TOKEN,
+        suggestedDir: firstBrief.repo.suggested_dir,
+        nowUnix: clock.unix(),
+      })
+      assert.equal(firstBody.task.id, firstBrief.id)
+
+      const second = await client.callTool(app, key.token, 'claim_task', { task_id: secondBrief.id })
+      const secondBody = assertClaimEnvelope(assertToolOk(second.result), {
+        forgeToken: PROFILE_TOKEN,
+        suggestedDir: secondBrief.repo.suggested_dir,
+        nowUnix: clock.unix(),
+      })
+      assert.equal(secondBody.task.id, secondBrief.id)
+      assert.notEqual(secondBody.token, firstBody.token)
+      assert.equal(secondBody.token, PROFILE_TOKEN)
+      assert.equal(firstBody.token, INLINE_TOKEN)
+    })
+
     test('claim_task on a github task returns Bearer extra_header and github.com remote_url, not api.github.com', async (t) => {
       const clock = freezeNow(t)
       const { app, stub } = await boot(t)

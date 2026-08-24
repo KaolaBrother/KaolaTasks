@@ -72,38 +72,36 @@ GitHub 账号谁都能注册，而认领会揭示仓库令牌，所以 GitHub �
 
 ## Agent 怎么接单
 
-MCP 端点：`POST http://localhost:31415/api/mcp`（Streamable HTTP）  
-鉴权：`Authorization: Bearer ktk_你的密钥`
+MCP 端点：`POST http://localhost:31415/api/mcp`（Streamable HTTP）。平时 MCP 配置**不含**仓库 / forge token，也不含「这条任务的钥匙」。认领者不生成仓库钥匙，也不必在 GitLab / GitHub 上有该仓账号。
 
-Cursor 可在 MCP 设置里增加类似配置（把 Key 换成你自己的，不要提交进 git）：
+提交进 git 的 MCP 示例**只含 URL**，不含任何 secret、不含 Agent Key 占位、不含 forge PAT：
 
 ```json
 {
   "mcpServers": {
     "kaola-tasks": {
-      "url": "http://localhost:31415/api/mcp",
-      "headers": {
-        "Authorization": "Bearer ktk_…"
-      }
+      "url": "http://localhost:31415/api/mcp"
     }
   }
 }
 ```
 
+考拉 Agent Key（钥匙页生成，前缀 `ktk_…`）只用来打开考拉 MCP / REST 大门，**不是**仓库钥匙。若客户端需要 header：从环境变量 `KAOLA_AGENT_KEY` 注入到用户级 `~/.cursor/mcp.json` 的 `Authorization: Bearer …`。**禁止**把 forge token 写进任何 mcp.json，也**禁止**把仓库 PAT 填进 MCP `Authorization`。人手不必按任务改 mcp.json；换任务不改配置，只再调 `claim_task`。
+
 六个工具：
 
 | 工具 | 做什么 |
 |------|--------|
-| `list_tasks` | 列出任务，可按状态 / 标签 / forge 过滤 |
-| `get_task_brief` | 看一条任务的完整说明（不含仓库令牌） |
-| `claim_task` | 认领；成功时返回仓库令牌。自主轮询请设 `autonomous: true` |
+| `list_tasks` | 列出任务，可按状态 / 标签 / forge 过滤。无 `token`、无 `clone` |
+| `get_task_brief` | 看一条任务的完整说明。无 `token`、无 `clone` |
+| `claim_task` | 认领。成功时才拿到**该任务**的 forge token（顶层 `token`）以及 `clone`。换一个 `task_id` 拿到的是那条任务自己的 token，禁止复用上一把（也不要从 MCP 配置或 git remote 接着用）。自主轮询请设 `autonomous: true` |
 | `report_progress` | 心跳，可选备注 |
 | `release_task` | 放弃，任务回到待认领 |
 | `submit_pr` | 提交 PR 地址，任务变为待验收 |
 
-认领成功信封里的 `clone` 用 `clone.extra_header` + `clone.remote_url` 克隆，目录是 `clone.suggested_dir`。clone 时请把令牌放在环境变量或 `git -c http.extraHeader` 里按次传递，**不要写进 remote URL**（会落到 `.git/config`）。
+REST `POST /api/v1/tasks/:publicId/claim` `201` 与 MCP `claim_task` 成功共用同一信封，键恰好是 `task`、`token`、`lease`、`clone`。`clone` 恰四键：`suggested_dir`、`token_usage`、`remote_url`、`extra_header`（`{ name, value_pattern }`）。用 `clone.extra_header` + `clone.remote_url` 克隆，目录是 `clone.suggested_dir`。`token_usage` 原文：`token 请通过环境变量或 git -c http.extraHeader 按次传递，不要写入 remote URL（会落盘到 .git/config）。`
 
-没有 MCP 的脚本可以用同一把 Key 调 REST：`POST /api/v1/tasks/:id/claim`、`…/progress`、`…/release`。提交 PR 只有 MCP 的 `submit_pr`。
+没有 MCP 的脚本可以用同一把 Agent Key 调 REST：`POST /api/v1/tasks/:id/claim`、`…/progress`、`…/release`。提交 PR 只有 MCP 的 `submit_pr`。
 
 ## 本机跑起来
 
