@@ -348,14 +348,29 @@ async function openPull(
 
 async function mergePull(spec: ForgeSpec, token: string, number: number): Promise<void> {
   if (spec.kind === 'gitlab') {
-    const res = await forgeFetch(
-      spec.kind,
-      token,
-      `https://gitlab.com/api/v4/projects/KaolaBrother%2Fkaola-tasks-smoke/merge_requests/${number}/merge`,
-      { method: 'PUT', body: { squash: true } },
-    )
-    if (!res.ok) fail(`GitLab merge ${res.status}: ${await res.text()}`)
-    return
+    const project = 'https://gitlab.com/api/v4/projects/KaolaBrother%2Fkaola-tasks-smoke'
+    const statusUrl = `${project}/merge_requests/${number}`
+    const mergeUrl = `${statusUrl}/merge`
+    let last = 'GitLab merge did not become mergeable'
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const statusRes = await forgeFetch(spec.kind, token, statusUrl)
+      if (statusRes.ok) {
+        const mr = (await statusRes.json()) as { detailed_merge_status?: string; merge_status?: string }
+        const ready = mr.detailed_merge_status === 'mergeable' || mr.merge_status === 'can_be_merged'
+        if (ready) {
+          const res = await forgeFetch(spec.kind, token, mergeUrl, { method: 'PUT', body: { squash: true } })
+          if (res.ok) return
+          last = `GitLab merge ${res.status}: ${await res.text()}`
+          if (res.status !== 405 && res.status !== 409) fail(last)
+        } else {
+          last = `GitLab merge not ready: ${mr.detailed_merge_status ?? mr.merge_status ?? 'unknown'}`
+        }
+      } else {
+        last = `GitLab MR status ${statusRes.status}: ${await statusRes.text()}`
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+    }
+    fail(last)
   }
   const res = await forgeFetch(
     spec.kind,
@@ -543,7 +558,7 @@ async function run(): Promise<void> {
     secrets.push(revealed)
     if (clone.remote_url.includes(revealed)) fail('clone.remote_url contained the token')
 
-    const branch = `kaola/${task.id}-smoke`
+    const branch = `kaola/${task.id}-smoke-${stamp}`
     const line = `Smoke ${kind} ${task.id} ${stamp}.`
     const { cloneAuth } = cloneAndPush({
       kind,
