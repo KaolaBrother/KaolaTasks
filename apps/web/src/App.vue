@@ -445,8 +445,8 @@
                     </div>
                   </n-space>
 
-                  <n-divider v-if="canPublish">我的电脑</n-divider>
-                  <div v-if="canPublish" data-testid="devices-mine">
+                  <n-divider v-if="canManageInstance">我的电脑</n-divider>
+                  <div v-if="canManageInstance" data-testid="devices-mine">
                     <n-space vertical>
                       <n-text strong>我的电脑</n-text>
                       <n-text v-if="mineDevices.length === 0" class="empty-copy">暂无已绑定的电脑。</n-text>
@@ -470,8 +470,8 @@
                     </n-space>
                   </div>
 
-                  <n-divider v-if="canPublish">待授权电脑</n-divider>
-                  <div v-if="canPublish" data-testid="devices-pending">
+                  <n-divider v-if="canManageInstance">待授权电脑</n-divider>
+                  <div v-if="canManageInstance" data-testid="devices-pending">
                     <n-space vertical>
                       <n-text strong>待授权电脑</n-text>
                       <n-text v-if="pendingDevices.length === 0" class="empty-copy">暂无待授权电脑。</n-text>
@@ -527,8 +527,8 @@
                     </n-space>
                   </div>
 
-                  <n-divider v-if="canPublish">认领者</n-divider>
-                  <div v-if="canPublish" data-testid="claimants-list">
+                  <n-divider v-if="canManageInstance">认领者</n-divider>
+                  <div v-if="canManageInstance" data-testid="claimants-list">
                     <n-space vertical>
                       <n-text strong>认领者</n-text>
                       <n-text v-if="claimants.length === 0" class="empty-copy">暂无认领者。</n-text>
@@ -1427,12 +1427,12 @@ onMounted(async () => {
   }
   if (canManageInstance.value) {
     await loadClaimConfirmations()
-  }
-  if (canPublish.value) {
-    await loadProfiles()
     await loadMineDevices()
     await loadPendingDevices()
     await loadClaimants()
+  }
+  if (canPublish.value) {
+    await loadProfiles()
   }
 })
 
@@ -1448,12 +1448,12 @@ async function applyMeFromResponse(res: Response) {
   }
   if (canManageInstance.value) {
     await loadClaimConfirmations()
-  }
-  if (canPublish.value) {
-    await loadProfiles()
     await loadMineDevices()
     await loadPendingDevices()
     await loadClaimants()
+  }
+  if (canPublish.value) {
+    await loadProfiles()
   }
   return true
 }
