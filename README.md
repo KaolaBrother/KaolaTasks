@@ -158,13 +158,33 @@ Gitea 回调：`http://localhost:31415/login/gitea/callback`（Scopes 勾 **`rea
 
 ### 生产向部署
 
-```bash
-docker compose up -d --build
+只覆盖这一种拓扑：**考拉和本地 GitLab / Gitea 跑在同一台（或同机房）内网服务器上；公网 IP（或该 IP 上的主机名）是入口。** 不要把云开发机当生产原点。本机开发仍用上一节的 `localhost:31415`。
+
+```
+浏览器 / kaola-mcp
+        │
+        ▼
+  公网 IP（宿主机反代 80/443）
+        │
+        ▼
+  127.0.0.1:31415  考拉（SPA + API + MCP）
+  同一台（或同机房）的 GitLab / Gitea
 ```
 
-镜像会构建前端并由 Fastify 在 **31415** 提供页面。compose **不会**写入 OAuth、`SESSION_SECRET`、`VAULT_MASTER_KEY`；也未设置 `SQLITE_PATH`（代码默认仍是内存库）。上线前请自行注入这些变量，并把 SQLite 指到数据卷里的文件。
+1. **拓扑** — 内网服务器跑考拉和本地 GitLab / Gitea；团队用公网入口打开页面。仓库仍在你们自己的 forge 上，考拉不代管代码。
+2. **`PUBLIC_URL`** — 填团队浏览器真正打开的地址，不带尾斜杠。有 HTTPS 就写 `https://…`；暂时只有 IP 就写 `http://公网IP`。OAuth 回调、`kaola-mcp --url`、导入任务回写评论里的链接都跟它。代码里缺省仍是 `http://localhost:31415`（给本机开发用）。以 `https:` 开头时，会话 cookie 与 OAuth state cookie 带 `Secure`，Fastify 只信环回与 RFC1918 对端的 `X-Forwarded-Proto`（不是 hop-count）。纯 HTTP（含 `http://localhost`）保持 `secure: false`，不开 `trustProxy`。
+3. **OAuth** — 在本地 GitLab / Gitea 的 OAuth 应用里把 Redirect URI 写成 `${PUBLIC_URL}/login/gitlab/callback`（Gitea 同形 `/login/gitea/callback`；GitHub 是 `/login/github/callback`）。可以和现有 `http://localhost:31415/login/…/callback` 并存。`OAUTH_GITLAB_BASE_URL` / `OAUTH_GITEA_BASE_URL` 填**服务器访问 forge 的内网地址**（不是浏览器入口）。
+4. **反代** — 宿主机 80/443 转到 `127.0.0.1:31415`。compose 把容器端口绑在 `127.0.0.1:31415`，不要把 31415 直接放到公网。有域名就 HTTPS；只有 IP 可先 HTTP，防火墙只放团队。HTTPS 时请用对外 scheme **覆盖** `X-Forwarded-Proto`（nginx `$scheme` 一类），不要把客户端带来的该头原样转给 Fastify。
+5. **`docker compose`** — 在仓库根目录放 gitignored 的 `.env`（可对照 `.env.example`），填必填密钥与 `PUBLIC_URL`。compose 使用 `env_file: .env`，并把 SQLite 指到卷上的 `/data/kaola.sqlite`（卷 `kaola-data` → `/data`）。`index.ts` 在非 compose、未设 `SQLITE_PATH` 时默认仍是 `:memory:`。
 
-可选 `FORGE_INSTANCES`：JSON 数组，用来给某个 forge 实例开 webhook、关掉轮询。不设则所有「待验收」任务都靠轮询完结。格式见 [docs/api.md](docs/api.md)。非法 JSON 会让进程起不来。
+   ```bash
+   docker compose up -d --build
+   ```
+
+   compose 会注入：`PUBLIC_URL`、`SESSION_SECRET`、`VAULT_MASTER_KEY`、九项 `OAUTH_*`，以及容器内 `PORT=31415`、`HOST=0.0.0.0`、`SQLITE_PATH=/data/kaola.sqlite`。镜像构建前端并由 Fastify 提供页面。密钥不要写进 git。
+6. **团队 MCP** — 成员本机仍跑 `kaola-mcp --url ${PUBLIC_URL}`（或 `KAOLA_URL`）。设备仍要在工作台「电脑」页绑定；未绑定是 HTTP `202` `authorization_required`，不会列出或认领。
+7. **完结** — 考拉与 forge 同机时，默认轮询就能把「待验收」完结（`POLL_INTERVAL_MS` 空/未设 → `60000`）。可选 `FORGE_INSTANCES` JSON 给某个实例开 webhook、关掉轮询；不设则所有「待验收」都靠轮询。格式见 [docs/api.md](docs/api.md)。非法 JSON 会让进程起不来。
+8. **登录仍是封闭加入** — 空库第一次 OAuth 登录成为 `active` + `full`。之后未被邀请的账号不会建号（`/login?reason=uninvited`）。可选 `KAOLA_ADMINS`。不要把这套部署写成对外注册。
 
 ## 给开发者
 

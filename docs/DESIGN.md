@@ -321,7 +321,7 @@ KaolaTasks/
 └─ docker-compose.yml
 ```
 
-**部署**：内部服务器 docker-compose 单机部署（server + 静态前端 + 挂载 SQLite 卷）。主密钥经环境变量注入。
+**部署**（仍是 D4 内部部署，不对外分发）：一种拓扑——内网服务器跑考拉和本地 GitLab / Gitea；公网 IP（或该 IP 上的主机名）是入口；云开发机不是生产原点。浏览器与 `kaola-mcp` 打到公网入口，宿主机反代 80/443 → `127.0.0.1:31415`（compose 端口绑环回，不把 31415 直接放公网）。`PUBLIC_URL` 是团队浏览器真正打开的地址（`https://…` 或 `http://公网IP`，不带尾斜杠），OAuth 回调、MCP `--url`、回写评论里的链接都跟它；`OAUTH_*_BASE_URL` 用服务器访问 forge 的内网地址。docker-compose 单机：镜像内 SPA + Fastify，`env_file: .env` 注入密钥与 `PUBLIC_URL`，SQLite 文件 `/data/kaola.sqlite`（卷 `kaola-data` → `/data`）。同机时默认轮询完结「待验收」；webhook 可后补。登录仍是封闭加入（空库首次 OAuth bootstrap，之后 `uninvited`），不是对外注册。操作步骤见根目录 [README.md](../README.md)「生产向部署」。
 
 ## 13. 里程碑
 
