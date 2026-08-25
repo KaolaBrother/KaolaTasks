@@ -42,6 +42,15 @@ const ME_FULL = {
   status: 'active',
   permission_level: 'full',
 }
+const ME_ADMIN = {
+  ...ME_FULL,
+  id: 1,
+  provider: 'local',
+  remote_id: 'local',
+  username: 'kaola-admin',
+  display_name: 'kaola-admin',
+  permission_level: 'admin',
+}
 const ME_CLAIM_ONLY = { ...ME_FULL, provider: 'github', permission_level: 'claim_only' }
 const ME_PENDING = { ...ME_CLAIM_ONLY, status: '待批准' }
 
@@ -220,6 +229,7 @@ async function mountApp(
 ) {
   const profiles = opts.profiles ?? PROFILES
   const { calls, routes } = installFetch()
+  routes.set('GET /api/v1/setup', () => jsonResponse(200, { setup_complete: true }))
   routes.set('GET /api/v1/me', () => jsonResponse(200, me))
   routes.set('GET /api/v1/agent-keys', () => jsonResponse(200, { keys: [] }))
   routes.set('GET /api/v1/credential-profiles', () => jsonResponse(200, { profiles }))
@@ -247,7 +257,7 @@ async function mountApp(
   await settle()
   // A full member's onMounted also loads the credential profiles the task form's dropdown reuses;
   // waiting for that call keeps the harness deterministic instead of tick-counting.
-  if (me.status === 'active' && me.permission_level === 'full') {
+  if (me.status === 'active' && (me.permission_level === 'full' || me.permission_level === 'admin')) {
     await vi.waitFor(() => {
       expect(calls.some((call) => call.url === '/api/v1/credential-profiles')).toBe(true)
     })
@@ -384,7 +394,12 @@ function importCardAnchor(wrapper: VueWrapper) {
 // =============================================================================================
 
 describe('发布任务表单 — 可见性（DESIGN §11）', () => {
-  it('只对 active + full 成员可见，claim_only 与待批准用户都看不到', async () => {
+  it('active 的 admin 与 full 都看得见发布表单；claim_only 与待批准看不到', async () => {
+    const admin = await mountApp(ME_ADMIN)
+    expect(node(admin.wrapper, 'task-form').exists()).toBe(true)
+    expect(node(admin.wrapper, 'task-submit').exists()).toBe(true)
+    admin.wrapper.unmount()
+
     const full = await mountApp(ME_FULL)
     expect(node(full.wrapper, 'task-form').exists()).toBe(true)
     expect(node(full.wrapper, 'task-submit').exists()).toBe(true)

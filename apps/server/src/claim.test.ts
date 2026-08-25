@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { parseTaskBrief } from '@kaola/shared'
 import { createDb } from './db.ts'
 import { injectSigned, pairDeviceToSelf, generateDeviceIdentity } from './device-proof.test-helpers.ts'
+import { ensureSetup } from './auth.test-helpers.ts'
 
 // Issue #9 REST claim / progress / release. Seams copied from tasks.test.ts (do not import that file).
 const GITLAB_BASE_URL = 'https://gitlab.example.test'
@@ -328,6 +329,7 @@ async function loginViaCallback(app, { decoratorName, callbackPath, accessToken 
 }
 
 async function loginGitlab(app, stub, label = 'gitlab') {
+  await ensureSetup(app)
   const accessToken = nextAccessToken(label)
   stub.oauth.set(accessToken, {
     id: 80000 + tokenSeq,
@@ -338,13 +340,9 @@ async function loginGitlab(app, stub, label = 'gitlab') {
 }
 
 async function loginGitea(app, stub, label = 'gitea') {
-  const accessToken = nextAccessToken(label)
-  stub.oauth.set(accessToken, {
-    id: 70000 + tokenSeq,
-    login: `gt-${label}`,
-    full_name: `Gi Tea ${label}`,
-  })
-  return loginViaCallback(app, { ...PROVIDERS.gitea, accessToken })
+  void stub
+  void label
+  return ensureSetup(app)
 }
 
 function jsonBody(res) {
@@ -1147,13 +1145,13 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       db.$client
         .prepare(
           `INSERT INTO users (provider, remote_id, username, display_name, status, permission_level, trusted_automation)
-           VALUES ('github', '60112', 'gh-leftover-claim-only', 'Claim Only', 'active', 'claim_only', 0)`,
+           VALUES ('gitlab', '60112', 'gl-leftover-claim-only', 'Claim Only', 'active', 'claim_only', 0)`,
         )
         .run()
-      const leftoverId = db.$client.prepare("SELECT id FROM users WHERE username = 'gh-leftover-claim-only'").get().id
+      const leftoverId = db.$client.prepare("SELECT id FROM users WHERE username = 'gl-leftover-claim-only'").get().id
       const leftoverToken = nextAccessToken('leftover-claim-only')
-      stub.oauth.set(leftoverToken, { id: 60112, login: 'gh-leftover-claim-only', name: 'Claim Only' })
-      const leftoverLogin = await loginViaCallback(app, { ...PROVIDERS.github, accessToken: leftoverToken })
+      stub.oauth.set(leftoverToken, { id: 60112, username: 'gl-leftover-claim-only', name: 'Claim Only' })
+      const leftoverLogin = await loginViaCallback(app, { ...PROVIDERS.gitlab, accessToken: leftoverToken })
       assert.equal(leftoverLogin.body.status, 'active')
       assert.equal(leftoverLogin.body.permission_level, 'claim_only')
       assert.equal(Number(leftoverLogin.body.id), Number(leftoverId))

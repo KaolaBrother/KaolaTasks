@@ -131,8 +131,9 @@ describe('issue #17 single-port 31415 hosting', { concurrency: false }, () => {
     assert.doesNotMatch(login.body, new RegExp(SPA_MARKER))
 
     const start = await app.inject({ method: 'GET', url: '/login/github' })
-    assert.equal(start.statusCode, 302, `GET /login/github: ${start.statusCode}`)
-    assert.match(String(start.headers.location), /https:\/\/github\.com\/login\/oauth\/authorize/)
+    assert.equal(start.statusCode, 404, `GET /login/github: ${start.statusCode}`)
+    const gitlab = await app.inject({ method: 'GET', url: '/login/gitlab' })
+    assert.equal(gitlab.statusCode, 302, `GET /login/gitlab: ${gitlab.statusCode}`)
   })
 
   test('when webDist and viteDevTarget are both set, webDist wins', async (t) => {

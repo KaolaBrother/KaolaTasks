@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { parseTaskBrief } from '@kaola/shared'
 import { createDb } from './db.ts'
 import { injectSigned, pairDeviceToSelf } from './device-proof.test-helpers.ts'
+import { ensureSetup } from './auth.test-helpers.ts'
 
 // Issue #10 MCP server. Seams copied from claim.test.ts (do not import that file).
 const GITLAB_BASE_URL = 'https://gitlab.example.test'
@@ -325,6 +326,7 @@ async function loginViaCallback(app, { decoratorName, callbackPath, accessToken 
 }
 
 async function loginGitlab(app, stub, label = 'gitlab') {
+  await ensureSetup(app)
   const accessToken = nextAccessToken(label)
   stub.oauth.set(accessToken, {
     id: 80000 + tokenSeq,
@@ -335,13 +337,9 @@ async function loginGitlab(app, stub, label = 'gitlab') {
 }
 
 async function loginGitea(app, stub, label = 'gitea') {
-  const accessToken = nextAccessToken(label)
-  stub.oauth.set(accessToken, {
-    id: 70000 + tokenSeq,
-    login: `gt-${label}`,
-    full_name: `Gi Tea ${label}`,
-  })
-  return loginViaCallback(app, { ...PROVIDERS.gitea, accessToken })
+  void stub
+  void label
+  return ensureSetup(app)
 }
 
 function jsonBody(res) {

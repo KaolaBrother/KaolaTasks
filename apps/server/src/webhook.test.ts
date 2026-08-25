@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createDb } from './db.ts'
 import { injectSigned, pairDeviceToSelf } from './device-proof.test-helpers.ts'
+import { ensureSetup } from './auth.test-helpers.ts'
 
 // Issue #13. Seams copied from poller.test.ts (do not import that file): OAuth login, agent key
 // mint, HTTP claim, MCP `submit_pr`, and the sqlite row-reading helpers. This spec drives a task
@@ -245,9 +246,9 @@ async function loginViaCallback(app, { decoratorName, callbackPath, accessToken 
 }
 
 async function loginGitea(app, stub, label = 'gitea') {
-  const accessToken = nextAccessToken(label)
-  stub.oauth.set(accessToken, { id: 80000 + tokenSeq, login: `gt-${label}`, full_name: `Gi Tea ${label}` })
-  return loginViaCallback(app, { ...GITEA_PROVIDER, accessToken })
+  void stub
+  void label
+  return ensureSetup(app)
 }
 
 function jsonBody(res) {

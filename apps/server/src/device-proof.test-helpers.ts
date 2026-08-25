@@ -1,5 +1,6 @@
 import { createHash, generateKeyPairSync, randomBytes, sign as cryptoSign, type KeyObject } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
+import { ensureSetup } from './auth.test-helpers.ts'
 
 /** Seconds of clock skew allowed for X-Kaola-Ts. Duplicated here until implementer extracts production module. */
 export const DEVICE_PROOF_SKEW_SECONDS = 300
@@ -239,10 +240,11 @@ export async function pairDevice(
 
 export async function pairDeviceToSelf(
   app: FastifyInstance,
-  cookies: Record<string, string> | undefined,
+  _cookies: Record<string, string> | undefined,
   opts?: { hostname?: string },
 ) {
-  return pairDevice(app, cookies, { bind_to_self: true }, opts)
+  const admin = await ensureSetup(app)
+  return pairDevice(app, admin.cookies, { bind_to_self: true }, opts)
 }
 
 function bodyBytes(body: DeviceProofBody | object): Buffer {

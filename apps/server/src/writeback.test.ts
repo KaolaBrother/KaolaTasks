@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { createDb } from './db.ts'
 import { pollPendingReviews } from './poller.ts'
 import { injectSigned, pairDeviceToSelf } from './device-proof.test-helpers.ts'
+import { ensureSetup } from './auth.test-helpers.ts'
 
 // Issue #14. Seams copied from poller.test.ts / claim.test.ts / webhook.test.ts (do not import
 // those files): OAuth login, agent key mint, HTTP claim, MCP `submit_pr`, webhook delivery, and
@@ -327,9 +328,9 @@ async function loginViaCallback(app, { decoratorName, callbackPath, accessToken 
 }
 
 async function loginGitea(app, stub, label = 'gitea') {
-  const accessToken = nextAccessToken(label)
-  stub.oauth.set(accessToken, { id: 90000 + tokenSeq, login: `gt-${label}`, full_name: `Gi Tea ${label}` })
-  return loginViaCallback(app, { ...GITEA_PROVIDER, accessToken })
+  void stub
+  void label
+  return ensureSetup(app)
 }
 
 function jsonBody(res) {

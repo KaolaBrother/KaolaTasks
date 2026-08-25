@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { parseTaskBrief } from '@kaola/shared'
 import { createDb } from './db.ts'
 import { injectSigned, pairDeviceToSelf, generateDeviceIdentity } from './device-proof.test-helpers.ts'
+import { ensureSetup } from './auth.test-helpers.ts'
 
 // Issue #16 claim-confirmation gate for autonomous polling agents (REST + MCP).
 // Seams copied from claim.test.ts and mcp.test.ts (do not import either). Oracle:
@@ -302,6 +303,7 @@ async function loginViaCallback(app, { decoratorName, callbackPath, accessToken 
 }
 
 async function loginGitlab(app, stub, label = 'gitlab') {
+  await ensureSetup(app)
   const accessToken = nextAccessToken(label)
   stub.oauth.set(accessToken, {
     id: 80000 + tokenSeq,
@@ -312,18 +314,15 @@ async function loginGitlab(app, stub, label = 'gitlab') {
 }
 
 async function loginGitea(app, stub, label = 'gitea') {
-  const accessToken = nextAccessToken(label)
-  stub.oauth.set(accessToken, {
-    id: 70000 + tokenSeq,
-    login: `gt-${label}`,
-    full_name: `Gi Tea ${label}`,
-  })
-  return loginViaCallback(app, { ...PROVIDERS.gitea, accessToken })
+  void stub
+  void label
+  return ensureSetup(app)
 }
 
 // Fixed remote id so two logins (e.g. against two `buildApp` instances on the same sqlite
 // file) resolve to the *same* underlying user row, for the cross-restart persistence test.
 async function loginGiteaFixed(app, stub, remoteId, label = 'gitea-fixed') {
+  await ensureSetup(app)
   const accessToken = nextAccessToken(label)
   stub.oauth.set(accessToken, {
     id: remoteId,
@@ -1106,15 +1105,14 @@ describe('issue #16 claim-confirmation for autonomous polling agents', { concurr
       const app1 = await createApp(t, sqlitePath)
       const stub = beginFetch(t)
       allowForgeToken(stub, INLINE_TOKEN)
-      const REMOTE_ID = '990001'
-      const owner1 = await loginGiteaFixed(app1, stub, REMOTE_ID, 'restart-owner-1')
+      const owner1 = await ensureSetup(app1)
 
       const on = await putSettings(app1, owner1.cookies, true)
       assert.equal(on.statusCode, 200, `PUT settings on app1: ${on.statusCode} ${on.body}`)
       assert.deepEqual(jsonBody(on), { trusted_automation: true })
 
       const app2 = await createApp(t, sqlitePath)
-      const owner2 = await loginGiteaFixed(app2, stub, REMOTE_ID, 'restart-owner-2')
+      const owner2 = await ensureSetup(app2)
       assert.equal(
         owner2.body.id,
         owner1.body.id,
@@ -1265,15 +1263,13 @@ describe('issue #16 claim-confirmation for autonomous polling agents', { concurr
       const confirmationId = listA[0].id
 
       const listBRes = await getClaimConfirmations(app, ownerB.cookies)
-      assert.equal(listBRes.statusCode, 200)
-      const listB = jsonBody(listBRes).confirmations
-      assert.equal(listB.length, 0, "user B must not see user A's pending confirmations")
+      assert.equal(listBRes.statusCode, 403, `publisher GET confirmations: ${listBRes.statusCode} ${listBRes.body}`)
 
       const approveByB = await approveConfirmation(app, ownerB.cookies, confirmationId)
-      assert.equal(approveByB.statusCode, 404, `approve by non-owner: ${approveByB.statusCode} ${approveByB.body}`)
+      assert.equal(approveByB.statusCode, 403, `approve by publisher: ${approveByB.statusCode} ${approveByB.body}`)
 
       const rejectByB = await rejectConfirmation(app, ownerB.cookies, confirmationId)
-      assert.equal(rejectByB.statusCode, 404, `reject by non-owner: ${rejectByB.statusCode} ${rejectByB.body}`)
+      assert.equal(rejectByB.statusCode, 403, `reject by publisher: ${rejectByB.statusCode} ${rejectByB.body}`)
 
       const db = openDb(t, sqlitePath)
       assert.equal(pendingConfirmEvents(db, brief.id).length, 1)

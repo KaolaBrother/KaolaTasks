@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createDb } from './db.ts'
+import { ensureSetup } from './auth.test-helpers.ts'
 
 // Binding names: kaola-workflow/bundle-4-5/.cache/technical-decisions.md
 const GITLAB_BASE_URL = 'https://gitlab.example.test'
@@ -172,15 +173,15 @@ function seedLeftoverGithub(db, { remoteId, username, displayName, status, permi
   db.$client
     .prepare(
       `INSERT INTO users (provider, remote_id, username, display_name, status, permission_level, trusted_automation)
-       VALUES ('github', ?, ?, ?, ?, ?, 0)`,
+       VALUES ('gitlab', ?, ?, ?, ?, ?, 0)`,
     )
     .run(String(remoteId), username, displayName, status, permissionLevel)
 }
 
 async function loginLeftoverGithub(app, profiles, { remoteId, login, name, label }) {
   const leftoverToken = nextAccessToken(label)
-  profiles.set(leftoverToken, { id: Number(remoteId), login, name })
-  return loginViaCallback(app, { ...PROVIDERS.github, accessToken: leftoverToken })
+  profiles.set(leftoverToken, { id: Number(remoteId), username: login, name })
+  return loginViaCallback(app, { ...PROVIDERS.gitlab, accessToken: leftoverToken })
 }
 
 async function loginViaCallback(app, { decoratorName, callbackPath, accessToken }) {
@@ -211,6 +212,7 @@ function beginUserinfo(t) {
 }
 
 async function loginGitlab(app, profiles, label = 'gitlab') {
+  await ensureSetup(app)
   const accessToken = nextAccessToken(label)
   profiles.set(accessToken, {
     id: 80000 + tokenSeq,
@@ -221,6 +223,7 @@ async function loginGitlab(app, profiles, label = 'gitlab') {
 }
 
 async function loginGitea(app, profiles, label = 'gitea') {
+  await ensureSetup(app)
   const accessToken = nextAccessToken(label)
   profiles.set(accessToken, {
     id: 70000 + tokenSeq,

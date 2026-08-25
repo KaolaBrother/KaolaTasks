@@ -258,6 +258,7 @@ async function settle() {
 
 async function mountApp(me: Record<string, unknown> = ME_FULL, tasks: Brief[] = BOARD_TASKS) {
   const { calls, routes } = installFetch()
+  routes.set('GET /api/v1/setup', () => jsonResponse(200, { setup_complete: true }))
   routes.set('GET /api/v1/me', () => jsonResponse(200, me))
   routes.set('GET /api/v1/agent-keys', () => jsonResponse(200, { keys: [] }))
   routes.set('GET /api/v1/credential-profiles', () => jsonResponse(200, { profiles: PROFILES }))
@@ -272,7 +273,7 @@ async function mountApp(me: Record<string, unknown> = ME_FULL, tasks: Brief[] = 
     expect(calls.some((call) => call.url === '/api/v1/me')).toBe(true)
   })
   await settle()
-  if (me.status === 'active' && me.permission_level === 'full') {
+  if (me.status === 'active' && (me.permission_level === 'full' || me.permission_level === 'admin')) {
     await vi.waitFor(() => {
       expect(calls.some((call) => call.url === '/api/v1/credential-profiles')).toBe(true)
     })
@@ -291,6 +292,7 @@ async function mountBoard(me: Record<string, unknown> = ME_FULL, tasks: Brief[] 
 
 async function mountUnauthorized() {
   const { calls, routes } = installFetch()
+  routes.set('GET /api/v1/setup', () => jsonResponse(200, { setup_complete: true }))
   routes.set('GET /api/v1/me', () => jsonResponse(401, { error: 'unauthorized' }))
   routes.set('GET /api/v1/tasks', () => jsonResponse(200, { tasks: BOARD_TASKS }))
   const wrapper = mount(App, { global: { plugins: [naive] } })

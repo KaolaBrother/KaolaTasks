@@ -38,12 +38,21 @@ const ME_FULL: Record<string, unknown> = {
   permission_level: 'full',
   trusted_automation: false,
 }
+const ME_ADMIN: Record<string, unknown> = {
+  ...ME_FULL,
+  id: 1,
+  provider: 'local',
+  remote_id: 'local',
+  username: 'kaola-admin',
+  display_name: 'kaola-admin',
+  permission_level: 'admin',
+}
 const ME_CLAIM_ONLY: Record<string, unknown> = { ...ME_FULL, provider: 'github', permission_level: 'claim_only' }
 const ME_PENDING: Record<string, unknown> = { ...ME_CLAIM_ONLY, status: '待批准' }
 
 // A legacy /api/v1/me response predating this issue: no trusted_automation key at all.
-const ME_FULL_LEGACY: Record<string, unknown> = { ...ME_FULL }
-delete ME_FULL_LEGACY.trusted_automation
+const ME_ADMIN_LEGACY: Record<string, unknown> = { ...ME_ADMIN }
+delete ME_ADMIN_LEGACY.trusted_automation
 
 type Confirmation = { id: number; task_id: string; state: string; created_at: string }
 
@@ -136,10 +145,11 @@ async function settle() {
 // --- mount helper --------------------------------------------------------------------------
 
 async function mountApp(
-  me: Record<string, unknown> = ME_FULL,
+  me: Record<string, unknown> = ME_ADMIN,
   options: { confirmations?: Confirmation[] } = {},
 ) {
   const { calls, routes } = installFetch()
+  routes.set('GET /api/v1/setup', () => jsonResponse(200, { setup_complete: true }))
   routes.set('GET /api/v1/me', () => jsonResponse(200, me))
   routes.set('GET /api/v1/agent-keys', () => jsonResponse(200, { keys: [] }))
   routes.set('GET /api/v1/credential-profiles', () => jsonResponse(200, { profiles: [] }))
@@ -157,7 +167,7 @@ async function mountApp(
     expect(calls.some((call) => call.url === '/api/v1/me')).toBe(true)
   })
   await settle()
-  if (me.status === 'active') {
+  if (me.status === 'active' && me.permission_level === 'admin') {
     await vi.waitFor(() => {
       expect(calls.some((call) => call.url === '/api/v1/claim-confirmations')).toBe(true)
     })
@@ -168,6 +178,7 @@ async function mountApp(
 
 async function mountUnauthorized() {
   const { calls, routes } = installFetch()
+  routes.set('GET /api/v1/setup', () => jsonResponse(200, { setup_complete: true }))
   routes.set('GET /api/v1/me', () => jsonResponse(401, { error: 'unauthorized' }))
   routes.set('GET /api/v1/tasks', () => jsonResponse(200, { tasks: [] }))
   const wrapper = mount(App, { global: { plugins: [naive] } })
@@ -214,16 +225,22 @@ function rejectButtons(wrapper: VueWrapper) {
 
 // =============================================================================================
 
-describe('受信自动化设置 — 可见性（gated like canManageKeys）', () => {
-  it('active 的 full 与 claim_only 都能看到开关与待确认列表；待批准与未登录都看不到，也不会请求这两个新接口', async () => {
+describe('受信自动化设置 — 可见性（仅管理员）', () => {
+  it('admin 能看到开关与待确认列表；发布者、claim_only、待批准与未登录都看不到', async () => {
+    const admin = await mountApp(ME_ADMIN)
+    expect(node(admin.wrapper, 'trusted-automation-toggle').exists()).toBe(true)
+    expect(node(admin.wrapper, 'claim-confirmation-list').exists()).toBe(true)
+    admin.wrapper.unmount()
+
     const full = await mountApp(ME_FULL)
-    expect(node(full.wrapper, 'trusted-automation-toggle').exists()).toBe(true)
-    expect(node(full.wrapper, 'claim-confirmation-list').exists()).toBe(true)
+    expect(node(full.wrapper, 'trusted-automation-toggle').exists()).toBe(false)
+    expect(node(full.wrapper, 'claim-confirmation-list').exists()).toBe(false)
+    expect(full.calls.some((call) => call.url === '/api/v1/claim-confirmations')).toBe(false)
     full.wrapper.unmount()
 
     const claimOnly = await mountApp(ME_CLAIM_ONLY)
-    expect(node(claimOnly.wrapper, 'trusted-automation-toggle').exists()).toBe(true)
-    expect(node(claimOnly.wrapper, 'claim-confirmation-list').exists()).toBe(true)
+    expect(node(claimOnly.wrapper, 'trusted-automation-toggle').exists()).toBe(false)
+    expect(node(claimOnly.wrapper, 'claim-confirmation-list').exists()).toBe(false)
     claimOnly.wrapper.unmount()
 
     const pending = await mountApp(ME_PENDING)
@@ -244,7 +261,7 @@ describe('受信自动化设置 — 可见性（gated like canManageKeys）', ()
   })
 
   it('GET /api/v1/me 缺省 trusted_automation 字段时（既有 stub 场景）仍渲染，开关默认关闭', async () => {
-    const { wrapper } = await mountApp(ME_FULL_LEGACY)
+    const { wrapper } = await mountApp(ME_ADMIN_LEGACY)
     expect(node(wrapper, 'trusted-automation-toggle').exists()).toBe(true)
     expect(switchOf(wrapper, 'trusted-automation-toggle').props('value')).toBe(false)
   })
@@ -252,7 +269,7 @@ describe('受信自动化设置 — 可见性（gated like canManageKeys）', ()
 
 describe('受信自动化设置 — PUT /api/v1/me/settings', () => {
   it('打开开关会 PUT { trusted_automation: true }（credentials include），并按服务端返回值刷新显示', async () => {
-    const { wrapper, calls, routes } = await mountApp(ME_FULL)
+    const { wrapper, calls, routes } = await mountApp(ME_ADMIN)
     routes.set('PUT /api/v1/me/settings', () => jsonResponse(200, { trusted_automation: true }))
     expect(switchOf(wrapper, 'trusted-automation-toggle').props('value')).toBe(false)
 
@@ -267,7 +284,7 @@ describe('受信自动化设置 — PUT /api/v1/me/settings', () => {
   })
 
   it('关闭开关同理：PUT { trusted_automation: false }', async () => {
-    const { wrapper, calls, routes } = await mountApp({ ...ME_FULL, trusted_automation: true })
+    const { wrapper, calls, routes } = await mountApp({ ...ME_ADMIN, trusted_automation: true })
     routes.set('PUT /api/v1/me/settings', () => jsonResponse(200, { trusted_automation: false }))
     expect(switchOf(wrapper, 'trusted-automation-toggle').props('value')).toBe(true)
 
@@ -282,7 +299,7 @@ describe('受信自动化设置 — PUT /api/v1/me/settings', () => {
 
 describe('待确认认领列表 — GET /api/v1/claim-confirmations 与批准/拒绝', () => {
   it('渲染待确认行（含任务 id）；批准按钮 POST 对应 approve 路由并刷新列表', async () => {
-    const { wrapper, calls, routes } = await mountApp(ME_FULL, { confirmations: [PENDING_CONFIRMATION] })
+    const { wrapper, calls, routes } = await mountApp(ME_ADMIN, { confirmations: [PENDING_CONFIRMATION] })
     expect(textOf(wrapper, 'claim-confirmation-list')).toContain(PENDING_CONFIRMATION.task_id)
     expect(approveButtons(wrapper)).toHaveLength(1)
     expect(rejectButtons(wrapper)).toHaveLength(1)
@@ -307,7 +324,7 @@ describe('待确认认领列表 — GET /api/v1/claim-confirmations 与批准/�
   })
 
   it('拒绝按钮 POST 对应 reject 路由并刷新列表', async () => {
-    const { wrapper, calls, routes } = await mountApp(ME_FULL, { confirmations: [PENDING_CONFIRMATION] })
+    const { wrapper, calls, routes } = await mountApp(ME_ADMIN, { confirmations: [PENDING_CONFIRMATION] })
     routes.set(`POST /api/v1/claim-confirmations/${PENDING_CONFIRMATION.id}/reject`, () =>
       jsonResponse(200, { ok: true }),
     )
@@ -326,7 +343,7 @@ describe('待确认认领列表 — GET /api/v1/claim-confirmations 与批准/�
   })
 
   it('空列表时仍渲染 claim-confirmation-list 容器，且没有任何操作按钮', async () => {
-    const { wrapper } = await mountApp(ME_FULL, { confirmations: [] })
+    const { wrapper } = await mountApp(ME_ADMIN, { confirmations: [] })
     expect(node(wrapper, 'claim-confirmation-list').exists()).toBe(true)
     expect(approveButtons(wrapper)).toHaveLength(0)
     expect(rejectButtons(wrapper)).toHaveLength(0)
@@ -335,7 +352,7 @@ describe('待确认认领列表 — GET /api/v1/claim-confirmations 与批准/�
 
 describe('拉取路径与请求头约定', () => {
   it('claim-confirmations 的 URL 恰好是 /api/v1/claim-confirmations（无 query），credentials 与 Accept 头符合既有约定', async () => {
-    const { calls } = await mountApp(ME_FULL, { confirmations: [PENDING_CONFIRMATION] })
+    const { calls } = await mountApp(ME_ADMIN, { confirmations: [PENDING_CONFIRMATION] })
     const getConfirmations = calls.find(
       (call) => call.method === 'GET' && call.url === '/api/v1/claim-confirmations',
     )

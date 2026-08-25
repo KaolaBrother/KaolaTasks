@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { createDb } from './db.ts'
 import { pollPendingReviews } from './poller.ts'
 import { injectSigned, pairDeviceToSelf } from './device-proof.test-helpers.ts'
+import { ensureSetup } from './auth.test-helpers.ts'
 
 // Issue #11. Seams copied from mcp.test.ts (do not import that file). This spec drives the real
 // MCP `submit_pr` tool to put a task into 待验收 with a real `submissions` row, then calls
@@ -247,9 +248,9 @@ async function loginViaCallback(app, { decoratorName, callbackPath, accessToken 
 }
 
 async function loginGitea(app, stub, label = 'gitea') {
-  const accessToken = nextAccessToken(label)
-  stub.oauth.set(accessToken, { id: 70000 + tokenSeq, login: `gt-${label}`, full_name: `Gi Tea ${label}` })
-  return loginViaCallback(app, { ...GITEA_PROVIDER, accessToken })
+  void stub
+  void label
+  return ensureSetup(app)
 }
 
 function jsonBody(res) {

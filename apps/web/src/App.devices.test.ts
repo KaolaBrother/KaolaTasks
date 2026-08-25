@@ -25,6 +25,15 @@ const ME_FULL: Record<string, unknown> = {
   permission_level: 'full',
   trusted_automation: false,
 }
+const ME_ADMIN: Record<string, unknown> = {
+  ...ME_FULL,
+  id: 1,
+  provider: 'local',
+  remote_id: 'local',
+  username: 'kaola-admin',
+  display_name: 'kaola-admin',
+  permission_level: 'admin',
+}
 const ME_CLAIM_ONLY: Record<string, unknown> = {
   ...ME_FULL,
   provider: 'github',
@@ -141,8 +150,9 @@ type MountOpts = {
   claimants?: typeof EXISTING_CLAIMANT[]
 }
 
-async function mountApp(me: Record<string, unknown> = ME_FULL, opts: MountOpts = {}) {
+async function mountApp(me: Record<string, unknown> = ME_ADMIN, opts: MountOpts = {}) {
   const { calls, routes } = installFetch()
+  routes.set('GET /api/v1/setup', () => jsonResponse(200, { setup_complete: true }))
   routes.set('GET /api/v1/me', () => jsonResponse(200, me))
   routes.set('GET /api/v1/tasks', () => jsonResponse(200, { tasks: [] }))
   routes.set('GET /api/v1/events', () => jsonResponse(200, { events: [] }))
@@ -177,6 +187,7 @@ async function mountApp(me: Record<string, unknown> = ME_FULL, opts: MountOpts =
 
 async function mountUnauthorized() {
   const { calls, routes } = installFetch()
+  routes.set('GET /api/v1/setup', () => jsonResponse(200, { setup_complete: true }))
   routes.set('GET /api/v1/me', () => jsonResponse(401, { error: 'unauthorized' }))
   const wrapper = mount(App, { global: { plugins: [naive] } })
   await vi.waitFor(() => {
@@ -255,14 +266,14 @@ describe('登录文案', () => {
 
 describe('电脑页 — 去掉 Agent Key 与 GitHub 批准', () => {
   it('full+active：没有「生成 Agent Key」文案，也不请求 /api/v1/agent-keys', async () => {
-    const { wrapper, calls } = await mountApp(ME_FULL)
+    const { wrapper, calls } = await mountApp(ME_ADMIN)
     expect(wrapper.text()).not.toContain('生成 Agent Key')
     expect(wrapper.text()).not.toContain('暂无 Agent Key。')
     expect(agentKeyGets(calls)).toHaveLength(0)
   })
 
   it('没有 GitHub 数字 id 批准控件', async () => {
-    const { wrapper } = await mountApp(ME_FULL)
+    const { wrapper } = await mountApp(ME_ADMIN)
     expect(node(wrapper, 'github-user-approve').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('批准 GitHub 用户')
     expect(wrapper.text()).not.toContain('GitHub 用户数字 id')
@@ -271,7 +282,7 @@ describe('电脑页 — 去掉 Agent Key 与 GitHub 批准', () => {
 
 describe('电脑页 — full+active 列表与绑定', () => {
   it('GET /api/v1/me/devices 填入 我的电脑（hostname / fingerprint / expires_at）', async () => {
-    const { wrapper, calls } = await mountApp(ME_FULL)
+    const { wrapper, calls } = await mountApp(ME_ADMIN)
     const gets = deviceGets(calls)
     expect(gets.length).toBeGreaterThanOrEqual(1)
     expect(gets[0].credentials).toBe('include')
@@ -287,7 +298,7 @@ describe('电脑页 — full+active 列表与绑定', () => {
   })
 
   it('GET /api/v1/devices/pending 填入 待授权电脑，并带绑定控件', async () => {
-    const { wrapper, calls } = await mountApp(ME_FULL)
+    const { wrapper, calls } = await mountApp(ME_ADMIN)
     const gets = pendingGets(calls)
     expect(gets.length).toBeGreaterThanOrEqual(1)
     expect(gets[0].url).toBe('/api/v1/devices/pending')
@@ -320,7 +331,7 @@ describe('电脑页 — full+active 列表与绑定', () => {
   })
 
   it('绑到我自己 POST { bind_to_self: true }，成功响应即使带 trap token 也不展示 forge token', async () => {
-    const { wrapper, calls, routes } = await mountApp(ME_FULL)
+    const { wrapper, calls, routes } = await mountApp(ME_ADMIN)
     routes.set(`POST /api/v1/devices/${PENDING_DEVICE.id}/bind`, () =>
       jsonResponse(200, {
         ok: true,
@@ -373,7 +384,7 @@ describe('电脑页 — full+active 列表与绑定', () => {
   })
 
   it('已有认领者下拉提交 POST { claimant_id }', async () => {
-    const { wrapper, calls, routes } = await mountApp(ME_FULL)
+    const { wrapper, calls, routes } = await mountApp(ME_ADMIN)
     routes.set(`POST /api/v1/devices/${PENDING_DEVICE.id}/bind`, () =>
       jsonResponse(200, {
         ok: true,
@@ -396,7 +407,7 @@ describe('电脑页 — full+active 列表与绑定', () => {
   })
 
   it('解除这台电脑 POST /api/v1/devices/:id/revoke', async () => {
-    const { wrapper, calls, routes } = await mountApp(ME_FULL)
+    const { wrapper, calls, routes } = await mountApp(ME_ADMIN)
     routes.set(`POST /api/v1/devices/${MINE_DEVICE.id}/revoke`, () => jsonResponse(200, { ok: true }))
     routes.set('GET /api/v1/me/devices', () => jsonResponse(200, { devices: [] }))
 
@@ -414,7 +425,7 @@ describe('电脑页 — full+active 列表与绑定', () => {
   })
 
   it('解除认领者 POST /api/v1/claimants/:id/revoke', async () => {
-    const { wrapper, calls, routes } = await mountApp(ME_FULL)
+    const { wrapper, calls, routes } = await mountApp(ME_ADMIN)
     routes.set(`POST /api/v1/claimants/${EXISTING_CLAIMANT.id}/revoke`, () =>
       jsonResponse(200, { ok: true }),
     )
@@ -438,8 +449,8 @@ describe('电脑页 — full+active 列表与绑定', () => {
 })
 
 describe('电脑页 — #16 受信自动化仍在本页', () => {
-  it('full+active 仍有 trusted-automation-toggle 与 claim-confirmation-list', async () => {
-    const { wrapper } = await mountApp(ME_FULL)
+  it('admin 仍有 trusted-automation-toggle 与 claim-confirmation-list', async () => {
+    const { wrapper } = await mountApp(ME_ADMIN)
     expect(node(wrapper, 'trusted-automation-toggle').exists()).toBe(true)
     expect(node(wrapper, 'claim-confirmation-list').exists()).toBe(true)
   })
@@ -457,6 +468,19 @@ describe('电脑页 — leftover claim_only 防御视图', () => {
     expect(pendingGets(calls)).toHaveLength(0)
     expect(deviceGets(calls)).toHaveLength(0)
     expect(claimantGets(calls)).toHaveLength(0)
-    expect(node(wrapper, 'trusted-automation-toggle').exists()).toBe(true)
+    expect(node(wrapper, 'trusted-automation-toggle').exists()).toBe(false)
+  })
+})
+
+describe('电脑页 — 发布者没有实例管理', () => {
+  it('full 发布者有凭证档案，没有待授权电脑 / 绑到我自己 / 认领者', async () => {
+    const { wrapper, calls } = await mountApp(ME_FULL)
+    expect(node(wrapper, 'workbench-nav-publish').exists()).toBe(true)
+    expect(node(wrapper, 'devices-pending').exists()).toBe(false)
+    expect(node(wrapper, 'device-bind-self').exists()).toBe(false)
+    expect(node(wrapper, 'claimants-list').exists()).toBe(false)
+    expect(pendingGets(calls)).toHaveLength(0)
+    expect(claimantGets(calls)).toHaveLength(0)
+    expect(node(wrapper, 'trusted-automation-toggle').exists()).toBe(false)
   })
 })

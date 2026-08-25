@@ -29,6 +29,15 @@ const ME_FULL = {
   status: 'active',
   permission_level: 'full',
 }
+const ME_ADMIN = {
+  ...ME_FULL,
+  id: 1,
+  provider: 'local',
+  remote_id: 'local',
+  username: 'kaola-admin',
+  display_name: 'kaola-admin',
+  permission_level: 'admin',
+}
 const ME_CLAIM_ONLY = { ...ME_FULL, provider: 'github', permission_level: 'claim_only' }
 const ME_PENDING = { ...ME_CLAIM_ONLY, status: '待批准' }
 
@@ -198,6 +207,7 @@ function stubMemberGets(
   me: Record<string, unknown>,
   tasks: Brief[],
 ) {
+  routes.set('GET /api/v1/setup', () => jsonResponse(200, { setup_complete: true }))
   routes.set('GET /api/v1/me', () => jsonResponse(200, me))
   routes.set('GET /api/v1/tasks', () => jsonResponse(200, { tasks }))
   routes.set('GET /api/v1/events', () => jsonResponse(200, { events: [] }))
@@ -227,7 +237,7 @@ async function mountApp(me: Record<string, unknown> = ME_FULL, tasks: Brief[] = 
     })
     await settle()
   }
-  if (me.status === 'active' && me.permission_level === 'full') {
+  if (me.status === 'active' && (me.permission_level === 'full' || me.permission_level === 'admin')) {
     await vi.waitFor(() => {
       expect(calls.some((call) => call.url === '/api/v1/credential-profiles')).toBe(true)
     })
@@ -236,9 +246,10 @@ async function mountApp(me: Record<string, unknown> = ME_FULL, tasks: Brief[] = 
   return { wrapper, calls, routes }
 }
 
-async function mountUnauthorized() {
+async function mountUnauthorized(setupComplete = true) {
   const { calls, routes } = installFetch()
   stubMemberGets(routes, ME_FULL, [])
+  routes.set('GET /api/v1/setup', () => jsonResponse(200, { setup_complete: setupComplete }))
   routes.set('GET /api/v1/me', () => jsonResponse(401, { error: 'unauthorized' }))
   const wrapper = mount(App, { global: { plugins: [naive] } })
   await vi.waitFor(() => {
@@ -340,6 +351,52 @@ function expectNeitherPosterButton(wrapper: VueWrapper) {
 }
 
 // =============================================================================================
+
+describe('登录卡 — 设置向导 vs 发布者登录', () => {
+  it('setup_complete: false 展示用户名密码向导，没有三家 OAuth 可用入口', async () => {
+    const { wrapper, calls } = await mountUnauthorized(false)
+    expect(calls.some((call) => call.url === '/api/v1/setup')).toBe(true)
+    expect(wrapper.text()).toMatch(/用户名/)
+    expect(wrapper.text()).toMatch(/密码/)
+    expect(wrapper.find('a[href="/login/github"]').exists()).toBe(false)
+    expect(wrapper.find('a[href="/login/gitlab"]').exists()).toBe(false)
+    expect(wrapper.find('a[href="/login/gitea"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('setup_complete: true 展示本地登录 + GitLab/Gitea，没有 GitHub 登录按钮', async () => {
+    const { wrapper } = await mountUnauthorized(true)
+    expect(wrapper.find('a[href="/login/gitlab"]').exists()).toBe(true)
+    expect(wrapper.find('a[href="/login/gitea"]').exists()).toBe(true)
+    expect(wrapper.find('a[href="/login/github"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('使用 GitHub 登录')
+    expect(wrapper.text()).toMatch(/密码/)
+    wrapper.unmount()
+  })
+})
+
+describe('头栏身份文案', () => {
+  it('admin 显示管理员；full 显示发布者', async () => {
+    const admin = await mountApp(ME_ADMIN)
+    expect(admin.wrapper.text()).toContain('管理员')
+    expect(admin.wrapper.text()).not.toContain('正式成员')
+    admin.wrapper.unmount()
+
+    const full = await mountApp(ME_FULL)
+    expect(full.wrapper.text()).toContain('发布者')
+    expect(full.wrapper.text()).not.toContain('正式成员')
+    full.wrapper.unmount()
+  })
+
+  it('admin 与 full 都有发布导航', async () => {
+    const admin = await mountApp(ME_ADMIN)
+    expect(node(admin.wrapper, 'workbench-nav-publish').exists()).toBe(true)
+    admin.wrapper.unmount()
+    const full = await mountApp(ME_FULL)
+    expect(node(full.wrapper, 'workbench-nav-publish').exists()).toBe(true)
+    full.wrapper.unmount()
+  })
+})
 
 describe('Workbench nav', () => {
   it('full+active：workbench-nav 与四项都在，文案含看板/发布/电脑/审计；pending 与 login 没有 workbench-nav', async () => {

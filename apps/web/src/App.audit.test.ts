@@ -201,6 +201,7 @@ async function mountMember(
   { events = EVENTS, stats = STATS }: { events?: EventRow[]; stats?: StatsBody } = {},
 ) {
   const { calls, routes } = installFetch()
+  routes.set('GET /api/v1/setup', () => jsonResponse(200, { setup_complete: true }))
   routes.set('GET /api/v1/me', () => jsonResponse(200, me))
   routes.set('GET /api/v1/agent-keys', () => jsonResponse(200, { keys: [] }))
   routes.set('GET /api/v1/credential-profiles', () => jsonResponse(200, { profiles: [] }))
@@ -229,6 +230,7 @@ async function mountMember(
 
 async function mountPending(me: Record<string, unknown> = ME_PENDING) {
   const { calls, routes } = installFetch()
+  routes.set('GET /api/v1/setup', () => jsonResponse(200, { setup_complete: true }))
   routes.set('GET /api/v1/me', () => jsonResponse(200, me))
   const wrapper = mount(App, { global: { plugins: [naive] } })
   await vi.waitFor(() => {
@@ -240,6 +242,7 @@ async function mountPending(me: Record<string, unknown> = ME_PENDING) {
 
 async function mountUnauthorized() {
   const { calls, routes } = installFetch()
+  routes.set('GET /api/v1/setup', () => jsonResponse(200, { setup_complete: true }))
   routes.set('GET /api/v1/me', () => jsonResponse(401, { error: 'unauthorized' }))
   const wrapper = mount(App, { global: { plugins: [naive] } })
   await vi.waitFor(() => {

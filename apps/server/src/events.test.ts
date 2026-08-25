@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { injectSigned, pairDeviceToSelf } from './device-proof.test-helpers.ts'
+import { ensureSetup } from './auth.test-helpers.ts'
 
 // Issue #15 — GET /api/v1/events + GET /api/v1/stats. Neither route exists yet (verified by
 // grepping every app.get|post|patch|delete( call site in apps/server/src — see
@@ -223,13 +224,9 @@ async function loginViaCallback(app, { decoratorName, callbackPath, accessToken 
 }
 
 async function loginGitea(app, stub, label = 'gitea') {
-  const accessToken = nextAccessToken(label)
-  stub.oauth.set(accessToken, {
-    id: 70000 + tokenSeq,
-    login: `gt-${label}`,
-    full_name: `Gi Tea ${label}`,
-  })
-  return loginViaCallback(app, { ...PROVIDERS.gitea, accessToken })
+  void stub
+  void label
+  return ensureSetup(app)
 }
 
 function jsonBody(res) {
@@ -402,15 +399,16 @@ describe('issue #15 audit log HTTP + team stats', { concurrency: false }, () => 
       db.$client
         .prepare(
           `INSERT INTO users (provider, remote_id, username, display_name, status, permission_level, trusted_automation)
-           VALUES ('github', '2222', 'gh-events-pending', 'Pending Events', '待批准', 'claim_only', 0)`,
+           VALUES ('gitlab', '2222', 'gl-events-pending', 'Pending Events', '待批准', 'claim_only', 0)`,
         )
         .run()
       const app = await createApp(t, sqlitePath)
       const stub = beginFetch(t)
       allowForgeToken(stub, INLINE_TOKEN)
       const leftoverToken = nextAccessToken('events-pending')
-      stub.oauth.set(leftoverToken, { id: 2222, login: 'gh-events-pending', name: 'Pending Events' })
-      const pending = await loginViaCallback(app, { ...PROVIDERS.github, accessToken: leftoverToken })
+      stub.oauth.set(leftoverToken, { id: 2222, username: 'gl-events-pending', name: 'Pending Events' })
+      await ensureSetup(app)
+      const pending = await loginViaCallback(app, { ...PROVIDERS.gitlab, accessToken: leftoverToken })
       assert.equal(pending.body.status, '待批准')
 
       assertUnauthorized(await getEvents(app, pending.cookies))
@@ -423,7 +421,7 @@ describe('issue #15 audit log HTTP + team stats', { concurrency: false }, () => 
       db.$client
         .prepare(
           `INSERT INTO users (provider, remote_id, username, display_name, status, permission_level, trusted_automation)
-           VALUES ('github', '3333', 'gh-events-claim-only', 'Claim Only Events', 'active', 'claim_only', 0)`,
+           VALUES ('gitlab', '3333', 'gl-events-claim-only', 'Claim Only Events', 'active', 'claim_only', 0)`,
         )
         .run()
       const app = await createApp(t, sqlitePath)
@@ -431,22 +429,22 @@ describe('issue #15 audit log HTTP + team stats', { concurrency: false }, () => 
       allowForgeToken(stub, INLINE_TOKEN)
       const owner = await loginGitea(app, stub, 'events-owner')
       const leftoverToken = nextAccessToken('events-claim-only')
-      stub.oauth.set(leftoverToken, { id: 3333, login: 'gh-events-claim-only', name: 'Claim Only Events' })
-      const github = await loginViaCallback(app, { ...PROVIDERS.github, accessToken: leftoverToken })
+      stub.oauth.set(leftoverToken, { id: 3333, username: 'gl-events-claim-only', name: 'Claim Only Events' })
+      const leftover = await loginViaCallback(app, { ...PROVIDERS.gitlab, accessToken: leftoverToken })
       const me = await app.inject({
         method: 'GET',
         url: '/api/v1/me',
-        cookies: github.cookies,
+        cookies: leftover.cookies,
         headers: jsonHeaders,
       })
       assert.equal(me.json().status, 'active')
       assert.equal(me.json().permission_level, 'claim_only')
-      assert.notEqual(Number(github.body.id), Number(owner.body.id))
+      assert.notEqual(Number(leftover.body.id), Number(owner.body.id))
 
-      const events = await getEvents(app, github.cookies)
+      const events = await getEvents(app, leftover.cookies)
       assert.equal(events.statusCode, 200, `claim_only GET events: ${events.statusCode} ${events.body}`)
 
-      const stats = await getStats(app, github.cookies)
+      const stats = await getStats(app, leftover.cookies)
       assert.equal(stats.statusCode, 200, `claim_only GET stats: ${stats.statusCode} ${stats.body}`)
     })
   })

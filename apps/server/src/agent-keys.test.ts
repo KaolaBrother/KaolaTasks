@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import Database from 'better-sqlite3'
 import { createDb } from './db.ts'
 import { injectSigned, pairDeviceToSelf } from './device-proof.test-helpers.ts'
+import { ensureSetup } from './auth.test-helpers.ts'
 
 // Binding names: kaola-workflow/bundle-4-5/.cache/technical-decisions.md
 const PENDING_STATUS = '待批准'
@@ -152,6 +153,7 @@ function tempSqlitePath(t) {
 }
 
 async function loginViaCallback(app, { decoratorName, callbackPath, accessToken }) {
+  await ensureSetup(app)
   stubTokenExchange(app, decoratorName, accessToken)
   const callback = await app.inject({
     method: 'GET',
@@ -210,7 +212,7 @@ function seedLeftoverGithub(db, { remoteId, username, displayName, status, permi
   db.$client
     .prepare(
       `INSERT INTO users (provider, remote_id, username, display_name, status, permission_level, trusted_automation)
-       VALUES ('github', ?, ?, ?, ?, ?, 0)`,
+       VALUES ('gitlab', ?, ?, ?, ?, ?, 0)`,
     )
     .run(String(remoteId), username, displayName, status, permissionLevel)
 }
@@ -423,8 +425,8 @@ describe('leftover 待批准 GitHub cannot generate Agent Keys', () => {
     const profiles = new Map()
     stubUserinfoByAccessToken(t, profiles)
     const accessToken = nextAccessToken('github-pending-key')
-    profiles.set(accessToken, { id: 4242, login: 'pending-cat', name: 'Pending Cat' })
-    const pending = await loginViaCallback(app, { ...PROVIDERS.github, accessToken })
+    profiles.set(accessToken, { id: 4242, username: 'pending-cat', name: 'Pending Cat' })
+    const pending = await loginViaCallback(app, { ...PROVIDERS.gitlab, accessToken })
     assert.equal(pending.body.status, PENDING_STATUS)
     assert.equal(pending.body.permission_level, 'claim_only')
 
@@ -454,9 +456,9 @@ describe('leftover GitHub claim_only session CRUD (unused-compat)', () => {
     const profiles = new Map()
     stubUserinfoByAccessToken(t, profiles)
     const githubToken = nextAccessToken('github-approved-key')
-    profiles.set(githubToken, { id: 333, login: 'needs-ok', name: 'Needs Ok' })
+    profiles.set(githubToken, { id: 333, username: 'needs-ok', name: 'Needs Ok' })
 
-    const github = await loginViaCallback(app, { ...PROVIDERS.github, accessToken: githubToken })
+    const github = await loginViaCallback(app, { ...PROVIDERS.gitlab, accessToken: githubToken })
     assert.equal(github.body.status, 'active')
     assert.equal(github.body.permission_level, 'claim_only')
 

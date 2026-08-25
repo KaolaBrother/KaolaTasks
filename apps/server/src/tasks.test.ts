@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseTaskBrief } from '@kaola/shared'
 import { createDb } from './db.ts'
+import { ensureSetup } from './auth.test-helpers.ts'
 
 // Contract source: docs/DESIGN.md §5 (lifecycle), §6 (task brief), §7 (credentials),
 // §10 (data model), §11 (permissions). Idiom follows apps/server/src/vault.test.ts.
@@ -319,15 +320,15 @@ function seedLeftoverGithub(db, { remoteId, username, displayName, status, permi
   db.$client
     .prepare(
       `INSERT INTO users (provider, remote_id, username, display_name, status, permission_level, trusted_automation)
-       VALUES ('github', ?, ?, ?, ?, ?, 0)`,
+       VALUES ('gitlab', ?, ?, ?, ?, ?, 0)`,
     )
     .run(String(remoteId), username, displayName, status, permissionLevel)
 }
 
 async function loginLeftoverGithub(app, stub, { remoteId, login, name, label }) {
   const leftoverToken = nextAccessToken(label)
-  stub.oauth.set(leftoverToken, { id: Number(remoteId), login, name })
-  return loginViaCallback(app, { ...PROVIDERS.github, accessToken: leftoverToken })
+  stub.oauth.set(leftoverToken, { id: Number(remoteId), username: login, name })
+  return loginViaCallback(app, { ...PROVIDERS.gitlab, accessToken: leftoverToken })
 }
 
 async function loginViaCallback(app, { decoratorName, callbackPath, accessToken }) {
@@ -352,6 +353,7 @@ async function loginViaCallback(app, { decoratorName, callbackPath, accessToken 
 }
 
 async function loginGitlab(app, stub, label = 'gitlab') {
+  await ensureSetup(app)
   const accessToken = nextAccessToken(label)
   stub.oauth.set(accessToken, {
     id: 80000 + tokenSeq,
@@ -362,6 +364,7 @@ async function loginGitlab(app, stub, label = 'gitlab') {
 }
 
 async function loginGitea(app, stub, label = 'gitea') {
+  await ensureSetup(app)
   const accessToken = nextAccessToken(label)
   stub.oauth.set(accessToken, {
     id: 70000 + tokenSeq,
