@@ -550,6 +550,33 @@
                     </n-space>
                   </div>
 
+                  <n-divider v-if="canManageInstance">升级</n-divider>
+                  <div v-if="canManageInstance" data-testid="users-promote">
+                    <n-space vertical>
+                      <n-text strong>升级为管理员</n-text>
+                      <n-text v-if="listedUsers.length === 0" class="empty-copy">暂无用户。</n-text>
+                      <n-space
+                        v-for="user in listedUsers"
+                        :key="user.id"
+                        data-testid="user-row"
+                        class="claim-row"
+                        align="center"
+                      >
+                        <n-text>
+                          {{ user.display_name }}（{{ user.username }}）· {{ user.provider }} · {{ user.permission_level }}
+                        </n-text>
+                        <n-button
+                          v-if="userCanPromote(user)"
+                          data-testid="user-promote"
+                          class="has-ripple"
+                          size="small"
+                          @pointerdown="onRipple"
+                          @click="promoteUser(user.id)"
+                        >升级为管理员</n-button>
+                      </n-space>
+                    </n-space>
+                  </div>
+
                   <n-divider v-if="canPublish">凭证档案</n-divider>
                   <n-space v-if="canPublish" vertical>
                     <n-text>按 forge + 仓库保存可复用 token，团队共享。删除档案后请到 forge 侧撤销该 token。</n-text>
@@ -751,6 +778,15 @@ type ClaimantRow = {
   device_idle_days: number
 }
 
+type ListedUser = {
+  id: number
+  provider: string
+  username: string
+  display_name: string
+  status: string
+  permission_level: string
+}
+
 type ProfileRow = {
   id: number
   forge: string
@@ -823,6 +859,7 @@ const authMessage = ref('')
 const mineDevices = ref<DeviceRow[]>([])
 const pendingDevices = ref<DeviceRow[]>([])
 const claimants = ref<ClaimantRow[]>([])
+const listedUsers = ref<ListedUser[]>([])
 const bindClaimantName = ref('')
 const bindClaimantId = ref<number | null>(null)
 const deviceBinding = ref(false)
@@ -1430,6 +1467,7 @@ onMounted(async () => {
     await loadMineDevices()
     await loadPendingDevices()
     await loadClaimants()
+    await loadUsers()
   }
   if (canPublish.value) {
     await loadProfiles()
@@ -1451,6 +1489,7 @@ async function applyMeFromResponse(res: Response) {
     await loadMineDevices()
     await loadPendingDevices()
     await loadClaimants()
+    await loadUsers()
   }
   if (canPublish.value) {
     await loadProfiles()
@@ -1599,6 +1638,37 @@ async function loadClaimants() {
     claimants.value = Array.isArray(body?.claimants) ? (body.claimants as ClaimantRow[]) : []
   } catch {
     claimants.value = []
+  }
+}
+
+async function loadUsers() {
+  try {
+    const res = await fetch('/api/v1/users', {
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+    })
+    if (!res.ok) return
+    const body = await readJson(res)
+    listedUsers.value = Array.isArray(body?.users) ? (body.users as ListedUser[]) : []
+  } catch {
+    listedUsers.value = []
+  }
+}
+
+function userCanPromote(user: ListedUser): boolean {
+  return (
+    (user.provider === 'gitlab' || user.provider === 'gitea') &&
+    user.status === 'active' &&
+    user.permission_level === 'full'
+  )
+}
+
+async function promoteUser(id: number) {
+  try {
+    const res = await postJson(`/api/v1/users/${id}/promote`, {})
+    if (res.ok) await loadUsers()
+  } catch {
+    // ignore
   }
 }
 
