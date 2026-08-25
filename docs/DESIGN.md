@@ -1,6 +1,6 @@
 # 考拉任务（Kaola Tasks）设计文档
 
-> 版本：v0.2（2026-08-24）· 状态：草案；v0.2 增补：多源登录、认领即授权、Agent 侧 token 卫生、无 forge 账号认领者；身份合同：认领者为无 Web 登录的命名身份，Agent 用本机设备证明（非 Agent Key Bearer）
+> 版本：v0.3（2026-08-25）· 状态：草案；v0.3：管理员 ≠ 发布者——空库设置向导建 `local` 密码管理员；GitLab / Gitea OAuth 建发布者（可升级）；拿掉 GitHub 登录（适配器与发布表单的 GitHub 仓库仍在）。v0.2 增补：多源登录、认领即授权、Agent 侧 token 卫生、无 forge 账号认领者；身份合同：认领者为无 Web 登录的命名身份，Agent 用本机设备证明（非 Agent Key Bearer）
 
 ---
 
@@ -23,13 +23,14 @@
 | D3 | 凭证模式 | 发布任务**强制**附带 token；Agent 认领后用该 token 直接访问 forge |
 | D4 | 分发方式 | 仅内部部署，不对外分发 |
 | D5 | 技术栈 | TypeScript 全栈：Vue 3 前端 + Node API + 官方 MCP TS SDK + Drizzle/SQLite |
-| D6 | 登录方式 | 通过团队自有 forge 的 OAuth 登录（GitLab 或 Gitea） |
+| D6 | 登录方式 | 两条进工作台的路，不要混：设置向导创建的考拉用户名/密码（`provider: 'local'`，管理员）；已有管理员之后的 GitLab / Gitea OAuth（发布者，可被升级为管理员）。**没有 GitHub 登录**（GitHub 适配器与发布表单里的 GitHub 仓库仍在） |
 | D7 | Token 附着方式 | 凭证档案（Credential Profile）复用为主，允许单任务临时 token 覆盖 |
-| D8 | 登录与权限分级 | Web 发布者/管理员为 OAuth `users` 且 `permission_level: full`（空库首次登录 bootstrap，之后未被邀请不建号；`KAOLA_ADMINS` 可选）。认领者不是 Web 账号。Agent 鉴权为本机设备证明，不是自助 Agent Key |
+| D8 | 登录与权限分级 | `permission_level`：`admin`（管理员） / `full`（发布者） / 遗留 `claim_only`（不再新建）。空库（无可登录管理员）只许设置向导；OAuth 不得抢权。已有管理员后，GitLab / Gitea 登录一律建 `active`+`full` 发布者（无 `uninvited`）。管理员可把发布者升级为 `admin`。`KAOLA_ADMINS` 忽略、不炸 boot。认领者不是 Web 账号。Agent 鉴权为本机设备证明，不是自助 Agent Key |
 
 ## 3. 角色与核心概念
 
-- **发布者 / 管理员（人）**：通过团队 forge 的 OAuth 登录，落在 `users` 且 `permission_level: full`。创建任务卡或从 Issue 导入、选择凭证档案、定义验收标准；仅 `full` 可绑定/解除认领者与电脑。管理员可将一台电脑绑到自己（冒烟），不因此把认领者做成 Web 账号。
+- **管理员（人）**：设置向导创建的考拉用户名/密码（`provider: 'local'`），或 GitLab / Gitea 发布者被升级后仍走原 OAuth（`permission_level: admin`）。管实例：电脑绑定/解除（含 `bind_to_self`）、认领者、把发布者升为管理员。**兼顾发布**：可绑仓库 PAT、发任务。不是认领者；不另开第二个密码管理员。
+- **发布者（人）**：只留 GitLab / Gitea OAuth（`permission_level: full`）。登录后绑仓库 PAT，导入/发布任务卡；看看板与审计。不管实例、不升级别人、**不绑/解除任何电脑**（含不能 `bind_to_self`）。凭证档案仍是团队共享，不按 OAuth 来源硬限制 forge 种类。
 - **认领者（命名身份）**：独立于 `users` 的认领身份，**没有 Web 登录**，不能进工作台。由管理员在绑定待授权电脑时命名。不是 OAuth 账号，也不是 `claim_only` 网页用户。
 - **Agent**：任意 MCP 兼容运行时。经本机 stdio 桥以设备证明调用考拉 MCP，获取任务、汇报进度、提交 PR 链接。实际的 clone / 编码 / push / 开 PR 都由 Agent 用揭示的 forge token 直接对 forge 完成。
 - **任务卡（Task Brief）**：结构化、机器可读的任务契约（见 §6），是平台相对"裸 Issue"的核心增值。
@@ -68,7 +69,7 @@ flowchart LR
 
 组件职责：
 
-1. **Web 前端（中文界面）** — 任务看板（列表/看板两种视图）、任务详情、发布向导、凭证档案管理、审计日志、电脑与认领者管理（「我的电脑」「待授权电脑」）。认领者不能登录工作台。
+1. **Web 前端（中文界面）** — 零管理员时为设置向导；有管理员后为直接登录 + GitLab / Gitea（无 GitHub 按钮）。工作台：任务看板、任务详情、发布向导、凭证档案、审计日志。电脑/认领者/升级入口仅管理员。认领者不能登录工作台。
 2. **API Server** — 任务生命周期状态机、租约管理、认证鉴权、审计记录。REST 全量镜像 MCP 能力，供非 MCP 运行时或脚本使用。
 3. **MCP Server** — Agent 的入口（见 §9）。服务端仍是 Streamable HTTP；本机 `kaola-mcp` 用设备私钥签名后转发。配置一次 stdio `command` + 考拉 URL，之后一句"去考拉接单"即可。身份不是自助 Agent Key Bearer。
 4. **ForgeAdapter 层** — 统一接口、三份实现（见 §8）。GitLab / Gitea 均支持自定义 base URL（自托管）。
@@ -268,7 +269,7 @@ REST 认领/进度/释放与 MCP 同一套设备证明。另加 Web 端专用的
 
 | 表 | 关键字段 |
 |----|----------|
-| `users` | forge OAuth 身份（provider, remote_id, username）、显示名、状态（`active` / 遗留 `待批准` / `revoked`）、权限级（`full` / 遗留 `claim_only`）；策略列 `device_max_age_days`（默认 30，范围 1–365，无永久）、`max_devices`（默认 5）、`device_idle_days`（默认 0）。新 OAuth 不插入 `待批准`/`claim_only`。重新登录不得把 `revoked` 改回 `active` |
+| `users` | 身份：`provider`（`local` / `gitlab` / `gitea` / leftover `github`）、`remote_id`（本地账号固定 `'local'`）、`username`（`local` 下唯一、非空、trim）、显示名、可空 `password_hash`（仅 `local`；Argon2id 或 `node:crypto` scrypt；明文永不进响应/日志/`events.details`）、状态（`active` / 遗留 `待批准` / `revoked`）、权限级（`admin` / `full` / 遗留 `claim_only`）；策略列 `device_max_age_days`（默认 30，范围 1–365，无永久）、`max_devices`（默认 5）、`device_idle_days`（默认 0）。UNIQUE `(provider, remote_id)`。新 GitLab / Gitea OAuth 插入 `active`+`full`（已有可登录管理员之后）；不再插入 `待批准`/`claim_only`。重新登录不得把 `revoked` 改回 `active`。开库迁移：若无可登录管理员（`active`+`admin` 且 provider 为 `local`/`gitlab`/`gitea`；**GitHub 行不算**），取最早一条 `active`+`full` 且 provider 属 gitlab/gitea/local 改为 `admin`；若没有这样的行（只有 GitHub `full` 或空库）仍走向导 |
 | `claimants` | 无 Web 登录的认领身份：display_name、status（`active` / `revoked`）、同上三列策略默认值 |
 | `devices` | fingerprint、公钥、hostname（不可信）、status（`pending` / `active` / `expired` / `revoked`）。**活跃**设备的所有者恰好是 `claimant_id` 或 `user_id` 之一；**待授权**两者皆空。待授权窗口 `pending_expires_at`（首次见到起 1 天）；绑定后 `expires_at` 由所有者 `device_max_age_days` 自 `paired_at` 计算 |
 | `agent_keys` | 遗留：user_id、key_hash、label、last_used_at。MCP / 认领 / whoami 不再用 Agent Key Bearer |
@@ -277,25 +278,34 @@ REST 认领/进度/释放与 MCP 同一套设备证明。另加 Web 端专用的
 | `leases` | task_id、claimer 为 `claimer_user_id` 或 `claimer_claimant_id`、**`device_id`**、claimed_at、expires_at、last_heartbeat、state |
 | `claim_confirmations` | #16：task_id、user_id（仅绑到 Web 用户）、**`device_id`**、state、created_at |
 | `submissions` | task_id、lease_id、pr_url、summary、pr_state |
-| `events` | 审计与时间线：类型（状态迁移 / token 揭示 / 心跳 / 回写）、主体、时间、详情 JSON |
+| `events` | 审计与时间线：类型（状态迁移 / token 揭示 / 心跳 / 回写 / 管理员创建 / 权限变更）、主体、时间、详情 JSON。向导成功 `管理员创建`，`details` 恰好 `{ user_id }`；升级 `权限变更`，`details` `{ target_user_id, from, to }`。两者不得有密码、哈希、token |
 
 SQLite 足够内部团队规模；Drizzle 之上留好升级 Postgres 的余地（不用 SQLite 特有特性）。
 
 ## 11. 认证
 
-- **人（Web，发布者/管理员）**：多源 OAuth，无独立密码账号。GitLab / Gitea **不会**仅因登录来源而自动 `full`。规则：
+- **可登录管理员**：`status === 'active'` 且 `permission_level === 'admin'` 且 `provider` 为 `local` | `gitlab` | `gitea`。GitHub 行不算（登录按钮已拿掉）。
+- **人（Web）**：两条路。考拉登录密码 ≠ forge 仓库 PAT。PAT 只用来绑档案、发任务；仍只在 REST claim `201` 顶层 `token` 与 MCP `claim_task` 成功 `token` 揭示。
 
-  - 空或未设 `KAOLA_ADMINS` 仍可启动。
-  - 库中尚无 `full`+`active` 用户时：第一次 Web OAuth 插入即为 `active`+`full`（三个提供方任一皆可）。
-  - 已有管理员之后，未被邀请的 OAuth **不插入** `users` 行（页面「未被邀请」），不再用 GitHub「待批准」排队。
-  - 若设置了 `KAOLA_ADMINS`（`provider:username` 或 `provider:id:<remote_id>`），所列身份在登录时成为 `full`。
+  - **空库 / 零可登录管理员**：只许设置向导。`POST /api/v1/setup` `{ username, password }`（`display_name` 可省，默认等于 username）→ `201` + 会话；第一个人成为 `local` 管理员。向导只跑一次。并发第二次 → `409` `{ error: 'setup_complete' }`。缺字段/空用户名 → `400`。GitLab / Gitea / GitHub OAuth **不得**插 `users`、不得发会话。回调只重定向向导/登录页。
+  - **已有管理员之后**：`POST /api/v1/login` `{ username, password }` → `200` + 会话；失败一律 `401`（不透露用户是否存在）。所有 GitLab / Gitea 登录都建发布者（`active`+`full`），不再 `/login?reason=uninvited`，不再插 `待批准` / `claim_only`。
+  - **`GET /login/github` 与 callback 404**（不注册 OAuth start）。不删 GitHub 适配器。
+  - **升级**：任何管理员 `POST /api/v1/users/:id/promote` 把 GitLab/Gitea 的 `active`+`full` 升为 `admin`（同一 OAuth 身份，不另开密码号）。已是 `admin` → 幂等 `200`。GitHub / local / 缺失 → `404` 或 `400`。不再用向导开第二个密码管理员。本条不做降级、删用户、改密、自助找回。
+  - **`GET /api/v1/users`**：仅管理员 → `{ users: [{ id, provider, username, display_name, status, permission_level }] }`，无哈希。
+  - **`GET /api/v1/me`**：现有字段 + `permission_level` 为 `admin` | `full` | leftover `claim_only`；`provider` 可为 `local`。从不带密码/哈希/代币。不另加 `is_admin`。
+  - **`GET /api/v1/setup`**（公开）：`{ setup_complete: boolean }`，供 SPA 在向导与登录卡之间切换（无会话）。
+  - 退役 `POST /api/v1/users/:id/approve`。`KAOLA_ADMINS` 若仍设置：**忽略**，不炸 boot。
   - 重新登录不得复活 `revoked`。
-  - 仅 `full` 可绑定/解除认领者与电脑。绑定不自动认领、不推送 forge token。认领者没有会话，不能进工作台。
+  - **发布 / 导入 / 档案 / 自己任务 PATCH**：`admin` **或** `full`。
+  - **待授权电脑、绑定/解除、认领者、升级、受信自动化 + 待确认认领**：**仅** `admin`。发布者不能绑任何电脑。绑定不自动认领、不推送 forge token。认领者没有会话，不能进工作台。
+  - **看板 / 审计 events+stats**：任何 `active` Web 用户；`待批准` 仍 401 events。
+  - UI：零管理员只展示向导（不把三家 OAuth 当可用入口）。有管理员后：直接登录表单 + GitLab / Gitea；**没有 GitHub 按钮**。服务端 `GET /login` HTML 与 Vue 登录卡同步。头栏：`admin` → 管理员；`full` → 发布者。
 
-  | 能力 | `users` 且 `active`+`full` | 认领者（无 Web 登录） |
-  |------|---------------------------|------------------------|
-  | 查看任务板 / 发布 / 凭证档案 / 绑定电脑 | ✓ | ✗ |
-  | 经 Agent 认领任务 | 冒烟：电脑绑到自己 | ✓（电脑绑到该认领者） |
+  | 能力 | `admin` | `full`（发布者） | 认领者（无 Web 登录） |
+  |------|---------|-----------------|------------------------|
+  | 查看任务板 / 发布 / 凭证档案 | ✓ | ✓ | ✗ |
+  | 绑定电脑 / 认领者 / 升级 | ✓ | ✗ | ✗ |
+  | 经 Agent 认领任务 | 冒烟：电脑绑到自己 | ✗（无设备） | ✓（电脑绑到该认领者） |
 
 - **Agent（MCP/REST）**：每请求 Ed25519 设备签名，不是复制粘贴的 Bearer `ktk_`。未配对的合法签名 → `202` `authorization_required`（见 §7）。解除人或电脑在下一次请求生效。
 - **Webhook**：各 forge 的签名校验（GitHub HMAC、Gitea/GitLab secret token）。
@@ -321,12 +331,12 @@ KaolaTasks/
 └─ docker-compose.yml
 ```
 
-**部署**（仍是 D4 内部部署，不对外分发）：一种拓扑——内网服务器跑考拉和本地 GitLab / Gitea；公网 IP（或该 IP 上的主机名）是入口；云开发机不是生产原点。浏览器与 `kaola-mcp` 打到公网入口，宿主机反代 80/443 → `127.0.0.1:31415`（compose 端口绑环回，不把 31415 直接放公网）。`PUBLIC_URL` 是团队浏览器真正打开的地址（`https://…` 或 `http://公网IP`，不带尾斜杠），OAuth 回调、MCP `--url`、回写评论里的链接都跟它；`OAUTH_*_BASE_URL` 用服务器访问 forge 的内网地址。docker-compose 单机：镜像内 SPA + Fastify，`env_file: .env` 注入密钥与 `PUBLIC_URL`，SQLite 文件 `/data/kaola.sqlite`（卷 `kaola-data` → `/data`）。同机时默认轮询完结「待验收」；webhook 可后补。登录仍是封闭加入（空库首次 OAuth bootstrap，之后 `uninvited`），不是对外注册。操作步骤见根目录 [README.md](../README.md)「生产向部署」。
+**部署**（仍是 D4 内部部署，不对外分发）：一种拓扑——内网服务器跑考拉和本地 GitLab / Gitea；公网 IP（或该 IP 上的主机名）是入口；云开发机不是生产原点。浏览器与 `kaola-mcp` 打到公网入口，宿主机反代 80/443 → `127.0.0.1:31415`（compose 端口绑环回，不把 31415 直接放公网）。`PUBLIC_URL` 是团队浏览器真正打开的地址（`https://…` 或 `http://公网IP`，不带尾斜杠），OAuth 回调、MCP `--url`、回写评论里的链接都跟它；`OAUTH_*_BASE_URL` 用服务器访问 forge 的内网地址。docker-compose 单机：镜像内 SPA + Fastify，`env_file: .env` 注入密钥与 `PUBLIC_URL`，SQLite 文件 `/data/kaola.sqlite`（卷 `kaola-data` → `/data`）。同机时默认轮询完结「待验收」；webhook 可后补。登录：空库只许设置向导建最初管理员；之后 GitLab / Gitea 登录成为发布者（可被升级），不是对外开放注册。操作步骤见根目录 [README.md](../README.md)「生产向部署」。
 
 ## 13. 里程碑
 
 - **M0 — 脚手架**：monorepo 初始化、CI（lint + test）、shared 包内的任务卡 zod schema 与状态机、docker-compose 骨架。
-- **M1 — 核心闭环（可用版）**：forge OAuth 登录、凭证档案 + 发布即校验、任务 CRUD 与看板、租约式认领、**MCP Server 六个工具全量可用**、`submit_pr` 手动闭环（PR 状态先靠轮询）。此时"发布 → Agent 认领 → PR 交付"的主循环已经跑通。
+- **M1 — 核心闭环（可用版）**：设置向导 + GitLab / Gitea OAuth 登录、凭证档案 + 发布即校验、任务 CRUD 与看板、租约式认领、**MCP Server 六个工具全量可用**、`submit_pr` 手动闭环（PR 状态先靠轮询）。此时"发布 → Agent 认领 → PR 交付"的主循环已经跑通。
 - **M2 — 导入与自动闭环**：三 forge 的 Issue 导入、webhook 接入（含签名校验）+ 轮询兜底配置化、PR 合并自动完结、状态回写源 Issue 评论。
 - **M3 — 打磨**：审计日志界面、任务时间线、团队完成统计、认领确认策略配置、（可选）竞技模式——同一任务允许 N 个 Agent 并行尝试、发布者择优合并。
 
