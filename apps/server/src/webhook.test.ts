@@ -56,27 +56,7 @@ applyOauthTestEnv()
 
 const { buildApp } = await import('./app.ts')
 
-const GITEA_PROVIDER = {
-  decoratorName: 'giteaOAuth2',
-  startPath: '/login/gitea',
-  callbackPath: '/login/gitea/callback',
-}
-
 const jsonHeaders = { accept: 'application/json' }
-
-let tokenSeq = 0
-function nextAccessToken(label) {
-  tokenSeq += 1
-  return `test-access-token-${label}-${tokenSeq}`
-}
-
-function cookieJar(response) {
-  const jar = {}
-  for (const cookie of response.cookies) {
-    jar[cookie.name] = cookie.value
-  }
-  return jar
-}
 
 function requestUrl(input) {
   if (typeof input === 'string') return input
@@ -191,18 +171,6 @@ function allowForgeToken(stub, token, descriptor = { repo: REPO_FULL_ACCESS }) {
   stub.forge.set(token, descriptor)
 }
 
-function stubTokenExchange(app, decoratorName, accessToken) {
-  const oauth = app[decoratorName]
-  assert.equal(
-    typeof oauth?.getAccessTokenFromAuthorizationCodeFlow,
-    'function',
-    `${decoratorName}.getAccessTokenFromAuthorizationCodeFlow must exist so tests can stub token exchange`,
-  )
-  oauth.getAccessTokenFromAuthorizationCodeFlow = async () => ({
-    token: { access_token: accessToken, token_type: 'Bearer', expires_in: 3600 },
-  })
-}
-
 function sqliteFile(t) {
   const dir = mkdtempSync(join(tmpdir(), 'kaola-webhook-'))
   const sqlitePath = join(dir, 'kaola.sqlite')
@@ -227,22 +195,6 @@ function openDb(t, sqlitePath) {
     db.$client.close()
   })
   return db
-}
-
-async function loginViaCallback(app, { decoratorName, callbackPath, accessToken }) {
-  stubTokenExchange(app, decoratorName, accessToken)
-  const callback = await app.inject({
-    method: 'GET',
-    url: `${callbackPath}?code=test-authorization-code`,
-  })
-  assert.ok(
-    callback.statusCode >= 200 && callback.statusCode < 400,
-    `expected ${callbackPath} to complete login, got ${callback.statusCode}: ${callback.body}`,
-  )
-  const cookies = cookieJar(callback)
-  const me = await app.inject({ method: 'GET', url: '/api/v1/me', cookies, headers: jsonHeaders })
-  assert.equal(me.statusCode, 200, `GET /api/v1/me after callback: ${me.statusCode} ${me.body}`)
-  return { callback, cookies, me, body: me.json() }
 }
 
 async function loginGitea(app, stub, label = 'gitea') {

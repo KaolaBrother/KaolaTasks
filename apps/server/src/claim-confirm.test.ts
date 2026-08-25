@@ -77,11 +77,6 @@ const PROVIDERS = {
     startPath: '/login/gitlab',
     callbackPath: '/login/gitlab/callback',
   },
-  gitea: {
-    decoratorName: 'giteaOAuth2',
-    startPath: '/login/gitea',
-    callbackPath: '/login/gitea/callback',
-  },
 }
 
 const jsonHeaders = { accept: 'application/json' }
@@ -312,19 +307,6 @@ async function loginGitea(app, stub, label = 'gitea') {
   void stub
   void label
   return ensureSetup(app)
-}
-
-// Fixed remote id so two logins (e.g. against two `buildApp` instances on the same sqlite
-// file) resolve to the *same* underlying user row, for the cross-restart persistence test.
-async function loginGiteaFixed(app, stub, remoteId, label = 'gitea-fixed') {
-  await ensureSetup(app)
-  const accessToken = nextAccessToken(label)
-  stub.oauth.set(accessToken, {
-    id: remoteId,
-    login: `gt-${label}`,
-    full_name: `Gi Tea ${label}`,
-  })
-  return loginViaCallback(app, { ...PROVIDERS.gitea, accessToken })
 }
 
 function jsonBody(res) {

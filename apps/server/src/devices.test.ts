@@ -198,17 +198,6 @@ async function loginViaCallback(app, { decoratorName, callbackPath, accessToken 
   return { callback, cookies, me, body: me.json() }
 }
 
-async function loginGitlab(app, stub, label = 'gitlab') {
-  await ensureSetup(app)
-  const accessToken = nextAccessToken(label)
-  stub.oauth.set(accessToken, {
-    id: 80000 + tokenSeq,
-    username: `gl-${label}`,
-    name: `Git Lab ${label}`,
-  })
-  return loginViaCallback(app, { ...PROVIDERS.gitlab, accessToken })
-}
-
 function jsonBody(res) {
   try {
     return res.json()
@@ -422,7 +411,7 @@ describe('issue #23 device proof + admin bind', { concurrency: false }, () => {
   test('signed unknown device on MCP initialize is 202 authorization_required, no token, creates pending', async (t) => {
     freezeNow(t)
     const sqlitePath = sqliteFile(t)
-    const { app, stub } = await boot(t, sqlitePath)
+    const { app } = await boot(t, sqlitePath)
     const admin = await ensureSetup(app) // was loginGitlab( 'mcp-pending-admin')
     const identity = generateDeviceIdentity()
 
@@ -449,7 +438,7 @@ describe('issue #23 device proof + admin bind', { concurrency: false }, () => {
   test('signed unknown device on REST claim is 202 authorization_required, no token, no lease', async (t) => {
     freezeNow(t)
     const sqlitePath = sqliteFile(t)
-    const { app, stub } = await boot(t, sqlitePath)
+    const { app } = await boot(t, sqlitePath)
     const admin = await ensureSetup(app) // was loginGitlab( 'claim-pending-admin')
     const { brief } = await createTaskOk(app, admin.cookies)
     const identity = generateDeviceIdentity()
@@ -468,7 +457,7 @@ describe('issue #23 device proof + admin bind', { concurrency: false }, () => {
   test('retry of the same pending device does not extend pending expires_at', async (t) => {
     const clock = freezeNow(t)
     const sqlitePath = sqliteFile(t)
-    const { app, stub } = await boot(t, sqlitePath)
+    const { app } = await boot(t, sqlitePath)
     const admin = await ensureSetup(app) // was loginGitlab( 'retry-pending-admin')
     const identity = generateDeviceIdentity()
 
@@ -550,7 +539,7 @@ describe('issue #23 device proof + admin bind', { concurrency: false }, () => {
   test('full session lists pending; bind { claimant_display_name } does not claim and does not return a forge token', async (t) => {
     freezeNow(t)
     const sqlitePath = sqliteFile(t)
-    const { app, stub } = await boot(t, sqlitePath)
+    const { app } = await boot(t, sqlitePath)
     const admin = await ensureSetup(app) // was loginGitlab( 'bind-display-admin')
     assert.equal(admin.body.permission_level, 'admin')
     const { brief } = await createTaskOk(app, admin.cookies)
@@ -581,7 +570,7 @@ describe('issue #23 device proof + admin bind', { concurrency: false }, () => {
   test('after bind, the same keypair claim is 201 with a forge token', async (t) => {
     freezeNow(t)
     const sqlitePath = sqliteFile(t)
-    const { app, stub } = await boot(t, sqlitePath)
+    const { app } = await boot(t, sqlitePath)
     const admin = await ensureSetup(app) // was loginGitlab( 'bind-then-claim-admin')
     const { brief } = await createTaskOk(app, admin.cookies)
     const identity = generateDeviceIdentity()
@@ -599,7 +588,7 @@ describe('issue #23 device proof + admin bind', { concurrency: false }, () => {
 
   test('bind { bind_to_self: true } works', async (t) => {
     freezeNow(t)
-    const { app, stub } = await boot(t)
+    const { app } = await boot(t)
     const admin = await ensureSetup(app) // was loginGitlab( 'bind-self-admin')
     const identity = generateDeviceIdentity()
     assertAuthorizationRequired(
@@ -616,7 +605,7 @@ describe('issue #23 device proof + admin bind', { concurrency: false }, () => {
 
   test('bind to existing claimant_id', async (t) => {
     freezeNow(t)
-    const { app, stub } = await boot(t)
+    const { app } = await boot(t)
     const admin = await ensureSetup(app) // was loginGitlab( 'bind-existing-admin')
     const firstId = generateDeviceIdentity()
     const secondId = generateDeviceIdentity()
@@ -677,7 +666,7 @@ describe('issue #23 device proof + admin bind', { concurrency: false }, () => {
 
   test('revoke claimant → next proof is 403, no token', async (t) => {
     freezeNow(t)
-    const { app, stub } = await boot(t)
+    const { app } = await boot(t)
     const admin = await ensureSetup(app) // was loginGitlab( 'revoke-claimant-admin')
     const { brief } = await createTaskOk(app, admin.cookies)
     const identity = generateDeviceIdentity()
@@ -707,7 +696,7 @@ describe('issue #23 device proof + admin bind', { concurrency: false }, () => {
 
   test('revoke device → next proof is 403', async (t) => {
     freezeNow(t)
-    const { app, stub } = await boot(t)
+    const { app } = await boot(t)
     const admin = await ensureSetup(app) // was loginGitlab( 'revoke-device-admin')
     const { brief } = await createTaskOk(app, admin.cookies)
     const identity = generateDeviceIdentity()
@@ -733,7 +722,7 @@ describe('issue #23 device proof + admin bind', { concurrency: false }, () => {
 
   test('max_devices 409; PATCH max age does not rewrite existing expires_at', async (t) => {
     freezeNow(t)
-    const { app, stub } = await boot(t)
+    const { app } = await boot(t)
     const admin = await ensureSetup(app) // was loginGitlab( 'policy-admin')
     const first = generateDeviceIdentity()
     const extra = generateDeviceIdentity()
@@ -790,7 +779,7 @@ describe('issue #23 device proof + admin bind', { concurrency: false }, () => {
 
   test('GET /api/v1/agent/whoami after bind_to_self returns the device owner, never a forge token', async (t) => {
     freezeNow(t)
-    const { app, stub } = await boot(t)
+    const { app } = await boot(t)
     const admin = await ensureSetup(app) // was loginGitlab( 'whoami-admin')
     const identity = generateDeviceIdentity()
     assertAuthorizationRequired(
@@ -843,7 +832,7 @@ describe('issue #23 device proof + admin bind', { concurrency: false }, () => {
 
   test('pending device MCP list_tasks is HTTP 202 authorization_required, not a successful tool result', async (t) => {
     freezeNow(t)
-    const { app, stub } = await boot(t)
+    const { app } = await boot(t)
     await ensureSetup(app)
     const identity = generateDeviceIdentity()
     assertAuthorizationRequired(
