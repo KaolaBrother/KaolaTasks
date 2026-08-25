@@ -4,10 +4,24 @@ services:
       context: .
       dockerfile: apps/server/Dockerfile
     ports:
-      - "31415:31415"
+      # Loopback only — intranet TLS terminator reaches 31415 locally, not the LAN.
+      - "127.0.0.1:31415:31415"
+    env_file: .env
     environment:
       PORT: "31415"
       HOST: "0.0.0.0"
+      SQLITE_PATH: /data/kaola.sqlite
+      PUBLIC_URL: ${PUBLIC_URL}
+      SESSION_SECRET: ${SESSION_SECRET}
+      VAULT_MASTER_KEY: ${VAULT_MASTER_KEY}
+      OAUTH_GITHUB_CLIENT_ID: ${OAUTH_GITHUB_CLIENT_ID}
+      OAUTH_GITHUB_CLIENT_SECRET: ${OAUTH_GITHUB_CLIENT_SECRET}
+      OAUTH_GITLAB_CLIENT_ID: ${OAUTH_GITLAB_CLIENT_ID}
+      OAUTH_GITLAB_CLIENT_SECRET: ${OAUTH_GITLAB_CLIENT_SECRET}
+      OAUTH_GITLAB_BASE_URL: ${OAUTH_GITLAB_BASE_URL}
+      OAUTH_GITEA_CLIENT_ID: ${OAUTH_GITEA_CLIENT_ID}
+      OAUTH_GITEA_CLIENT_SECRET: ${OAUTH_GITEA_CLIENT_SECRET}
+      OAUTH_GITEA_BASE_URL: ${OAUTH_GITEA_BASE_URL}
     volumes:
       - kaola-data:/data
 

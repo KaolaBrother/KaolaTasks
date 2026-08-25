@@ -310,6 +310,27 @@ describe('OAuth callback first login', () => {
     assert.notEqual(body.message, PENDING_CLAIM_MESSAGE)
   })
 
+  test('session Set-Cookie does not include Secure when PUBLIC_URL is http://localhost', async (t) => {
+    const app = await createApp(t)
+    const profiles = new Map()
+    stubUserinfoByAccessToken(t, profiles)
+    const accessToken = nextAccessToken('github-http-cookie')
+    profiles.set(accessToken, { id: 4243, login: 'http-cat', name: 'Http Cat' })
+
+    const { callback } = await loginViaCallback(app, {
+      ...PROVIDERS.github,
+      accessToken,
+    })
+    const session = callback.cookies.find((cookie) => cookie.name === 'sessionId')
+    assert.ok(session, 'http localhost login must still set sessionId')
+    assert.notEqual(session.secure, true)
+    const raw = callback.headers['set-cookie']
+    const headers = raw == null ? [] : Array.isArray(raw) ? raw.map(String) : [String(raw)]
+    const sessionHeader = headers.find((header) => header.startsWith('sessionId='))
+    assert.ok(sessionHeader, 'http localhost login must emit sessionId Set-Cookie')
+    assert.doesNotMatch(sessionHeader, /(?:^|;)\s*Secure(?:;|$)/i)
+  })
+
   test('GitHub display_name falls back to login when name is null', async (t) => {
     const app = await createApp(t)
     const profiles = new Map()

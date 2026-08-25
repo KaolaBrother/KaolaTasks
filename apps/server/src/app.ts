@@ -3,7 +3,7 @@ import fastifyStatic from '@fastify/static'
 import httpProxy from '@fastify/http-proxy'
 import Fastify from 'fastify'
 import { registerAgentKeys } from './agent-keys.ts'
-import { registerAuth } from './auth.ts'
+import { COOKIE_SECURE_TRUST_PROXY, cookieSecureFromPublicUrl, registerAuth } from './auth.ts'
 import { registerClaim } from './claim.ts'
 import { registerDevices } from './devices.ts'
 import { registerClaimConfirmations } from './claim-confirmations.ts'
@@ -39,7 +39,9 @@ export function buildApp(options?: {
   forgeInstances?: ForgeInstanceConfig[]
 }) {
   const db = createDb(options?.sqlitePath ?? ':memory:')
-  const app = Fastify()
+  const app = cookieSecureFromPublicUrl()
+    ? Fastify({ trustProxy: [...COOKIE_SECURE_TRUST_PROXY] })
+    : Fastify()
   app.addHook('onClose', () => {
     db.$client.close()
   })
