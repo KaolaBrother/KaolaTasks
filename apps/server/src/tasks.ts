@@ -6,6 +6,7 @@ import { desc, eq, like, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { getSessionUser, sendUnauthorized } from './auth.ts'
 import type { AppDb } from './db.ts'
+import { canPublish } from './permissions.ts'
 import { sweepExpiredLeases } from './leases.ts'
 import { type NewTask, type Task, credentialProfiles, tasks, users } from './schema.ts'
 import {
@@ -87,7 +88,7 @@ function illegalTransitionMessage(from: string, to: string): string {
 
 // DESIGN.md §11: 发布任务 belongs to the same GitLab/Gitea population as 管理凭证档案.
 function canPostTasks(user: { status: string; permissionLevel: string }): boolean {
-  return user.status === 'active' && user.permissionLevel === 'full'
+  return canPublish(user)
 }
 
 function parseStringArray(value: string): string[] {

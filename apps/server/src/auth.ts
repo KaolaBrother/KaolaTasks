@@ -4,10 +4,14 @@ import session from '@fastify/session'
 import { and, eq } from 'drizzle-orm'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { AppDb } from './db.ts'
-import { type User, type UserProvider, users } from './schema.ts'
+import { hashPassword, verifyPassword } from './password.ts'
+import { canManageInstance, isLoginableAdmin } from './permissions.ts'
+import { type User, users } from './schema.ts'
+import { insertAuditEvent } from './vault.ts'
 
 const PENDING_STATUS = '待批准'
 const PENDING_CLAIM_MESSAGE = '你的账号待正式成员批准后方可认领任务。'
+type OauthProvider = 'gitlab' | 'gitea'
 
 type OAuth2Decorator = {
   getAccessTokenFromAuthorizationCodeFlow: (
@@ -16,23 +20,10 @@ type OAuth2Decorator = {
   ) => Promise<{ token: { access_token: string } }>
 }
 
-type GithubAuthConfig = {
-  tokenHost: string
-  tokenPath?: string
-  authorizeHost?: string
-  authorizePath?: string
-  revokePath?: string
-}
-
-const githubAuthConfig = (oauthPlugin as unknown as { GITHUB_CONFIGURATION: GithubAuthConfig })
-  .GITHUB_CONFIGURATION
-
 declare module 'fastify' {
   interface FastifyInstance {
-    githubOAuth2: OAuth2Decorator
     gitlabOAuth2: OAuth2Decorator
     giteaOAuth2: OAuth2Decorator
-    kaolaAdmins?: AdminMatcher[]
   }
 
   interface Session {
@@ -113,60 +104,29 @@ function publicUser(user: User) {
   return body
 }
 
+function listedUser(user: User) {
+  return {
+    id: user.id,
+    provider: user.provider,
+    username: user.username,
+    display_name: user.displayName,
+    status: user.status,
+    permission_level: user.permissionLevel,
+  }
+}
+
 function readTrustedAutomation(body: unknown): boolean | undefined {
   if (body == null || typeof body !== 'object') return undefined
   const value = (body as { trusted_automation?: unknown }).trusted_automation
   return typeof value === 'boolean' ? value : undefined
 }
 
-function userinfoUrl(provider: UserProvider, gitlabBaseUrl: string, giteaBaseUrl: string): string {
-  if (provider === 'github') return 'https://api.github.com/user'
+function userinfoUrl(provider: OauthProvider, gitlabBaseUrl: string, giteaBaseUrl: string): string {
   if (provider === 'gitlab') return `${gitlabBaseUrl}/api/v4/user`
   return `${giteaBaseUrl}/api/v1/user`
 }
 
-type AdminMatcher = { provider: UserProvider; username?: string; remoteId?: string }
-
-function parseKaolaAdmins(raw: string | undefined): AdminMatcher[] {
-  if (raw == null || raw.trim() === '') return []
-  const parts = raw.split(/[,\s]+/).map((p) => p.trim()).filter((p) => p !== '')
-  const out: AdminMatcher[] = []
-  for (const part of parts) {
-    const segs = part.split(':')
-    const provider = segs[0]
-    if (provider !== 'github' && provider !== 'gitlab' && provider !== 'gitea') {
-      throw new Error(`malformed KAOLA_ADMINS entry: ${part}`)
-    }
-    if (segs.length === 2 && segs[1] !== '' && segs[1] !== 'id') {
-      out.push({ provider, username: segs[1] })
-      continue
-    }
-    if (segs.length === 3 && segs[1] === 'id' && segs[2] !== '') {
-      out.push({ provider, remoteId: segs[2] })
-      continue
-    }
-    throw new Error(`malformed KAOLA_ADMINS entry: ${part}`)
-  }
-  return out
-}
-
-function adminMatches(matchers: AdminMatcher[], provider: UserProvider, username: string, remoteId: string): boolean {
-  return matchers.some(
-    (m) =>
-      m.provider === provider &&
-      ((m.username != null && m.username === username) || (m.remoteId != null && m.remoteId === remoteId)),
-  )
-}
-
-function mapProfile(provider: UserProvider, profile: Record<string, unknown>) {
-  if (provider === 'github') {
-    const username = String(profile.login)
-    return {
-      remoteId: String(profile.id),
-      username,
-      displayName: nonemptyString(profile.name) ?? username,
-    }
-  }
+function mapProfile(provider: OauthProvider, profile: Record<string, unknown>) {
   if (provider === 'gitlab') {
     return {
       remoteId: String(profile.id),
@@ -182,19 +142,39 @@ function mapProfile(provider: UserProvider, profile: Record<string, unknown>) {
   }
 }
 
-function countActiveFull(db: AppDb): number {
+export function countLoginableAdmins(db: AppDb): number {
   return db
     .select()
     .from(users)
     .all()
-    .filter((row) => row.permissionLevel === 'full' && row.status === 'active').length
+    .filter((row) => isLoginableAdmin(row)).length
+}
+
+function isUniqueConstraintError(err: unknown): boolean {
+  let current: unknown = err
+  for (let i = 0; i < 4 && current != null; i += 1) {
+    if (typeof current === 'object') {
+      const code = 'code' in current ? String(current.code) : ''
+      const message = 'message' in current ? String(current.message) : ''
+      if (
+        code === 'SQLITE_CONSTRAINT_UNIQUE' ||
+        code === 'SQLITE_CONSTRAINT' ||
+        /UNIQUE constraint failed/i.test(message)
+      ) {
+        return true
+      }
+      current = 'cause' in current ? (current as { cause?: unknown }).cause : undefined
+      continue
+    }
+    break
+  }
+  return false
 }
 
 function completeUserLogin(
   db: AppDb,
-  provider: UserProvider,
+  provider: OauthProvider,
   profile: ReturnType<typeof mapProfile>,
-  admins: AdminMatcher[],
 ): { user?: User; redirect: string } {
   const existing = db
     .select()
@@ -221,10 +201,8 @@ function completeUserLogin(
     return { user: updated, redirect: '/' }
   }
 
-  const invited = adminMatches(admins, provider, profile.username, profile.remoteId)
-  const bootstrap = countActiveFull(db) === 0
-  if (!invited && !bootstrap) {
-    return { redirect: '/login?reason=uninvited' }
+  if (countLoginableAdmins(db) === 0) {
+    return { redirect: '/login' }
   }
 
   const inserted = db
@@ -252,13 +230,32 @@ export function getSessionUser(db: AppDb, request: FastifyRequest): User | undef
   return db.select().from(users).where(eq(users.id, userId)).get()
 }
 
-function oauthOf(app: FastifyInstance, provider: UserProvider): OAuth2Decorator {
+function oauthOf(app: FastifyInstance, provider: OauthProvider): OAuth2Decorator {
   const decoratorName = `${provider}OAuth2` as const
   const oauth = app[decoratorName]
   if (oauth == null || typeof oauth.getAccessTokenFromAuthorizationCodeFlow !== 'function') {
     throw new Error(`${decoratorName} is not registered`)
   }
   return oauth
+}
+
+function wizardPageHtml(): string {
+  return `<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>初始向导 · 考拉任务</title>
+  </head>
+  <body>
+    <h1>考拉任务登录</h1>
+    <p>创建本地管理员账号以完成初始向导。</p>
+    <form method="post" action="/api/v1/setup">
+      <label>用户名 <input name="username" autocomplete="username" /></label>
+      <label>密码 <input name="password" type="password" autocomplete="new-password" /></label>
+      <button type="submit">创建管理员</button>
+    </form>
+  </body>
+</html>`
 }
 
 function loginPageHtml(): string {
@@ -270,9 +267,13 @@ function loginPageHtml(): string {
   </head>
   <body>
     <h1>考拉任务登录</h1>
-    <p>使用团队 forge 账号登录：</p>
+    <form method="post" action="/api/v1/login">
+      <label>用户名 <input name="username" autocomplete="username" /></label>
+      <label>密码 <input name="password" type="password" autocomplete="current-password" /></label>
+      <button type="submit">登录</button>
+    </form>
+    <p>或使用团队 forge 账号登录：</p>
     <ul>
-      <li><a href="/login/github">使用 GitHub 登录</a></li>
       <li><a href="/login/gitlab">使用 GitLab 登录</a></li>
       <li><a href="/login/gitea">使用 Gitea 登录</a></li>
     </ul>
@@ -301,10 +302,25 @@ function oauthTokenErrorMessage(err: unknown): string | undefined {
   return typeof message === 'string' ? message : undefined
 }
 
+function shouldSkipSessionSave(request: FastifyRequest): boolean {
+  return request.session.cookie.secure === true && request.protocol !== 'https'
+}
+
+async function persistSession(
+  request: FastifyRequest,
+  userId: number,
+  opts?: { skipUntrusted?: boolean },
+): Promise<boolean> {
+  request.session.userId = userId
+  if (opts?.skipUntrusted === true && shouldSkipSessionSave(request)) return false
+  await request.session.save()
+  return true
+}
+
 async function completeOAuthLogin(
   app: FastifyInstance,
   db: AppDb,
-  provider: UserProvider,
+  provider: OauthProvider,
   gitlabBaseUrl: string,
   giteaBaseUrl: string,
   request: FastifyRequest,
@@ -339,29 +355,38 @@ async function completeOAuthLogin(
     return reply.code(502).send({ error: 'userinfo_invalid' })
   }
   const mapped = mapProfile(provider, raw as Record<string, unknown>)
-  const outcome = completeUserLogin(db, provider, mapped, app.kaolaAdmins ?? [])
+  const outcome = completeUserLogin(db, provider, mapped)
   if (outcome.user == null) {
     return reply.redirect(outcome.redirect)
   }
-  request.session.userId = outcome.user.id
-  // @fastify/session onSend still Set-Cookies a pre-saved session when
-  // cookie.secure && protocol !== 'https'. Skip save so an untrusted peer
-  // spoofing X-Forwarded-Proto cannot mint a sessionId.
-  if (request.session.cookie.secure === true && request.protocol !== 'https') {
+  const saved = await persistSession(request, outcome.user.id, { skipUntrusted: true })
+  if (!saved) {
     return reply.redirect(outcome.redirect)
   }
-  await request.session.save()
   return reply.redirect(outcome.redirect)
 }
 
+function sendGithubGone(_request: FastifyRequest, reply: FastifyReply) {
+  return reply.code(404).send({ error: 'not_found' })
+}
+
+function findLocalUser(db: AppDb, username: string): User | undefined {
+  const needle = username.trim().toLowerCase()
+  if (needle === '') return undefined
+  return db
+    .select()
+    .from(users)
+    .all()
+    .find((row) => row.provider === 'local' && row.username.trim().toLowerCase() === needle)
+}
+
 export function registerAuth(app: FastifyInstance, db: AppDb) {
-  const kaolaAdmins = parseKaolaAdmins(process.env.KAOLA_ADMINS)
-  app.decorate('kaolaAdmins', kaolaAdmins)
+  // Compose still supplies unused GitHub OAuth client env; required so boot does not change.
+  requireEnv('OAUTH_GITHUB_CLIENT_ID')
+  requireEnv('OAUTH_GITHUB_CLIENT_SECRET')
   const sessionSecret = requireEnv('SESSION_SECRET')
   const publicUrl = publicUrlFromEnv()
   const cookieSecure = cookieSecureFromPublicUrl()
-  const githubClientId = requireEnv('OAUTH_GITHUB_CLIENT_ID')
-  const githubClientSecret = requireEnv('OAUTH_GITHUB_CLIENT_SECRET')
   const gitlabClientId = requireEnv('OAUTH_GITLAB_CLIENT_ID')
   const gitlabClientSecret = requireEnv('OAUTH_GITLAB_CLIENT_SECRET')
   const gitlabBaseUrl = trimTrailingSlash(requireEnv('OAUTH_GITLAB_BASE_URL'))
@@ -378,17 +403,6 @@ export function registerAuth(app: FastifyInstance, db: AppDb) {
     saveUninitialized: false,
   })
 
-  app.register(oauthPlugin, {
-    name: 'githubOAuth2',
-    scope: ['read:user'],
-    credentials: {
-      client: { id: githubClientId, secret: githubClientSecret },
-      auth: githubAuthConfig,
-    },
-    startRedirectPath: '/login/github',
-    callbackUri: `${publicUrl}/login/github/callback`,
-    cookie: oauthCookie,
-  })
   app.register(oauthPlugin, {
     name: 'gitlabOAuth2',
     scope: ['read_user'],
@@ -426,18 +440,85 @@ export function registerAuth(app: FastifyInstance, db: AppDb) {
     cookie: oauthCookie,
   })
 
+  app.get('/login/github', sendGithubGone)
+  app.get('/login/github/callback', sendGithubGone)
+
   app.get('/login', async (_request, reply) => {
-    return reply.type('text/html; charset=utf-8').send(loginPageHtml())
+    const html = countLoginableAdmins(db) > 0 ? loginPageHtml() : wizardPageHtml()
+    return reply.type('text/html; charset=utf-8').send(html)
   })
 
-  app.get('/login/github/callback', async (request, reply) => {
-    return completeOAuthLogin(app, db, 'github', gitlabBaseUrl, giteaBaseUrl, request, reply)
-  })
   app.get('/login/gitlab/callback', async (request, reply) => {
     return completeOAuthLogin(app, db, 'gitlab', gitlabBaseUrl, giteaBaseUrl, request, reply)
   })
   app.get('/login/gitea/callback', async (request, reply) => {
     return completeOAuthLogin(app, db, 'gitea', gitlabBaseUrl, giteaBaseUrl, request, reply)
+  })
+
+  app.get('/api/v1/setup', async (_request, reply) => {
+    return reply.send({ setup_complete: countLoginableAdmins(db) > 0 })
+  })
+
+  app.post('/api/v1/setup', async (request, reply) => {
+    if (countLoginableAdmins(db) > 0) {
+      return reply.code(409).send({ error: 'setup_complete' })
+    }
+    const body = request.body as { username?: unknown; password?: unknown; display_name?: unknown }
+    const username = typeof body?.username === 'string' ? body.username.trim() : ''
+    const password = typeof body?.password === 'string' ? body.password : ''
+    if (username === '' || password === '') {
+      return reply.code(400).send({ error: 'invalid_body' })
+    }
+    const displayName =
+      typeof body?.display_name === 'string' && body.display_name.trim() !== ''
+        ? body.display_name.trim()
+        : username
+    const passwordHash = await hashPassword(password)
+    let inserted: User
+    try {
+      const row = db
+        .insert(users)
+        .values({
+          provider: 'local',
+          remoteId: 'local',
+          username,
+          displayName,
+          status: 'active',
+          permissionLevel: 'admin',
+          passwordHash,
+        })
+        .returning()
+        .get()
+      if (row == null) throw new Error('failed to insert local admin')
+      inserted = row
+    } catch (err) {
+      if (isUniqueConstraintError(err) || countLoginableAdmins(db) > 0) {
+        return reply.code(409).send({ error: 'setup_complete' })
+      }
+      throw err
+    }
+    insertAuditEvent(db, {
+      type: '管理员创建',
+      actorUserId: inserted.id,
+      details: { user_id: inserted.id },
+    })
+    await persistSession(request, inserted.id)
+    return reply.code(201).send(publicUser(inserted))
+  })
+
+  app.post('/api/v1/login', async (request, reply) => {
+    const unauthorized = () => reply.code(401).send({ error: 'unauthorized' })
+    const body = request.body as { username?: unknown; password?: unknown }
+    const username = typeof body?.username === 'string' ? body.username : ''
+    const password = typeof body?.password === 'string' ? body.password : ''
+    const user = findLocalUser(db, username)
+    if (user == null || user.passwordHash == null || user.status !== 'active') {
+      return unauthorized()
+    }
+    const ok = await verifyPassword(password, user.passwordHash)
+    if (!ok) return unauthorized()
+    await persistSession(request, user.id)
+    return reply.send(publicUser(user))
   })
 
   app.get('/api/v1/me', async (request, reply) => {
@@ -451,11 +532,13 @@ export function registerAuth(app: FastifyInstance, db: AppDb) {
     return reply.send(publicUser(user))
   })
 
-  // Issue #16: 待批准 sessions get the same 401 as no session — they never see the toggle.
   app.put('/api/v1/me/settings', async (request, reply) => {
     const user = getSessionUser(db, request)
     if (user == null || user.status === PENDING_STATUS || user.status === 'revoked') {
       return sendUnauthorized(request, reply)
+    }
+    if (!canManageInstance(user)) {
+      return reply.code(403).send({ error: 'forbidden' })
     }
 
     const trustedAutomation = readTrustedAutomation(request.body)
@@ -467,12 +550,24 @@ export function registerAuth(app: FastifyInstance, db: AppDb) {
     return reply.send({ trusted_automation: trustedAutomation })
   })
 
-  app.post('/api/v1/users/:id/approve', async (request, reply) => {
+  app.get('/api/v1/users', async (request, reply) => {
     const actor = getSessionUser(db, request)
     if (actor == null) {
-      return reply.code(401).send({ error: 'unauthorized' })
+      return sendUnauthorized(request, reply)
     }
-    if (actor.status !== 'active' || actor.permissionLevel !== 'full') {
+    if (!canManageInstance(actor)) {
+      return reply.code(403).send({ error: 'forbidden' })
+    }
+    const rows = db.select().from(users).all()
+    return reply.send({ users: rows.map(listedUser) })
+  })
+
+  app.post('/api/v1/users/:id/promote', async (request, reply) => {
+    const actor = getSessionUser(db, request)
+    if (actor == null) {
+      return sendUnauthorized(request, reply)
+    }
+    if (!canManageInstance(actor)) {
       return reply.code(403).send({ error: 'forbidden' })
     }
     const rawId = (request.params as { id: string }).id
@@ -481,11 +576,23 @@ export function registerAuth(app: FastifyInstance, db: AppDb) {
       return reply.code(400).send({ error: 'invalid_id' })
     }
     const target = db.select().from(users).where(eq(users.id, targetId)).get()
-    if (target == null) {
+    if (
+      target == null ||
+      (target.provider !== 'gitlab' && target.provider !== 'gitea') ||
+      (target.permissionLevel !== 'full' && target.permissionLevel !== 'admin') ||
+      target.status !== 'active'
+    ) {
       return reply.code(404).send({ error: 'not_found' })
     }
-    db.update(users).set({ status: 'active' }).where(eq(users.id, targetId)).run()
-    const updated = db.select().from(users).where(eq(users.id, targetId)).get()
-    return reply.send(updated ? publicUser(updated) : { ok: true })
+    if (target.permissionLevel === 'admin') {
+      return reply.send({ ok: true })
+    }
+    db.update(users).set({ permissionLevel: 'admin' }).where(eq(users.id, targetId)).run()
+    insertAuditEvent(db, {
+      type: '权限变更',
+      actorUserId: actor.id,
+      details: { target_user_id: target.id, from: 'full', to: 'admin' },
+    })
+    return reply.send({ ok: true })
   })
 }

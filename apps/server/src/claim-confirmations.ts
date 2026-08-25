@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { getSessionUser, sendUnauthorized } from './auth.ts'
 import type { AppDb } from './db.ts'
+import { canManageInstance } from './permissions.ts'
 import { unixNow } from './leases.ts'
 import { type ClaimConfirmation, claimConfirmations, tasks } from './schema.ts'
 import { insertAuditEvent } from './vault.ts'
@@ -97,6 +98,10 @@ function requireActiveSessionUser(db: AppDb, request: FastifyRequest, reply: Fas
   const user = getSessionUser(db, request)
   if (user == null || user.status === PENDING_STATUS) {
     sendUnauthorized(request, reply)
+    return undefined
+  }
+  if (!canManageInstance(user)) {
+    reply.code(403).send({ error: 'forbidden' })
     return undefined
   }
   return user

@@ -5,12 +5,13 @@ export const users = sqliteTable(
   'users',
   {
     id: integer('id').primaryKey({ autoIncrement: true }),
-    provider: text('provider', { enum: ['github', 'gitlab', 'gitea'] }).notNull(),
+    provider: text('provider', { enum: ['github', 'gitlab', 'gitea', 'local'] }).notNull(),
     remoteId: text('remote_id').notNull(),
     username: text('username').notNull(),
     displayName: text('display_name').notNull(),
     status: text('status', { enum: ['active', '待批准', 'revoked'] }).notNull(),
-    permissionLevel: text('permission_level', { enum: ['full', 'claim_only'] }).notNull(),
+    permissionLevel: text('permission_level', { enum: ['admin', 'full', 'claim_only'] }).notNull(),
+    passwordHash: text('password_hash'),
     // Issue #16: default off — autonomous claims from this user need a per-claim confirmation
     // until the user opts in via PUT /api/v1/me/settings.
     trustedAutomation: integer('trusted_automation', { mode: 'boolean' }).notNull().default(false),

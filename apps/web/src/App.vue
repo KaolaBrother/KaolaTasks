@@ -12,17 +12,33 @@
           </div>
         </n-layout-header>
         <n-layout-content class="app-content">
-          <n-card title="登录" v-if="view === 'login'" class="gate-card">
-            <n-space vertical>
-              <n-text>使用团队 forge 账号登录。未被邀请则无法进入工作台。</n-text>
+          <n-card :title="setupComplete ? '登录' : '初始向导'" v-if="view === 'login'" class="gate-card">
+            <n-space v-if="!setupComplete" vertical>
+              <n-text>创建本地管理员账号（用户名与密码）。</n-text>
+              <n-input v-model:value="setupUsername" placeholder="用户名" />
+              <n-input v-model:value="setupPassword" type="password" show-password-on="click" placeholder="密码" />
+              <n-button
+                class="has-ripple primary-fill"
+                type="primary"
+                :loading="authSubmitting"
+                @pointerdown="onRipple"
+                @click="submitSetup"
+              >创建管理员</n-button>
+              <n-text v-if="authMessage" type="error">{{ authMessage }}</n-text>
+            </n-space>
+            <n-space v-else vertical>
+              <n-text>使用本地密码或 GitLab / Gitea 账号登录。</n-text>
+              <n-input v-model:value="loginUsername" placeholder="用户名" />
+              <n-input v-model:value="loginPassword" type="password" show-password-on="click" placeholder="密码" />
+              <n-button
+                class="has-ripple primary-fill"
+                type="primary"
+                :loading="authSubmitting"
+                @pointerdown="onRipple"
+                @click="submitLogin"
+              >登录</n-button>
+              <n-text v-if="authMessage" type="error">{{ authMessage }}</n-text>
               <n-space>
-                <n-button
-                  class="has-ripple primary-fill"
-                  type="primary"
-                  tag="a"
-                  href="/login/github"
-                  @pointerdown="onRipple"
-                >使用 GitHub 登录</n-button>
                 <n-button
                   class="has-ripple primary-fill"
                   type="primary"
@@ -225,7 +241,7 @@
               </div>
 
               <div
-                v-if="canApprove"
+                v-if="canPublish"
                 v-show="workbenchPane === 'publish'"
                 data-testid="workbench-pane-publish"
                 class="workbench-pane"
@@ -381,8 +397,8 @@
                 :class="{ 'is-active': workbenchPane === 'keys' }"
               >
                 <n-space vertical>
-                  <n-divider v-if="canManageKeys">受信自动化</n-divider>
-                  <n-space v-if="canManageKeys" vertical>
+                  <n-divider v-if="canManageInstance">受信自动化</n-divider>
+                  <n-space v-if="canManageInstance" vertical>
                     <n-text>
                       开启后，你的 Agent 自主发起（autonomous）的认领将直接生效；关闭时，每次自主认领都需要你在下方待确认认领列表中批准。
                     </n-text>
@@ -429,8 +445,8 @@
                     </div>
                   </n-space>
 
-                  <n-divider v-if="canApprove">我的电脑</n-divider>
-                  <div v-if="canApprove" data-testid="devices-mine">
+                  <n-divider v-if="canPublish">我的电脑</n-divider>
+                  <div v-if="canPublish" data-testid="devices-mine">
                     <n-space vertical>
                       <n-text strong>我的电脑</n-text>
                       <n-text v-if="mineDevices.length === 0" class="empty-copy">暂无已绑定的电脑。</n-text>
@@ -454,8 +470,8 @@
                     </n-space>
                   </div>
 
-                  <n-divider v-if="canApprove">待授权电脑</n-divider>
-                  <div v-if="canApprove" data-testid="devices-pending">
+                  <n-divider v-if="canPublish">待授权电脑</n-divider>
+                  <div v-if="canPublish" data-testid="devices-pending">
                     <n-space vertical>
                       <n-text strong>待授权电脑</n-text>
                       <n-text v-if="pendingDevices.length === 0" class="empty-copy">暂无待授权电脑。</n-text>
@@ -511,8 +527,8 @@
                     </n-space>
                   </div>
 
-                  <n-divider v-if="canApprove">认领者</n-divider>
-                  <div v-if="canApprove" data-testid="claimants-list">
+                  <n-divider v-if="canPublish">认领者</n-divider>
+                  <div v-if="canPublish" data-testid="claimants-list">
                     <n-space vertical>
                       <n-text strong>认领者</n-text>
                       <n-text v-if="claimants.length === 0" class="empty-copy">暂无认领者。</n-text>
@@ -534,8 +550,8 @@
                     </n-space>
                   </div>
 
-                  <n-divider v-if="canApprove">凭证档案</n-divider>
-                  <n-space v-if="canApprove" vertical>
+                  <n-divider v-if="canPublish">凭证档案</n-divider>
+                  <n-space v-if="canPublish" vertical>
                     <n-text>按 forge + 仓库保存可复用 token，团队共享。删除档案后请到 forge 侧撤销该 token。</n-text>
                     <n-space class="profile-create" align="center">
                       <n-select
@@ -796,6 +812,13 @@ const LIVE_EVENT_TYPES = ['token 揭示', '状态迁移', '心跳', '变更', '�
 
 const me = ref<Me | null>(null)
 const loaded = ref(false)
+const setupComplete = ref(true)
+const setupUsername = ref('')
+const setupPassword = ref('')
+const loginUsername = ref('')
+const loginPassword = ref('')
+const authSubmitting = ref(false)
+const authMessage = ref('')
 
 const mineDevices = ref<DeviceRow[]>([])
 const pendingDevices = ref<DeviceRow[]>([])
@@ -890,21 +913,28 @@ const view = computed(() => {
   return 'member'
 })
 
-const canApprove = computed(
-  () => me.value?.status === 'active' && me.value?.permission_level === 'full',
+const canPublish = computed(
+  () =>
+    me.value?.status === 'active' &&
+    (me.value?.permission_level === 'admin' || me.value?.permission_level === 'full'),
 )
 
-const canManageKeys = computed(() => me.value?.status === 'active')
-
-const permissionLabel = computed(() =>
-  me.value?.permission_level === 'full' ? '正式成员' : '仅认领',
+const canManageInstance = computed(
+  () => me.value?.status === 'active' && me.value?.permission_level === 'admin',
 )
+
+const permissionLabel = computed(() => {
+  if (me.value?.permission_level === 'admin') return '管理员'
+  if (me.value?.permission_level === 'full') return '发布者'
+  return '仅认领'
+})
 
 const providerLabel = computed(() => {
   const provider = me.value?.provider
   if (provider === 'github') return 'GitHub'
   if (provider === 'gitlab') return 'GitLab'
   if (provider === 'gitea') return 'Gitea'
+  if (provider === 'local') return '本地'
   return provider ?? ''
 })
 
@@ -912,7 +942,7 @@ const navItems = computed(() => {
   const items: { id: WorkbenchPane; label: string; testid: string }[] = [
     { id: 'board', label: '看板', testid: 'workbench-nav-board' },
   ]
-  if (canApprove.value) {
+  if (canPublish.value) {
     items.push({ id: 'publish', label: '发布', testid: 'workbench-nav-publish' })
   }
   items.push(
@@ -992,7 +1022,7 @@ const canPosterCancel = computed(() => {
   const task = selectedTask.value
   const user = me.value
   if (task == null || user == null) return false
-  if (!canApprove.value) return false
+  if (!canPublish.value) return false
   if (user.username !== task.poster) return false
   return task.status === '待认领' || task.status === '已退回'
 })
@@ -1001,7 +1031,7 @@ const canPosterReopen = computed(() => {
   const task = selectedTask.value
   const user = me.value
   if (task == null || user == null) return false
-  if (!canApprove.value) return false
+  if (!canPublish.value) return false
   if (user.username !== task.poster) return false
   return task.status === '已退回'
 })
@@ -1136,7 +1166,7 @@ watch(taskIssueUrl, () => {
 profileBaseUrl.value = applyForgeBaseUrl(profileForge.value, profileBaseUrl.value)
 taskBaseUrl.value = applyForgeBaseUrl(taskForge.value, taskBaseUrl.value)
 
-watch(canApprove, (ok) => {
+watch(canPublish, (ok) => {
   if (!ok && workbenchPane.value === 'publish') workbenchPane.value = 'board'
 })
 
@@ -1372,6 +1402,18 @@ onMounted(async () => {
       trustedAutomation.value = me.value?.trusted_automation === true
     } else {
       me.value = null
+      try {
+        const setupRes = await fetch('/api/v1/setup', {
+          credentials: 'include',
+          headers: { Accept: 'application/json' },
+        })
+        if (setupRes.ok) {
+          const setupBody = (await setupRes.json()) as { setup_complete?: boolean }
+          setupComplete.value = setupBody.setup_complete === true
+        }
+      } catch {
+        setupComplete.value = true
+      }
     }
   } catch {
     me.value = null
@@ -1383,16 +1425,78 @@ onMounted(async () => {
     await loadEvents()
     await loadStats()
   }
-  if (canManageKeys.value) {
+  if (canManageInstance.value) {
     await loadClaimConfirmations()
   }
-  if (canApprove.value) {
+  if (canPublish.value) {
     await loadProfiles()
     await loadMineDevices()
     await loadPendingDevices()
     await loadClaimants()
   }
 })
+
+async function applyMeFromResponse(res: Response) {
+  if (!res.ok) return false
+  me.value = (await res.json()) as Me
+  trustedAutomation.value = me.value?.trusted_automation === true
+  setupComplete.value = true
+  if (view.value === 'member') {
+    await loadTasks()
+    await loadEvents()
+    await loadStats()
+  }
+  if (canManageInstance.value) {
+    await loadClaimConfirmations()
+  }
+  if (canPublish.value) {
+    await loadProfiles()
+    await loadMineDevices()
+    await loadPendingDevices()
+    await loadClaimants()
+  }
+  return true
+}
+
+async function submitSetup() {
+  authSubmitting.value = true
+  authMessage.value = ''
+  try {
+    const res = await fetch('/api/v1/setup', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: setupUsername.value, password: setupPassword.value }),
+    })
+    if (!(await applyMeFromResponse(res))) {
+      authMessage.value = '无法完成初始设置。'
+    }
+  } catch {
+    authMessage.value = '无法完成初始设置。'
+  } finally {
+    authSubmitting.value = false
+  }
+}
+
+async function submitLogin() {
+  authSubmitting.value = true
+  authMessage.value = ''
+  try {
+    const res = await fetch('/api/v1/login', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: loginUsername.value, password: loginPassword.value }),
+    })
+    if (!(await applyMeFromResponse(res))) {
+      authMessage.value = '登录失败。'
+    }
+  } catch {
+    authMessage.value = '登录失败。'
+  } finally {
+    authSubmitting.value = false
+  }
+}
 
 async function setTrustedAutomation(value: boolean) {
   try {

@@ -6,7 +6,8 @@
  * still device proof + remote bind — the claimant never needs their own PAT.
  *
  * Boots an isolated Fastify app (inject + stub GitLab OAuth, not the browser),
- * then: credential profile → import Issue → publish → pair device →
+ * then: setup local admin → GitLab publisher OAuth → credential profile → import Issue →
+ * publish → pair device (admin bind) → claim_task → git clone via the claim envelope →
  * claim_task → git clone via the claim envelope → push branch → open PR →
  * submit_pr → merge → pollPendingReviews → 已完成 + 回写.
  *
@@ -31,6 +32,7 @@ import {
   type DeviceIdentity,
 } from '../apps/server/src/device-proof.test-helpers.ts'
 import { pollPendingReviews } from '../apps/server/src/poller.ts'
+import { DEFAULT_SETUP, ensureSetup } from '../apps/server/src/auth.test-helpers.ts'
 
 type ForgeKind = 'gitlab' | 'gitea'
 
@@ -493,6 +495,7 @@ async function run(): Promise<void> {
   const app = buildApp({ sqlitePath, pollIntervalMs: 0 })
   await app.ready()
   try {
+    await ensureSetup(app, DEFAULT_SETUP)
     const cookies = await loginGitlabStub(app)
     const paired = await pairDeviceToSelf(app, cookies, { hostname: 'forge-smoke' })
 

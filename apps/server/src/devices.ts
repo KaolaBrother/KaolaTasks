@@ -2,6 +2,7 @@ import { desc, eq } from 'drizzle-orm'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { getSessionUser, sendUnauthorized } from './auth.ts'
 import type { AppDb } from './db.ts'
+import { canManageInstance } from './permissions.ts'
 import { unixNow } from './leases.ts'
 import { type Claimant, type Device, type User, claimants, devices } from './schema.ts'
 import { insertAuditEvent } from './vault.ts'
@@ -23,7 +24,7 @@ function requireFullAdmin(db: AppDb, request: FastifyRequest, reply: FastifyRepl
     sendUnauthorized(request, reply)
     return undefined
   }
-  if (user.status !== 'active' || user.permissionLevel !== 'full') {
+  if (!canManageInstance(user)) {
     reply.code(403).send({ error: 'forbidden' })
     return undefined
   }

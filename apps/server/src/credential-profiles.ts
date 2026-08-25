@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { getSessionUser, sendUnauthorized } from './auth.ts'
 import type { AppDb } from './db.ts'
+import { canPublish } from './permissions.ts'
 import { type CredentialProfile, credentialProfiles } from './schema.ts'
 import {
   decryptToken,
@@ -17,7 +18,7 @@ const LIST_FORGE_UNREACHABLE_MESSAGE = '无法连接 forge 列出 Issue。'
 const FORGES = new Set(['github', 'gitlab', 'gitea'])
 
 function canManageProfiles(user: { status: string; permissionLevel: string }): boolean {
-  return user.status === 'active' && user.permissionLevel === 'full'
+  return canPublish(user)
 }
 
 function parseScopes(value: string): unknown[] {

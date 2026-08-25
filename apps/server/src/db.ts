@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS users (
   display_name TEXT NOT NULL,
   status TEXT NOT NULL,
   permission_level TEXT NOT NULL,
+  password_hash TEXT,
   trusted_automation INTEGER NOT NULL DEFAULT 0,
   device_max_age_days INTEGER NOT NULL DEFAULT 30,
   max_devices INTEGER NOT NULL DEFAULT 5,
@@ -45,6 +46,39 @@ ALTER TABLE users ADD COLUMN max_devices INTEGER NOT NULL DEFAULT 5
 const USERS_ADD_DEVICE_IDLE_DDL = `
 ALTER TABLE users ADD COLUMN device_idle_days INTEGER NOT NULL DEFAULT 0
 `
+
+const USERS_ADD_PASSWORD_HASH_DDL = `
+ALTER TABLE users ADD COLUMN password_hash TEXT
+`
+
+const USERS_LOCAL_USERNAME_INDEX_DDL = `
+CREATE UNIQUE INDEX IF NOT EXISTS users_local_username
+  ON users(lower(trim(username))) WHERE provider = 'local'
+`
+
+function promoteEarliestLoginableAdmin(sqlite: InstanceType<typeof Database>): void {
+  const existing = sqlite
+    .prepare(
+      `SELECT id FROM users
+       WHERE status = 'active' AND permission_level = 'admin'
+         AND provider IN ('local', 'gitlab', 'gitea')
+       LIMIT 1`,
+    )
+    .get()
+  if (existing != null) return
+  sqlite
+    .prepare(
+      `UPDATE users SET permission_level = 'admin'
+       WHERE id = (
+         SELECT id FROM users
+         WHERE status = 'active' AND permission_level = 'full'
+           AND provider IN ('local', 'gitlab', 'gitea')
+         ORDER BY id
+         LIMIT 1
+       )`,
+    )
+    .run()
+}
 
 function isDuplicateColumnError(err: unknown): boolean {
   return (
@@ -293,6 +327,9 @@ export function createDb(path = ':memory:') {
   tryAddColumn(sqlite, USERS_ADD_DEVICE_MAX_AGE_DDL)
   tryAddColumn(sqlite, USERS_ADD_MAX_DEVICES_DDL)
   tryAddColumn(sqlite, USERS_ADD_DEVICE_IDLE_DDL)
+  tryAddColumn(sqlite, USERS_ADD_PASSWORD_HASH_DDL)
+  sqlite.exec(USERS_LOCAL_USERNAME_INDEX_DDL)
+  promoteEarliestLoginableAdmin(sqlite)
   sqlite.exec(AGENT_KEYS_DDL)
   sqlite.exec(CREDENTIAL_PROFILES_DDL)
   sqlite.exec(TASKS_DDL)
