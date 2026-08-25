@@ -15,7 +15,7 @@
 - Typecheck: `pnpm typecheck` → `pnpm -r --if-present typecheck`
 - Build: `pnpm build` → `pnpm -r --if-present build`
 - Dev server: root `pnpm dev` (`node scripts/dev.mjs`; Fastify `PORT` default `31415` + Vite `127.0.0.1:5173 --strictPort` with `VITE_DEV_TARGET` default `http://127.0.0.1:5173`; advertised origin is 31415). `pnpm --filter @kaola/server start` (`node --experimental-strip-types src/index.ts`; `HOST` default `0.0.0.0`, `PORT` default `31415`; `SQLITE_PATH` default `:memory:`; passes `WEB_DIST`, `VITE_DEV_TARGET`, `pollIntervalMs` (from `POLL_INTERVAL_MS`, empty/unset → `60000`), and `forgeInstances` (from `FORGE_INSTANCES`, empty/unset → `[]`, invalid JSON fails boot) into `buildApp({ sqlitePath?, webDist?, viteDevTarget?, pollIntervalMs?, forgeInstances? })`). Naked `buildApp()` `GET /` body `考拉任务服务占位`; SPA when `webDist` is set; Vite proxy when only `viteDevTarget`; `pollIntervalMs` omitted/`<=0` registers no poller timer, a positive value registers one `setInterval` cleared on `app.close()`; `forgeInstances` (`Array<{ publicId, forge, baseUrl, syncMode: 'webhook'|'poll', webhookSecret }>`) feeds both the poller skip logic and `POST /api/v1/webhooks/:publicId`, no new table. `registerAuth` requires non-empty `SESSION_SECRET`, `OAUTH_GITHUB_CLIENT_ID`, `OAUTH_GITHUB_CLIENT_SECRET`, `OAUTH_GITLAB_CLIENT_ID`, `OAUTH_GITLAB_CLIENT_SECRET`, `OAUTH_GITLAB_BASE_URL`, `OAUTH_GITEA_CLIENT_ID`, `OAUTH_GITEA_CLIENT_SECRET`, `OAUTH_GITEA_BASE_URL`. Optional `PUBLIC_URL` default `http://localhost:31415`. `VAULT_MASTER_KEY` (64 hex chars) is read by `encryptToken`/`decryptToken`, not required at `buildApp()` boot. `pnpm --filter @kaola/server dev` (`node --watch --experimental-strip-types src/index.ts`); `pnpm --filter @kaola/web dev` (`vite`).
-- Forge smoke: `pnpm smoke:forge -- gitlab|gitea` (`scripts/forge-smoke.ts`; GitLab + Gitea publish only; `github` exits with an error). Needs `SESSION_SECRET`, `VAULT_MASTER_KEY`, and `GITLAB_TOKEN` / `GITEA_TOKEN`. Isolated SQLite + stub GitLab OAuth; does not touch `pnpm dev`.
+- Forge smoke streamer: `pnpm smoke:forge -- gitlab|gitea` (`scripts/forge-smoke.ts`) is the unattended end-to-end loop for **publish + claim** against a real GitLab or Gitea repo (not GitHub; `github` exits). It walks credential profile → import Issue → publish → pair device → `claim_task` → clone envelope → open PR → `submit_pr` → merge → `pollPendingReviews` → `已完成` + 回写. Playbook and log: `docs/smoke-test.md`. Claim identity is device proof + remote bind; the claimant needs no forge PAT. Isolated SQLite + stub GitLab OAuth; does not touch `pnpm dev`. Needs `SESSION_SECRET`, `VAULT_MASTER_KEY`, and `GITLAB_TOKEN` / `GITEA_TOKEN`.
 
 ## Non-Negotiable Rules
 
@@ -113,7 +113,7 @@ added or changed it in this file, is yours.
 - `docs/api.md` — APIs, schemas, events, and external contracts.
 - `docs/conventions.md` — coding, testing, Git, and review rules.
 - `docs/decisions/` — architecture decision records.
-- `docs/smoke-test.md` — GitLab / Gitea live-smoke playbook plus this run's log (publish surface is not GitHub). **配合** steps wait for the human; Cloud/unattended runs use `pnpm smoke:forge -- gitlab|gitea`. Do not write smoke progress into GitHub issues.
+- `docs/smoke-test.md` — GitLab / Gitea smoke streamer playbook (full publish + claim loop) plus this run's log. Publish surface is not GitHub. **配合** browser steps wait for the human; unattended runs use `pnpm smoke:forge -- gitlab|gitea`. Do not write smoke progress into GitHub issues.
 
 ## Documentation Update Checklist
 
