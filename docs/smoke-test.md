@@ -109,8 +109,9 @@ pnpm smoke:forge -- gitea
 | 本机 | 2026-08-22–24 | A 浏览器 | [Issue #1](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/issues/1) → [MR !1](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/merge_requests/1)，任务 `kt-2026-0001` `已完成` | [Issue #1](https://gitea.com/KaolaBrother/kaola-tasks-smoke/issues/1) → [PR #4](https://gitea.com/KaolaBrother/kaola-tasks-smoke/pulls/4)，任务 `kt-2026-0002` `已完成` |
 | Cloud Agent | 2026-08-25 上午 | B 注入会话（手写） | [Issue #4](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/issues/4) → [MR !3](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/merge_requests/3) | [Issue #5](https://gitea.com/KaolaBrother/kaola-tasks-smoke/issues/5) → [PR #6](https://gitea.com/KaolaBrother/kaola-tasks-smoke/pulls/6) |
 | 手册脚本 | 2026-08-25 | B `scripts/forge-smoke.ts` | [Issue #6](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/issues/6) → [MR !4](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/merge_requests/4)，`clone_auth=gitlab-basic-oauth2`，`已完成` | [Issue #7](https://gitea.com/KaolaBrother/kaola-tasks-smoke/issues/7) → [PR #8](https://gitea.com/KaolaBrother/kaola-tasks-smoke/pulls/8)，`clone_auth=envelope`，`已完成` |
+| 手册脚本（GitLab stub / 无 GitHub 发布） | 2026-08-25 | B `pnpm smoke:forge -- gitlab` / `gitea` | [Issue #8](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/issues/8) → [MR !6](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/merge_requests/6)，`clone_auth=gitlab-basic-oauth2`，`已完成` | [Issue #10](https://gitea.com/KaolaBrother/kaola-tasks-smoke/issues/10) → [PR #11](https://gitea.com/KaolaBrother/kaola-tasks-smoke/pulls/11)，`clone_auth=envelope`，`已完成` |
 
-GitHub 发布冒烟已停（此前仓 [Issue #1](https://github.com/KaolaBrother/kaola-tasks-smoke/issues/1) 开过，未走认领）。stdio 桥回放 `mcp-session-id` 已进 `main`；另窗 UAT 曾用短提示词走完认领到 `submit_pr`。
+GitHub 发布冒烟已停（此前仓 [Issue #1](https://github.com/KaolaBrother/kaola-tasks-smoke/issues/1) 开过、未走认领，已标 `not_planned` 关闭）。stdio 桥回放 `mcp-session-id` 已进 `main`；另窗 UAT 曾用短提示词走完认领到 `submit_pr`。
 
 ## 坑（续测别踩）
 
@@ -119,6 +120,8 @@ GitHub 发布冒烟已停（此前仓 [Issue #1](https://github.com/KaolaBrother
 - Gitea 选中档案后 base_url 不会自动从 gitlab.com 改掉，须手填 `https://gitea.com`。
 - gitea.com 建仓：`POST /user/repos` 要 `write:user`，`GET /user` 要 `read:user`。
 - GitLab.com **git** 不吃信封 Bearer；Gitea.com **git** 吃信封 `token`。
+- GitLab `PUT …/merge_requests/:iid/merge` 在 `detailed_merge_status` 还是 checking 时返回 **405**；脚本等到 `mergeable` 再合。
+- 隔离 sqlite 每次从 `kt-2026-0001` 起号，冒烟分支必须带时间戳，否则会撞上次的 `kaola/kt-2026-0001-smoke`。
 
 ## 测完可收
 
