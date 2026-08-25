@@ -3,6 +3,7 @@ import oauthPlugin from '@fastify/oauth2'
 import session from '@fastify/session'
 import { and, eq } from 'drizzle-orm'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
+import { Readable } from 'node:stream'
 import type { AppDb } from './db.ts'
 import { hashPassword, verifyPassword } from './password.ts'
 import { canManageInstance, isLoginableAdmin } from './permissions.ts'
@@ -396,6 +397,28 @@ export function registerAuth(app: FastifyInstance, db: AppDb) {
 
   const oauthCookie = { path: '/' as const, secure: cookieSecure }
 
+  app.addHook('preParsing', (request, _reply, payload, done) => {
+    if (request.method !== 'POST') {
+      done(null, payload)
+      return
+    }
+    const url = request.url.split('?')[0] ?? ''
+    if (!url.startsWith('/api/v1/users/')) {
+      done(null, payload)
+      return
+    }
+    const chunks: Buffer[] = []
+    payload.on('data', (chunk: Buffer | string) => {
+      chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk)
+    })
+    payload.on('end', () => {
+      const raw = Buffer.concat(chunks)
+      const next = raw.length === 0 ? Buffer.from('{}') : raw
+      done(null, Readable.from([next]))
+    })
+    payload.on('error', (err: Error) => done(err, undefined))
+  })
+
   app.register(cookie)
   app.register(session, {
     secret: sessionSecret,
@@ -442,6 +465,9 @@ export function registerAuth(app: FastifyInstance, db: AppDb) {
 
   app.get('/login/github', sendGithubGone)
   app.get('/login/github/callback', sendGithubGone)
+  app.post('/api/v1/users/:id/approve', async (_request, reply) => {
+    return reply.code(404).send({ error: 'not_found' })
+  })
 
   app.get('/login', async (_request, reply) => {
     const html = countLoginableAdmins(db) > 0 ? loginPageHtml() : wizardPageHtml()
