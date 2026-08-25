@@ -24,7 +24,7 @@ sequenceDiagram
     K->>K: 任务变为已完成
 ```
 
-1. 用 GitHub / GitLab / Gitea 登录（空库第一次即管理员；之后需邀请，见下节）。
+1. 空库先走**初始向导**（用户名/密码）创建本地管理员。之后用本地密码登录，或用 GitLab / Gitea 登录成为发布者。没有 GitHub 登录按钮。
 2. 保存一份仓库凭证，填好任务后点「发布」。发布时会校验令牌能否读、推、开 PR。
 3. 认领者本机跑 `kaola-mcp --url http://localhost:31415`（或 `KAOLA_URL`）。不要把 token 写进 mcp.json。
 4. 管理员在工作台 **电脑** 页把 **待授权电脑** 绑到自己或 **认领者**。已绑定后 `claim_task` 才拿到一次性仓库令牌（默认 24 小时）。
@@ -36,12 +36,14 @@ sequenceDiagram
 
 ## 登录与权限
 
-封闭加入：空库首次 OAuth（三家任一）成为 `active` + `full`。之后未列入 `KAOLA_ADMINS` 的新身份不会建号（`/login?reason=uninvited`）。
+封闭加入：空库（无可登录管理员）**只许设置向导**（`POST /api/v1/setup`），OAuth 不得抢权。向导创建 `provider: 'local'`、`permission_level: 'admin'`。已有管理员之后，GitLab / Gitea 登录一律建 `active` + `full` 发布者（管理员可 `POST /api/v1/users/:id/promote` 升级）。`GET /login/github` 为 404。`KAOLA_ADMINS` 若仍设置则**忽略**，不作为邀请名单。`POST /api/v1/users/:id/approve` 已退役（404）。
 
-| | 空库首次登录 | 已有管理员之后 |
+| | 空库 / 零可登录管理员 | 已有管理员之后 |
 |--|--|--|
-| 看看板 / 发任务 | 该用户为 `full` | 仅已邀请（`KAOLA_ADMINS`）的新登录为 `full`；否则重定向 `uninvited` |
-| 认领 | 电脑绑到该用户或 **认领者** 后，由 Agent 认领 | 认领者不自助铸 Agent Key |
+| 进工作台 | 仅设置向导创建本地管理员 | 本地密码，或 GitLab / Gitea OAuth（发布者） |
+| 发任务 / 凭证档案 | 管理员可发 | 管理员或发布者（`admin` 或 `full`） |
+| 电脑绑定 / 升级 / 待确认认领 | 仅管理员 | 仅 `admin`；发布者不能绑电脑 |
+| 认领 | 电脑绑到该管理员或 **认领者** 后，由 Agent 认领 | 认领者不自助铸 Agent Key |
 
 任务状态：待认领 → 进行中 → 待验收 → 已完成；也可以已退回（可重新打开）或已取消。
 
@@ -51,8 +53,8 @@ sequenceDiagram
 
 **发布者（GitLab / Gitea）**
 
-1. 登录后进入工作台。
-2. 「电脑」栏保存凭证档案（forge + 仓库地址 + 仓库全名），或在单条任务里临时贴令牌。
+1. 登录后进入工作台（头栏显示「发布者」）。
+2. 在「发布」栏保存凭证档案（forge + 仓库地址 + 仓库全名），或在单条任务里临时贴令牌。
 3. 「发布」栏：自有任务填标题和说明；从 Issue 导入则点「导入」。共享档案会带出仓库，导入时从下拉选 Issue；一次性 token 仍手填仓库。分支和目录在「高级」里。
 4. 「看板」看进度；自己发的任务可「取消」或把已退回的「重新开放」。
 5. 「审计」看日志和团队统计。
@@ -63,7 +65,7 @@ sequenceDiagram
 
 认领者不是 Web 自助账号，不铸 Agent Key。管理员在 **电脑** 页把 **待授权电脑** 绑到自己（**绑到我自己**）或绑到命名 **认领者**。
 
-若 Agent **自己轮询**去认领，「电脑」栏可能出现「待确认认领」；批准后才会拿到令牌。你口头让 Agent 去认领时，已绑定即授权。「受信自动化」打开后不再排队确认。
+若 Agent **自己轮询**去认领，管理员的「电脑」栏可能出现「待确认认领」；批准后才会拿到令牌。你口头让 Agent 去认领时，已绑定即授权。「受信自动化」打开后不再排队确认。
 
 ## Agent 怎么接单
 
@@ -99,16 +101,16 @@ sequenceDiagram
 pnpm install
 ```
 
-进程启动时下列变量必须非空（即使用不到某个登录按钮，也要填占位）：
+进程启动时下列变量必须非空（GitHub 客户端仍要占位，即使没有 GitHub 登录）：
 
 - `SESSION_SECRET`
-- `OAUTH_GITHUB_CLIENT_ID` / `OAUTH_GITHUB_CLIENT_SECRET`
+- `OAUTH_GITHUB_CLIENT_ID` / `OAUTH_GITHUB_CLIENT_SECRET`（`registerAuth` 仍 `requireEnv`；登录不用 GitHub OAuth 应用）
 - `OAUTH_GITLAB_CLIENT_ID` / `OAUTH_GITLAB_CLIENT_SECRET` / `OAUTH_GITLAB_BASE_URL`
 - `OAUTH_GITEA_CLIENT_ID` / `OAUTH_GITEA_CLIENT_SECRET` / `OAUTH_GITEA_BASE_URL`
 
 发任务或保存凭证还需要 `VAULT_MASTER_KEY`：64 位十六进制（32 字节）。缺了会在保存凭证时报错，进程仍能起来。
 
-可选 `KAOLA_ADMINS`：`github:username` 或 `github:id:<remote_id>`（`gitlab` / `gitea` 同形）。可选 `KAOLA_HOME` 覆盖设备目录（默认 `~/.kaola`）。
+`KAOLA_ADMINS` 若设置则**忽略**。可选 `KAOLA_HOME` 覆盖设备目录（默认 `~/.kaola`）。
 
 建议一并设置：
 
@@ -137,11 +139,10 @@ pnpm dev
 5. Scopes 只勾 **`read_user`**
 6. **Save application**，把 **Application ID** / **Secret** 赋给上面的 GitLab 环境变量
 
-GitHub 回调：`http://localhost:31415/login/github/callback`（Scopes 勾 **`read:user`**）  
 Gitea 回调：`http://localhost:31415/login/gitea/callback`（Scopes 勾 **`read:user`**）  
-自托管 GitLab / Gitea 把 `OAUTH_*_BASE_URL` 改成实例根地址即可。
+自托管 GitLab / Gitea 把 `OAUTH_*_BASE_URL` 改成实例根地址即可。没有 GitHub 登录（`GET /login/github` 为 404）；GitHub OAuth 应用对登录是可选的，但 `OAUTH_GITHUB_CLIENT_ID` / `OAUTH_GITHUB_CLIENT_SECRET` 启动时仍必须非空，可填 `unused`。
 
-本机只测 GitLab 登录时，GitHub / Gitea 的 Client ID 可填 `unused`，不要去点那两个按钮。
+本机只测 GitLab 登录时，Gitea 的 Client ID 可填 `unused`，不要去点那个按钮。
 
 ### 生产向部署
 
@@ -150,10 +151,10 @@ Gitea 回调：`http://localhost:31415/login/gitea/callback`（Scopes 勾 **`rea
 浏览器 / `kaola-mcp` → 公网反代 80/443 → `127.0.0.1:31415`
 
 1. 复制 `.env.example` 为 `.env`，填密钥和 `PUBLIC_URL`（团队浏览器打开的地址，不带尾斜杠；有 HTTPS 写 `https://…`）。OAuth 回调、`kaola-mcp --url`、回写链接都跟它。
-2. OAuth Redirect URI：`${PUBLIC_URL}/login/gitlab/callback`（Gitea / GitHub 同形）。可与 localhost 回调并存。`OAUTH_*_BASE_URL` 填服务器访问 forge 的**内网**地址。
+2. OAuth Redirect URI：`${PUBLIC_URL}/login/gitlab/callback`（Gitea 同形）。可与 localhost 回调并存。`OAUTH_*_BASE_URL` 填服务器访问 forge 的**内网**地址。不要配 GitHub 登录回调（该路径 404）。
 3. 反代转到 `127.0.0.1:31415`，不要把 31415 放到公网。HTTPS 时用对外 scheme **覆盖** `X-Forwarded-Proto`。
 4. `docker compose up -d --build`。库在卷 `/data/kaola.sqlite`。密钥不要进 git。
-5. 成员本机：`kaola-mcp --url ${PUBLIC_URL}`，在「电脑」页绑定设备。同机默认每分钟轮询完结任务。登录仍是封闭加入。
+5. 成员本机：`kaola-mcp --url ${PUBLIC_URL}`，管理员在「电脑」页绑定设备。同机默认每分钟轮询完结任务。空库只许向导；之后 GitLab / Gitea 登录成为发布者。
 
 Cookie / `trustProxy` / webhook 配置见 [docs/api.md](docs/api.md)。
 

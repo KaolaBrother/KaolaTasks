@@ -25,11 +25,11 @@
 
 原点 **http://localhost:31415**（必须 `localhost`，不要 `127.0.0.1`，否则登录 cookie 对不上）。仓库根目录 `pnpm dev`（先 `export` / `source .env`）。`SQLITE_PATH` 指向文件库（不要默认内存库）。
 
-登录：三家 OAuth 客户端启动时都必须非空；不用的可填 `unused`，**不要点那个登录按钮**。本机活测用 GitLab.com OAuth（`KaolaBrother`，空库首次即 `active` + `full`）。GitHub / Gitea OAuth 在仍是 `unused` 时不能用来登录考拉。发布 GitLab / Gitea 任务用已登录管理员的对应凭证档案，不需要用那家登录。
+登录：空库先走初始向导（`POST /api/v1/setup`），不要用空库 OAuth 抢 `full`。`registerAuth` 启动时三家 OAuth 客户端 env 都必须非空；GitHub 只占位（`GET /login/github` 为 404）。本机活测：向导建本地管理员后，再用 GitLab.com OAuth 登录成为发布者（`active` + `full`，不是管理员）。Gitea OAuth 在仍是 `unused` 时不能用来登录考拉。发布 GitLab / Gitea 任务用已登录管理员或发布者的对应凭证档案。电脑绑定仍是管理员。
 
 ### B. 注入会话脚本（Cloud Agent / 无人值守）
 
-浏览器 Authorize 过不了（Cloudflare 人机、无交互）时，不要假装走了网页登录。用隔离 SQLite + Fastify `inject`，GitLab OAuth 只 stub userinfo（考拉用户仍记成 `gitlab` / `KaolaBrother` / `full`），forge 调用走真实 API：
+浏览器 Authorize 过不了（Cloudflare 人机、无交互）时，不要假装走了网页登录。用隔离 SQLite + Fastify `inject`：先 `ensureSetup`（本地管理员），再 stub GitLab OAuth userinfo（考拉用户记成 `gitlab` / `KaolaBrother` / `full` 发布者，不是空库抢权），forge 调用走真实 API：
 
 ```bash
 pnpm smoke:forge -- gitlab
@@ -52,7 +52,8 @@ pnpm smoke:forge -- gitea
 ## 认领怎么走（#23）
 
 ```
-空库首次 OAuth → 该用户即 active+full 管理员（无需先配 KAOLA_ADMINS）
+POST /api/v1/setup → local active+admin（空库 OAuth 不得插用户）
+已有管理员后 GitLab / Gitea OAuth → active+full 发布者（KAOLA_ADMINS 忽略）
 认领 Agent：kaola-mcp --url … 调 MCP（list_tasks / claim_task 都算）
   → 合法未绑定签名：HTTP 202 { error: 'authorization_required', pending: true, expires_at }
 管理员：工作台「电脑」→「待授权电脑」→「绑到我自己」（POST bind { bind_to_self: true }）
@@ -67,7 +68,7 @@ pnpm smoke:forge -- gitea
 
 | # | 步骤 | A 浏览器 | B 脚本 |
 |---|------|----------|--------|
-| 1 | 考拉有 `active`+`full` 管理员 | **配合** GitLab 登录 | **自动** stub GitLab OAuth userinfo |
+| 1 | 考拉有可登录管理员，再有发布者 | **配合** 初始向导，再 GitLab 登录（发布者） | **自动** `ensureSetup` 再 stub GitLab OAuth userinfo（`full`） |
 | 2 | 令牌在 `.env` | **配合** | 环境里已有则 **自动** |
 | 3 | 冒烟仓有一条 open Issue | **自动**（有 token 后用 API 建） | **自动** |
 | 4 | 工作台添加该 forge 的凭证档案 | **配合** | **自动** `POST /api/v1/credential-profiles` |

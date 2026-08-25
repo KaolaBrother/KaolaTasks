@@ -4,11 +4,11 @@ Document public APIs, endpoints, schemas, events, and integration contracts.
 
 Product contracts that are not yet in source remain in [DESIGN.md](DESIGN.md) §6 (任务卡 Schema), §8 (ForgeAdapter), §9 (MCP 工具面 / REST). This file records what is implemented.
 
-MCP tools (`list_tasks`, `get_task_brief`, `claim_task`, `report_progress`, `submit_pr`, `release_task`) are implemented (`registerMcp` in `apps/server/src/mcp.ts`): device-proof `POST /api/mcp` Streamable HTTP (headers `X-Kaola-Key` / `X-Kaola-Ts` / `X-Kaola-Nonce` / `X-Kaola-Sig`, optional `X-Kaola-Hostname`; `addDeviceProofHook` in `device-proof.ts`). Claim HTTP is also implemented (`registerClaim` in `apps/server/src/claim.ts`): the same device-proof hook on `POST /api/v1/tasks/:publicId/claim`, `…/progress`, `…/release` (no REST `submit_pr`). Unbound but valid signatures answer HTTP `202` `{ error: 'authorization_required', pending: true, expires_at }` and never reach the tools. Forge token reveal channels: successful `POST …/claim` `201` top-level `token` **and** MCP `claim_task` success `token`. Session `GET /api/v1/tasks` and `GET /api/v1/tasks/:publicId` never contain it. `POST /api/v1/tasks/import` `200` never contains a forge token. Task CRUD HTTP is implemented (`registerTasks` in `apps/server/src/tasks.ts`), including the pre-publish draft `POST /api/v1/tasks/import`. `revealCredentialProfile` is a module export from `apps/server/src/vault.ts` (not itself HTTP). Two mechanisms drive `待验收` → `已完成`/`已退回` (#13): PR polling (`pollPendingReviews` in `apps/server/src/poller.ts`, still **not** an HTTP route — either called directly (tests) or driven by an internal `setInterval` registered by `buildApp({ pollIntervalMs })`) and the webhook receiver (`registerWebhooks` in `apps/server/src/webhook.ts`, `POST /api/v1/webhooks/:publicId`, no session, no Bearer — the forge signature is the sole auth). Both share the same terminal-transition write path (`applyPrTerminalTransition`, extracted in `poller.ts`). `buildApp({ forgeInstances? })` lets a `syncMode: 'webhook'` instance opt its repo out of polling (`pollPendingReviews` skips it); a poll-mode or unlisted instance is unaffected. `commentOnIssue` / status write-back to the source Issue is implemented (#14): `attemptWriteback` (`apps/server/src/writeback.ts`, not itself HTTP) posts a status comment for **imported** tasks on 认领 (inside `claimTask`), 提交PR (inside `submitPr`), and 完成 (inside `applyPrTerminalTransition`, only on a `merged` terminal) — see the "Status write-back" section below. It never changes any response shape and never introduces a third token-reveal channel. `GET /api/v1/credential-profiles/:id/issues` (#19) is implemented (`registerCredentialProfiles` in `apps/server/src/credential-profiles.ts`): session `active`+`full`, server-side decrypt then `listIssues` (same decrypt-to-call-forge pattern as the poller). It is **not** a third reveal channel: the `200`/`4xx`/`5xx` bodies never contain a token or ciphertext, and this route does **not** write `events.type` `token 揭示` (contrast `POST /api/v1/tasks/import`'s profile path, which still does). Audit log + team stats (#15) are implemented (`registerEvents` in `apps/server/src/events.ts`): session `GET /api/v1/events` and `GET /api/v1/stats`, gated stricter than the task board (a `待批准` session is `401` on both). Claim confirmation for autonomous agents (#16) is implemented: REST `POST …/claim` and MCP `claim_task` both accept an optional `autonomous: boolean`; when `true` and the claiming user's `trusted_automation` is not `true`, the claim parks as `202` `{ error: 'confirmation_required', pending: true }` instead of revealing a token, until a session user approves it via `registerClaimConfirmations` (`apps/server/src/claim-confirmations.ts`, `GET/POST /api/v1/claim-confirmations*`). That `confirmation_required` string is **not** the device-hook `authorization_required`. `GET /api/v1/me` gains additive `trusted_automation`; new session `PUT /api/v1/me/settings` toggles it. Device bind/pending/whoami (#23, `registerDevices` in `devices.ts`) never contain a forge token. None of `GET /api/v1/events`, `GET /api/v1/stats`, `GET/POST /api/v1/claim-confirmations*`, `GET /api/v1/me`, `PUT /api/v1/me/settings`, a claim `202`, or `GET /api/v1/credential-profiles/:id/issues` ever contains a forge token — the two reveal channels above are unchanged.
+MCP tools (`list_tasks`, `get_task_brief`, `claim_task`, `report_progress`, `submit_pr`, `release_task`) are implemented (`registerMcp` in `apps/server/src/mcp.ts`): device-proof `POST /api/mcp` Streamable HTTP (headers `X-Kaola-Key` / `X-Kaola-Ts` / `X-Kaola-Nonce` / `X-Kaola-Sig`, optional `X-Kaola-Hostname`; `addDeviceProofHook` in `device-proof.ts`). Claim HTTP is also implemented (`registerClaim` in `apps/server/src/claim.ts`): the same device-proof hook on `POST /api/v1/tasks/:publicId/claim`, `…/progress`, `…/release` (no REST `submit_pr`). Unbound but valid signatures answer HTTP `202` `{ error: 'authorization_required', pending: true, expires_at }` and never reach the tools. Forge token reveal channels: successful `POST …/claim` `201` top-level `token` **and** MCP `claim_task` success `token`. Session `GET /api/v1/tasks` and `GET /api/v1/tasks/:publicId` never contain it. `POST /api/v1/tasks/import` `200` never contains a forge token. Task CRUD HTTP is implemented (`registerTasks` in `apps/server/src/tasks.ts`), including the pre-publish draft `POST /api/v1/tasks/import`. `revealCredentialProfile` is a module export from `apps/server/src/vault.ts` (not itself HTTP). Two mechanisms drive `待验收` → `已完成`/`已退回` (#13): PR polling (`pollPendingReviews` in `apps/server/src/poller.ts`, still **not** an HTTP route — either called directly (tests) or driven by an internal `setInterval` registered by `buildApp({ pollIntervalMs })`) and the webhook receiver (`registerWebhooks` in `apps/server/src/webhook.ts`, `POST /api/v1/webhooks/:publicId`, no session, no Bearer — the forge signature is the sole auth). Both share the same terminal-transition write path (`applyPrTerminalTransition`, extracted in `poller.ts`). `buildApp({ forgeInstances? })` lets a `syncMode: 'webhook'` instance opt its repo out of polling (`pollPendingReviews` skips it); a poll-mode or unlisted instance is unaffected. `commentOnIssue` / status write-back to the source Issue is implemented (#14): `attemptWriteback` (`apps/server/src/writeback.ts`, not itself HTTP) posts a status comment for **imported** tasks on 认领 (inside `claimTask`), 提交PR (inside `submitPr`), and 完成 (inside `applyPrTerminalTransition`, only on a `merged` terminal) — see the "Status write-back" section below. It never changes any response shape and never introduces a third token-reveal channel. `GET /api/v1/credential-profiles/:id/issues` (#19) is implemented (`registerCredentialProfiles` in `apps/server/src/credential-profiles.ts`): session `canPublish` (`status === 'active'` and `permission_level` `admin` or `full`), server-side decrypt then `listIssues` (same decrypt-to-call-forge pattern as the poller). It is **not** a third reveal channel: the `200`/`4xx`/`5xx` bodies never contain a token or ciphertext, and this route does **not** write `events.type` `token 揭示` (contrast `POST /api/v1/tasks/import`'s profile path, which still does). Audit log + team stats (#15) are implemented (`registerEvents` in `apps/server/src/events.ts`): session `GET /api/v1/events` and `GET /api/v1/stats`, gated stricter than the task board (a `待批准` session is `401` on both). Claim confirmation for autonomous agents (#16) is implemented: REST `POST …/claim` and MCP `claim_task` both accept an optional `autonomous: boolean`; when `true` and the claiming user's `trusted_automation` is not `true`, the claim parks as `202` `{ error: 'confirmation_required', pending: true }` instead of revealing a token, until an admin session approves it via `registerClaimConfirmations` (`apps/server/src/claim-confirmations.ts`, `GET/POST /api/v1/claim-confirmations*`, `canManageInstance`). That `confirmation_required` string is **not** the device-hook `authorization_required`. `GET /api/v1/me` gains additive `trusted_automation`; session `PUT /api/v1/me/settings` toggles it (admin-only). Device bind/pending/whoami (#23, `registerDevices` in `devices.ts`) never contain a forge token. None of `GET /api/v1/events`, `GET /api/v1/stats`, `GET/POST /api/v1/claim-confirmations*`, `GET /api/v1/me`, `PUT /api/v1/me/settings`, a claim `202`, or `GET /api/v1/credential-profiles/:id/issues` ever contains a forge token — the two reveal channels above are unchanged.
 
 ## HTTP (`@kaola/server`)
 
-Sources: `apps/server/src/app.ts`, `auth.ts`, `agent-keys.ts`, `device-proof.ts`, `devices.ts`, `credential-profiles.ts`, `vault.ts`, `tasks.ts`, `claim.ts`, `claim-confirmations.ts`, `leases.ts`, `mcp.ts`, `poller.ts`, `webhook.ts`, `writeback.ts`, `events.ts`, `schema.ts`, `db.ts`, `placeholder.ts`, `index.ts`. `apps/mcp/src/main.ts` is the stdio bridge (`kaola-mcp --url`).
+Sources: `apps/server/src/app.ts`, `auth.ts`, `password.ts`, `permissions.ts`, `agent-keys.ts`, `device-proof.ts`, `devices.ts`, `credential-profiles.ts`, `vault.ts`, `tasks.ts`, `claim.ts`, `claim-confirmations.ts`, `leases.ts`, `mcp.ts`, `poller.ts`, `webhook.ts`, `writeback.ts`, `events.ts`, `schema.ts`, `db.ts`, `placeholder.ts`, `index.ts`. `apps/mcp/src/main.ts` is the stdio bridge (`kaola-mcp --url`).
 
 `buildApp({ sqlitePath?, webDist?, viteDevTarget?, pollIntervalMs?, forgeInstances? })` creates its own SQLite via `createDb`. Process `index.ts` uses `SQLITE_PATH ?? ':memory:'`, and passes `WEB_DIST` / `VITE_DEV_TARGET` / `pollIntervalMs` / `forgeInstances` into `buildApp`. Empty string is treated as omitted for `webDist`/`viteDevTarget`. `forgeInstances` (from `FORGE_INSTANCES`, a JSON array; unset/`''` → `[]`; invalid JSON throws, failing boot) has no dedicated table — it is process config, threaded into both the poller (§ PR polling below) and the webhook receiver (§ webhook below).
 
@@ -23,43 +23,65 @@ Depends on hosting options (unauthenticated):
 
 ### `GET /login`
 
-HTML 200 (`text/html; charset=utf-8`). Links to `/login/github`, `/login/gitlab`, `/login/gitea`.
+HTML 200 (`text/html; charset=utf-8`). When `countLoginableAdmins` is 0 (no `active`+`admin` row with `provider` `local` | `gitlab` | `gitea`), the body is the setup wizard (`<form method="post" action="/api/v1/setup">`, username/password; no `/login/gitlab` or `/login/gitea` links, no `/login/github`). After at least one loginable admin: local password form (`POST /api/v1/login`) plus links to `/login/gitlab` and `/login/gitea` only.
+
+`@kaola/web` probes `GET /api/v1/setup` and shows card title `初始向导` vs `登录` the same way (no GitHub button).
+
+### `GET /api/v1/setup`
+
+Unauthenticated. `200` `{ setup_complete: boolean }` (`true` iff `countLoginableAdmins > 0`). Never a password, hash, or forge token.
+
+### `POST /api/v1/setup`
+
+JSON `{ username, password }` (`display_name` optional string; if omitted or blank, equals trimmed `username`). When a loginable admin already exists → `409` `{ error: 'setup_complete' }`. Empty/missing `username` or empty `password` → `400` `{ error: 'invalid_body' }`. Success inserts `provider` `'local'`, `remote_id` `'local'`, `status` `'active'`, `permission_level` `'admin'`, stores `password_hash` from `hashPassword` (`apps/server/src/password.ts`, `node:crypto` scrypt, encoded `scrypt$N$r$p$saltHex$keyHex`; N=16384, r=8, p=1, key 32 bytes, salt 16 bytes). Sets session, writes `events.type` `管理员创建`, `details` `{ user_id }` (no password/hash), `201` the same public user JSON as `GET /api/v1/me`. Concurrent second insert → `409` `{ error: 'setup_complete' }`. Response never includes `password` / `password_hash`.
+
+### `POST /api/v1/login`
+
+JSON `{ username, password }` against a `provider === 'local'` row (username match is trim + lower-case). Success: session + `200` public user JSON. Wrong password, unknown user, empty password, missing hash, or `status !== 'active'` → `401` `{ error: 'unauthorized' }` (same shape; does not disclose whether the user exists).
 
 ### OAuth start (`@fastify/oauth2` `startRedirectPath`)
 
-- `GET /login/github` — authorize `scope` is `read:user`
 - `GET /login/gitlab` — authorize `scope` is `read_user`
 - `GET /login/gitea` — authorize `scope` is `read:user`
 
 Omitted `scope` on `@fastify/oauth2` becomes the literal query value `undefined`, which GitLab rejects (`The requested scope is invalid, unknown, or malformed.`).
 
+`GET /login/github` and `GET /login/github/callback` are **not** OAuth start/callback: both answer `404` `{ error: 'not_found' }` (`sendGithubGone`). `@fastify/oauth2` is registered for GitLab and Gitea only. GitHub forge adapters and publish-to-GitHub remain.
+
 ### OAuth callbacks
 
-- `GET /login/github/callback`
 - `GET /login/gitlab/callback`
 - `GET /login/gitea/callback`
 
-Successful login sets `request.session.userId` and redirects to `/`. Userinfo fetch failure: `502` `{ error: 'userinfo_failed' }` or `{ error: 'userinfo_invalid' }`.
+Token exchange failure: `502` `{ error: 'oauth_token_failed', message }` (`message` from the provider or `无法向登录提供方换取令牌。`). Userinfo fetch failure: `502` `{ error: 'userinfo_failed' }` or `{ error: 'userinfo_invalid' }`.
 
-OAuth token hosts / paths in `registerAuth`: GitHub uses `@fastify/oauth2` `GITHUB_CONFIGURATION`; GitLab `authorizePath` `/oauth/authorize`, `tokenPath` `/oauth/token` on `OAUTH_GITLAB_BASE_URL`; Gitea `authorizePath` `/login/oauth/authorize`, `tokenPath` `/login/oauth/access_token` on `OAUTH_GITEA_BASE_URL`. Userinfo GET: GitHub `https://api.github.com/user`; GitLab `${gitlabBaseUrl}/api/v4/user`; Gitea `${giteaBaseUrl}/api/v1/user`.
+`completeUserLogin` (`auth.ts`): existing `(provider, remote_id)` updates `username` and `display_name` only; `revoked` redirects `/login?reason=revoked` (no session). New GitLab/Gitea row is inserted only when `countLoginableAdmins > 0`, as `status` `'active'` and `permission_level` `'full'` (not `admin`; not `待批准` / `claim_only`; no `/login?reason=uninvited`). Zero loginable admins: redirect `/login`, **no** insert, **no** session (empty-DB OAuth cannot grab `full`). Successful insert/reuse sets `request.session.userId` and redirects to `/`.
+
+OAuth token hosts / paths in `registerAuth`: GitLab `authorizePath` `/oauth/authorize`, `tokenPath` `/oauth/token` on `OAUTH_GITLAB_BASE_URL`; Gitea `authorizePath` `/login/oauth/authorize`, `tokenPath` `/login/oauth/access_token` on `OAUTH_GITEA_BASE_URL`. Userinfo GET: GitLab `${gitlabBaseUrl}/api/v4/user`; Gitea `${giteaBaseUrl}/api/v1/user`.
 
 ### `GET /api/v1/me`
 
-Session user JSON. Fields: `id`, `provider`, `remote_id`, `username`, `display_name`, `status`, `permission_level`, `trusted_automation` (#16, additive boolean; `users.trusted_automation`, default `false`). When `status` is `待批准`, also `message` `你的账号待正式成员批准后方可认领任务。`.
+Session user JSON. Fields: `id`, `provider`, `remote_id`, `username`, `display_name`, `status`, `permission_level`, `trusted_automation` (#16, additive boolean; `users.trusted_automation`, default `false`). `provider` may be `local` | `gitlab` | `gitea` | leftover `github`. `permission_level` may be `admin` | `full` | leftover `claim_only`. When `status` is `待批准`, also `message` `你的账号待正式成员批准后方可认领任务。`. Never `password` / `password_hash`.
 
 Unauthenticated: `Accept` containing `application/json` → `401` `{ error: 'unauthorized' }`; otherwise `302` `/login`.
 
 ### `PUT /api/v1/me/settings` (#16)
 
-Session cookie. Same gate as `sendUnauthorized`: no session → `401`/`302`; `status === '待批准'` → `401` `{ error: 'unauthorized' }` (a pending session never sees the toggle, same oracle, not the `403` used elsewhere for pending).
+Session cookie. No session or `status` `待批准` / `revoked` → `sendUnauthorized` (`401`/`302`). Otherwise `canManageInstance` (`active`+`admin`); publisher `full` → `403` `{ error: 'forbidden' }`.
 
 Body `{ trusted_automation: boolean }`; non-boolean or missing key → `400` `{ error: 'invalid_body' }`. Sets `users.trusted_automation`. `200` `{ trusted_automation }` (echoes the stored value). Persists across a new `buildApp()` on the same `SQLITE_PATH`. Never returns a forge token.
 
+### `GET /api/v1/users`
+
+Session cookie. Unauthenticated → `sendUnauthorized`. Non-admin → `403` `{ error: 'forbidden' }`. Admin → `200` `{ users: [{ id, provider, username, display_name, status, permission_level }] }` (exactly those keys; no `password_hash` / `remote_id` / `trusted_automation`).
+
+### `POST /api/v1/users/:id/promote`
+
+Session `active`+`admin` (`canManageInstance`). Unauthenticated → `sendUnauthorized`; publisher → `403` `{ error: 'forbidden' }`. Non-integer or `<= 0` `:id` → `400` `{ error: 'invalid_id' }`. Target must be `provider` `gitlab` or `gitea`, `status` `'active'`, and `permission_level` `'full'` or `'admin'`; otherwise `404` `{ error: 'not_found' }` (includes local, leftover GitHub, missing id). Already `admin` → idempotent `200` `{ ok: true }` (no event). `full` → `permission_level` `'admin'`, `events.type` `权限变更`, `details` `{ target_user_id, from: 'full', to: 'admin' }`, `200` `{ ok: true }`. Never a password/hash/token.
+
 ### `POST /api/v1/users/:id/approve`
 
-Actor must be session user with `status` `active` and `permission_level` `full`. Sets target `status` to `active` (does not change `permission_level`; GitHub stays `claim_only`). Response is the updated user JSON (same fields as `GET /api/v1/me`); if the re-select is empty, `{ ok: true }`.
-
-Errors: no session → `401` `{ error: 'unauthorized' }`; actor not `active`+`full` → `403` `{ error: 'forbidden' }`; non-integer or `<= 0` id → `400` `{ error: 'invalid_id' }`; missing user → `404` `{ error: 'not_found' }`.
+Retired. Always `404` `{ error: 'not_found' }` (no session check, no status flip).
 
 ### `POST /api/v1/agent-keys`
 
@@ -103,11 +125,11 @@ stdio bridge `kaola-mcp --url <origin>` (`apps/mcp/src/main.ts`, env `KAOLA_URL`
 
 ### `GET /api/v1/devices/pending`, `GET /api/v1/devices`, `GET /api/v1/me/devices` (#23)
 
-Session `active`+`full` (`requireFullAdmin`; else `401`/`403`). `GET …/pending` → `200` `{ devices: [{ id, hostname, fingerprint, created_at, expires_at }] }` (non-expired `status === 'pending'`). `GET /api/v1/devices` → `{ devices: [{ id, hostname, fingerprint, status, created_at, paired_at, expires_at, last_seen, owner }] }` (`owner` is `null` while pending; else `{ kind: 'claimant', claimant_id, display_name }` or `{ kind: 'user', user_id }`). `GET /api/v1/me/devices` lists the admin's own bound rows (`devices.user_id`).
+Session `active`+`admin` (`requireFullAdmin` in `devices.ts` calls `canManageInstance`; else `401`/`403`). Publisher `full` is `403`. `GET …/pending` → `200` `{ devices: [{ id, hostname, fingerprint, created_at, expires_at }] }` (non-expired `status === 'pending'`). `GET /api/v1/devices` → `{ devices: [{ id, hostname, fingerprint, status, created_at, paired_at, expires_at, last_seen, owner }] }` (`owner` is `null` while pending; else `{ kind: 'claimant', claimant_id, display_name }` or `{ kind: 'user', user_id }`). `GET /api/v1/me/devices` lists the admin's own bound rows (`devices.user_id`).
 
 ### `POST /api/v1/devices/:id/bind` (#23)
 
-Session `active`+`full`. Body must contain **exactly one** of `bind_to_self` (must be `true`), `claimant_id` (positive int), `claimant_display_name` (non-empty string). Else `400` `{ error: 'invalid_body' }`. Target must be live `pending` else `409` `{ error: 'conflict', message: '电脑申请已过期或不在待授权状态。' }`. Over `max_devices` → `409` `{ error: 'conflict', message: '已达该身份的电脑台数上限。' }`. Unknown `claimant_id` → `404`. Success `200` `{ ok: true, device_id, owner }` (`owner` `{ kind: 'user', user_id }` or `{ kind: 'claimant', claimant_id, display_name }`). Writes `events.type` `电脑授权`. Does not claim a task and does not reveal a forge token. Web **电脑** pane **绑到我自己** sends `{ bind_to_self: true }`.
+Session `active`+`admin`. Body must contain **exactly one** of `bind_to_self` (must be `true`), `claimant_id` (positive int), `claimant_display_name` (non-empty string). Else `400` `{ error: 'invalid_body' }`. Target must be live `pending` else `409` `{ error: 'conflict', message: '电脑申请已过期或不在待授权状态。' }`. Over `max_devices` → `409` `{ error: 'conflict', message: '已达该身份的电脑台数上限。' }`. Unknown `claimant_id` → `404`. Success `200` `{ ok: true, device_id, owner }` (`owner` `{ kind: 'user', user_id }` or `{ kind: 'claimant', claimant_id, display_name }`). Writes `events.type` `电脑授权`. Does not claim a task and does not reveal a forge token. Web **电脑** pane **绑到我自己** sends `{ bind_to_self: true }`.
 
 ### `POST /api/v1/devices/:id/revoke`, claimants (#23)
 
@@ -119,7 +141,7 @@ Device proof only (`addDeviceProofHook`). Bound `active` device → `200` `{ dev
 
 ### `GET /api/v1/credential-profiles`
 
-Session cookie. Gate: `status === 'active'` AND `permission_level === 'full'`. Otherwise `403` `{ error: 'forbidden' }`. Lists every row (team-shared).
+Session cookie. Gate: `canPublish` — `status === 'active'` AND `permission_level` `admin` or `full` (`credential-profiles.ts`). Otherwise `403` `{ error: 'forbidden' }`. Lists every row (team-shared).
 
 `200` `{ profiles: [{ id, forge, base_url, repo_full_name, scopes_checked, created_by }] }`. Never includes `token` or `token_encrypted`. `scopes_checked` is JSON parsed to an array (`[]` if parse fails or value is not an array).
 
@@ -127,7 +149,7 @@ Unauthenticated: same oracle as `GET /api/v1/me`.
 
 ### `POST /api/v1/credential-profiles`
 
-Session cookie. Same `active`+`full` gate (`403` `{ error: 'forbidden' }`).
+Session cookie. Same `canPublish` gate (`403` `{ error: 'forbidden' }`).
 
 Body `{ forge, base_url, repo_full_name, token }`: `forge` must be `github` | `gitlab` | `gitea`; `base_url`, `repo_full_name`, and `token` must be non-empty strings. Otherwise `400` `{ error: 'invalid_body' }`.
 
@@ -137,13 +159,13 @@ Encrypts `token` with `encryptToken` (does not call `validateToken`). Inserts `s
 
 ### `DELETE /api/v1/credential-profiles/:id`
 
-Session cookie. Same `active`+`full` gate. Deletes the row (any `full` member may delete any profile).
+Session cookie. Same `canPublish` gate. Deletes the row (any `admin` or `full` member may delete any profile).
 
 `200` `{ ok: true, message: '请同时到 forge 侧撤销该 token。' }`. Writes `events` row `type` `变更`, `details` `{"action":"delete","profile_id":<n>}`. Non-integer / `<= 0` id or missing row → `404` `{ error: 'not_found' }`.
 
 ### `GET /api/v1/credential-profiles/:id/issues` (#19)
 
-Session cookie. Same `active`+`full` gate as the other profile routes (`403` `{ error: 'forbidden' }`). Unauthenticated: same oracle as `GET /api/v1/me`.
+Session cookie. Same `canPublish` gate as the other profile routes (`403` `{ error: 'forbidden' }`). Unauthenticated: same oracle as `GET /api/v1/me`.
 
 Loads the `credential_profiles` row by integer id, decrypts `token_encrypted` with `decryptToken` (server-side, same vault helper the poller uses to call the forge), then `createForgeAdapter(profile.forge, { baseUrl: profile.baseUrl }).listIssues({ token }, { full_name: profile.repoFullName, base_url: profile.baseUrl })`.
 
@@ -167,7 +189,7 @@ Session cookie. Same auth as list. Addressed by `public_id` string (numeric-look
 
 ### `POST /api/v1/tasks`
 
-Session cookie. Gate: `status === 'active'` AND `permission_level === 'full'` (same population as credential profiles). Otherwise `403` `{ error: 'forbidden' }`. 发布即校验: a failing check is never persisted.
+Session cookie. Gate: `canPostTasks` / `canPublish` — `status === 'active'` AND `permission_level` `admin` or `full` (same population as credential profiles). Otherwise `403` `{ error: 'forbidden' }`. Leftover `claim_only` cannot publish. 发布即校验: a failing check is never persisted.
 
 Wire is snake_case. Request `credential` is `{ profile_id }` XOR `{ token }` (`profile_id` integer or numeric string). That is not the brief-side union (`{ profile_id: string }` | `{ inline: true }`); a request of `{ inline: true }` with no token is `400` `{ error: 'invalid_body' }`. Sending both `profile_id` and `token` is `400`. Client-supplied `id` / `pr_convention` / `poster` / `status` / `created_at` are ignored (server-owned).
 
@@ -185,7 +207,7 @@ Profile path writes `events.type` `token 揭示` after decrypt (including 422 / 
 
 ### `POST /api/v1/tasks/import`
 
-Session cookie. Same `active`+`full` gate as create (`403` `{ error: 'forbidden' }`). Unauthenticated: same oracle as `GET /api/v1/me`. Pre-publish draft in `registerTasks`: does **not** insert a `tasks` row and does **not** call `validateToken` (发布即校验 stays on `POST /api/v1/tasks`).
+Session cookie. Same `canPublish` gate as create (`403` `{ error: 'forbidden' }`). Unauthenticated: same oracle as `GET /api/v1/me`. Pre-publish draft in `registerTasks`: does **not** insert a `tasks` row and does **not** call `validateToken` (发布即校验 stays on `POST /api/v1/tasks`).
 
 Wire is snake_case. Required: non-empty `issue_url`; `repo.forge` `github` | `gitlab` | `gitea`; non-empty `repo.base_url`; request `credential` `{ profile_id }` XOR `{ token }` (same union as create). `repo.full_name` is optional. Generic parse failure → `400` `{ error: 'invalid_body' }` (no `message`).
 
@@ -203,7 +225,7 @@ Profile path writes `events.type` `token 揭示` after decrypt (including 404 / 
 
 ### `PATCH /api/v1/tasks/:publicId`
 
-Session cookie. Same `active`+`full` gate (`403` `{ error: 'forbidden' }`). Body `{ status }`; `status` must be a `taskStatusSchema` value else `400` `{ error: 'invalid_body' }`. Missing `public_id` → `404` `{ error: 'not_found' }`. Non-poster → `403` `{ error: 'forbidden' }`.
+Session cookie. Same `canPublish` gate (`403` `{ error: 'forbidden' }`). Body `{ status }`; `status` must be a `taskStatusSchema` value else `400` `{ error: 'invalid_body' }`. Missing `public_id` → `404` `{ error: 'not_found' }`. Non-poster → `403` `{ error: 'forbidden' }`.
 
 Poster-only edges in source: `待认领` → `已取消`; `已退回` → `已取消` | `待认领`. Other requested statuses (including `待认领` → `进行中`) → `409` `{ error: 'illegal_transition', message: '任务状态不允许从「${from}」变更为「${to}」。' }`. Success writes `events.type` `状态迁移`, `details` `{ task_id, from, to }` (`task_id` is the `public_id` string) and returns `200` the updated brief. `@kaola/web` poster board detail now calls this existing route (取消 → `{ status: '已取消' }`; 重新开放 → `{ status: '待认领' }`); the wire contract is unchanged.
 
@@ -216,7 +238,7 @@ Body `{ autonomous?: boolean }` (#16). Missing body, non-object body, or a non-b
 When `autonomous === true` **and** the claiming Agent's user has `trusted_automation !== true` — checked *after* the `待批准` `403` gate below, *before* the resource/lease logic that produces `201` — the claim does not reveal a token:
 
 - An existing `claim_confirmations` row in state `'approved'` for this exact `(task, user, agent_key)` triple is consumed (row deleted — one-time use, so a later `release` + re-claim cannot ride the same approval again) and the claim proceeds to the normal `201` flow below.
-- Otherwise: a `'pending'` row for that triple is inserted (or, if one already exists, reused as-is — a repeated pending request is idempotent and does not duplicate the row or the event), `events.type` `认领待确认` is written (`details` `{ task_id, agent_key_id }`, `actor_user_id` the claiming user), and the response is `202` `{ error: 'confirmation_required', message: '该任务的自动认领需要你先在网页端确认，请到「待确认认领」列表批准或拒绝。', pending: true }`. No `token`, no `clone`, no `token 揭示` event, no lease inserted, task status stays `待认领`.
+- Otherwise: a `'pending'` row for that triple is inserted (or, if one already exists, reused as-is — a repeated pending request is idempotent and does not duplicate the row or the event), `events.type` `认领待确认` is written (`details` `{ task_id, device_id }`, `actor_user_id` the claiming user), and the response is `202` `{ error: 'confirmation_required', message: '该任务的自动认领需要你先在网页端确认，请到「待确认认领」列表批准或拒绝。', pending: true }`. No `token`, no `clone`, no `token 揭示` event, no lease inserted, task status stays `待认领`.
 
 `autonomous: true` from a user with `trusted_automation === true` skips the confirmation gate entirely and always reaches the normal `201` flow (same as an instructed claim). `trusted_automation` defaults `false` — every user needs an explicit `PUT /api/v1/me/settings` before an autonomous claim can go straight through.
 
@@ -253,11 +275,11 @@ Writes (successful `201` claim): `events.type` `token 揭示` then `状态迁移
 
 ### `GET /api/v1/claim-confirmations`, `POST /api/v1/claim-confirmations/:id/approve`, `POST /api/v1/claim-confirmations/:id/reject` (#16, `registerClaimConfirmations` in `apps/server/src/claim-confirmations.ts`)
 
-Session cookie only (`requireActiveSessionUser`: no session or `status === '待批准'` → `sendUnauthorized`, same `401`/`302` oracle as `GET /api/v1/me` — **not** the claim route's `403`). A Bearer Agent Key alone does not authorize these three routes.
+Session cookie only (`requireActiveSessionUser`: no session or `status === '待批准'` → `sendUnauthorized`, same `401`/`302` oracle as `GET /api/v1/me` — **not** the claim route's `403`). Then `canManageInstance` (`active`+`admin`); publisher `full` → `403` `{ error: 'forbidden' }`. A Bearer Agent Key alone does not authorize these three routes.
 
 `GET` → `200` `{ confirmations: [{ id, task_id, state, created_at }] }` (`task_id` is the task's `public_id` via a join; `state` `'pending'` | `'approved'` | `'rejected'`), scoped to `claim_confirmations.user_id === ` the session user's id — one user never sees another user's rows.
 
-`POST …/approve` → sets that row's `state` to `'approved'`, writes `events.type` `认领已确认` (`details` `{ task_id, agent_key_id }`, `actor_user_id` the approving session user), `200` `{ ok: true }`. Does **not** itself insert a lease, flip the task's status, or decrypt/reveal a forge token — it only flips the row an autonomous re-claim will later consume (see the claim section above). A non-integer id, a missing row, or a row owned by a different user → `404` `{ error: 'not_found' }` (no distinction between "doesn't exist" and "not yours").
+`POST …/approve` → sets that row's `state` to `'approved'`, writes `events.type` `认领已确认` (`details` `{ task_id, device_id }`, `actor_user_id` the approving session user), `200` `{ ok: true }`. Does **not** itself insert a lease, flip the task's status, or decrypt/reveal a forge token — it only flips the row an autonomous re-claim will later consume (see the claim section above). A non-integer id, a missing row, or a row owned by a different user → `404` `{ error: 'not_found' }` (no distinction between "doesn't exist" and "not yours").
 
 `POST …/reject` → sets `state` to `'rejected'`, `200` `{ ok: true }`, no event write. Same `404` rule as approve. A rejected row is left in place (not deleted); a subsequent autonomous claim attempt on the same `(task, user, agent_key)` triple ignores it and inserts a fresh `'pending'` row (rejection is not remembered as a standing denial).
 
@@ -306,7 +328,7 @@ Six `registerTool` names:
 
 ### `GET /api/v1/events`, `GET /api/v1/stats` (#15, `registerEvents` in `apps/server/src/events.ts`)
 
-Session cookie only. Gate `canReadEvents`: `user.status !== '待批准'` — stricter than `GET /api/v1/tasks` (which a `待批准` user may read); no session or a pending session → `401` `{ error: 'unauthorized' }` (same `sendUnauthorized` oracle as `GET /api/v1/me`, so a non-JSON `Accept` gets `302 /login` instead). Any other logged-in user — `active`+`full` or `active`+`claim_only` — may read both. No query string on either route; every filter is client-side in `@kaola/web`.
+Session cookie only. Gate `canReadEvents`: `user.status !== '待批准'` — stricter than `GET /api/v1/tasks` (which a `待批准` user may read); no session or a pending session → `401` `{ error: 'unauthorized' }` (same `sendUnauthorized` oracle as `GET /api/v1/me`, so a non-JSON `Accept` gets `302 /login` instead). Any other logged-in user — `active`+`admin`, `active`+`full`, or leftover `active`+`claim_only` — may read both. No query string on either route; every filter is client-side in `@kaola/web`.
 
 `GET /api/v1/events` → `200` `{ events: [<EventRow>] }`, newest-first (`orderBy(desc(events.id))`). `EventRow` keys exactly `id`, `type`, `actor_user_id`, `actor_username`, `created_at`, `details`: `id`/`type`/`created_at` (ISO-8601, from stored unix seconds) as stored; `actor_user_id` is `events.actor_user_id` (`null` for a system-driven row); `actor_username` is resolved via a `leftJoin` on `users` (`null` when `actor_user_id` is `null`, since no login is ever deleted); `details` is `JSON.parse`d (a parse failure or non-object/array value degrades to `{}`, never throws). Never contains a forge token — this route only ever surfaces what the writers below already put in `events.details` (never plaintext).
 
@@ -374,15 +396,15 @@ Web has no vue-router and no `/tasks/:id` route, so the comment body never conta
 
 ### `users` table
 
-SQL from `createDb` (`CREATE TABLE IF NOT EXISTS users`): `id`, `provider`, `remote_id`, `username`, `display_name`, `status`, `permission_level`, `trusted_automation INTEGER NOT NULL DEFAULT 0` (#16); UNIQUE `(provider, remote_id)`. On an existing sqlite file predating #16 (where `CREATE TABLE IF NOT EXISTS` is a no-op), `createDb` also runs `ALTER TABLE users ADD COLUMN trusted_automation INTEGER NOT NULL DEFAULT 0` and swallows the resulting "duplicate column name" error on a file that already has it (idempotent either way).
+SQL from `createDb` (`CREATE TABLE IF NOT EXISTS users`): `id`, `provider`, `remote_id`, `username`, `display_name`, `status`, `permission_level`, `password_hash TEXT` (nullable, #28), `trusted_automation INTEGER NOT NULL DEFAULT 0` (#16), `device_max_age_days` / `max_devices` / `device_idle_days`; UNIQUE `(provider, remote_id)`. Unique index `users_local_username` on `lower(trim(username))` WHERE `provider = 'local'`. On an existing sqlite file, `createDb` `ALTER TABLE`s missing columns (`trusted_automation`, device policy columns, `password_hash TEXT`) and swallows "duplicate column name". Then `promoteEarliestLoginableAdmin`: if no `active`+`admin` with provider `local`/`gitlab`/`gitea`, the earliest `active`+`full` among those providers becomes `admin`; leftover GitHub `full` is not promoted and does not count as a loginable admin.
 
-Drizzle enums in `apps/server/src/schema.ts`: `provider` `github` | `gitlab` | `gitea`; `status` `active` | `待批准`; `permission_level` `full` | `claim_only`. `trusted_automation` is `integer(..., { mode: 'boolean' })`, default `false`.
+Drizzle enums in `apps/server/src/schema.ts`: `provider` `github` | `gitlab` | `gitea` | `local`; `status` `active` | `待批准` | `revoked`; `permission_level` `admin` | `full` | `claim_only`. `passwordHash` maps to `password_hash` (nullable text). `trusted_automation` is `integer(..., { mode: 'boolean' })`, default `false`.
 
-First insert (`completeLogin`): if `countActiveFull === 0`, any provider inserts `status` `active` and `permission_level` `full` (bootstrap). If a full user already exists, only a `KAOLA_ADMINS` match inserts `active`+`full`; otherwise the callback redirects `/login?reason=uninvited` and **does not** insert a row or set a session (closed join — GitLab/Gitea are **not** auto-full). `trusted_automation` always starts `false`. Subsequent login of an existing row updates `username` and `display_name` only (not `trusted_automation`). `revoked` existing users redirect `/login?reason=revoked`.
+Inserts: `POST /api/v1/setup` creates the first loginable admin (`local` / `active` / `admin`). GitLab/Gitea OAuth (`completeUserLogin`) inserts `active`+`full` only after `countLoginableAdmins > 0`; with zero loginable admins it inserts nothing. `KAOLA_ADMINS` is ignored (malformed or `github:…` still `buildApp()`; does not enable `GET /login/github`). `trusted_automation` always starts `false`. Subsequent OAuth of an existing row updates `username` and `display_name` only. `revoked` existing users redirect `/login?reason=revoked`.
 
-### `claim_confirmations` table (#16)
+### `claim_confirmations` table (#16 / #27)
 
-SQL from `createDb` (`CREATE TABLE IF NOT EXISTS claim_confirmations`): `id INTEGER PRIMARY KEY AUTOINCREMENT`, `task_id INTEGER NOT NULL` (integer `tasks.id`, not `public_id`), `user_id INTEGER NOT NULL`, `agent_key_id INTEGER NOT NULL`, `state TEXT NOT NULL`, `created_at INTEGER NOT NULL`. No unique constraint — `claimTask` and `registerClaimConfirmations` both enforce "at most one live (`'pending'`) row per `(task_id, user_id, agent_key_id)`" in application code (`findClaimConfirmations`), not in the schema.
+SQL from `createDb` (`CREATE TABLE IF NOT EXISTS claim_confirmations`): `id INTEGER PRIMARY KEY AUTOINCREMENT`, `task_id INTEGER NOT NULL` (integer `tasks.id`, not `public_id`), `user_id INTEGER NOT NULL`, `device_id INTEGER NOT NULL`, `agent_key_id INTEGER` (nullable leftover), `state TEXT NOT NULL`, `created_at INTEGER NOT NULL`. No unique constraint — `claimTask` and `registerClaimConfirmations` both enforce "at most one live (`'pending'`) row per `(task_id, user_id, device_id)`" in application code (`findClaimConfirmations`), not in the schema.
 
 Drizzle enum in `schema.ts`: `state` `'pending' | 'approved' | 'rejected'`. A `'pending'` row for the same triple is reused (never duplicated) by a repeated autonomous claim. An `'approved'` row is deleted (not transitioned to some other state) the moment a claim consumes it, so it can never grant a second free claim. A `'rejected'` row is left in place and simply ignored by both an instructed claim and a fresh autonomous claim attempt (which inserts a new `'pending'` row alongside it).
 
@@ -428,8 +450,10 @@ SQL from `createDb` (`CREATE TABLE IF NOT EXISTS events`): `id INTEGER PRIMARY K
 - POST `/api/v1/tasks/import` profile path (after decrypt, including 404 / 422 / 502): `type` `token 揭示`, `details` JSON `{ "profile_id": <n>, "forge": <forge>, "base_url": <string>, "full_name": <string>, "outcome": "ok" | "issue_not_found" | "token_check_failed" | "forge_unreachable" }` (no token; no `agent_key_id`; inline path does not write this)
 - PATCH `/api/v1/tasks/:publicId` success: `type` `状态迁移`, `details` JSON `{ "task_id": <public_id>, "from": <status>, "to": <status> }`
 - POST `/api/v1/tasks/:publicId/claim` `201` success: `type` `token 揭示`, `details` JSON `{ "task_id": <public_id>, "agent_key_id": <n>, "credential": "inline" | "profile", "profile_id"? }` (`profile_id` only when `credential === 'profile'`, integer profile PK; no plaintext, no ciphertext) then `type` `状态迁移`, `details` JSON `{ "task_id": <public_id>, "from": <status>, "to": <status> }` (claimer `actor_user_id`)
-- POST `/api/v1/tasks/:publicId/claim` `202` pending (#16, `autonomous: true` + not `trusted_automation`, no existing `'approved'` row): `type` `认领待确认`, `details` JSON `{ "task_id": <public_id>, "agent_key_id": <n> }` (claimer `actor_user_id`; no `token 揭示`, no `状态迁移` — the task never leaves `待认领`)
-- POST `/api/v1/claim-confirmations/:id/approve` success (#16): `type` `认领已确认`, `details` JSON `{ "task_id": <public_id>, "agent_key_id": <n> }` (approving session user `actor_user_id`); reject writes no event
+- POST `/api/v1/tasks/:publicId/claim` `202` pending (#16, `autonomous: true` + not `trusted_automation`, no existing `'approved'` row): `type` `认领待确认`, `details` JSON `{ "task_id": <public_id>, "device_id": <n> }` (claimer `actor_user_id`; no `token 揭示`, no `状态迁移` — the task never leaves `待认领`)
+- POST `/api/v1/claim-confirmations/:id/approve` success (#16): `type` `认领已确认`, `details` JSON `{ "task_id": <public_id>, "device_id": <n> }` (approving session user `actor_user_id`); reject writes no event
+- `POST /api/v1/setup` success: `type` `管理员创建`, `details` JSON `{ "user_id": <n> }` (no password/hash)
+- `POST /api/v1/users/:id/promote` when flipping `full` → `admin`: `type` `权限变更`, `details` JSON `{ "target_user_id": <n>, "from": "full", "to": "admin" }`
 - POST `/api/v1/tasks/:publicId/progress` success: `type` `心跳`, `details` JSON `{ "task_id": <public_id>, "note": <string> }` (`note` is `''` when omitted)
 - POST `/api/v1/tasks/:publicId/release` success: `type` `状态迁移`, `details` JSON `{ "task_id": <public_id>, "from": <status>, "to": <status>, "reason"? }` (`reason` only when body had string `reason`)
 - MCP `submit_pr` success (`submitPr` in `claim.ts`): `type` `状态迁移`, `details` JSON `{ "task_id": <public_id>, "from": "进行中", "to": "待验收", "pr_url": <string>, "summary": <string> }` (claimer `actor_user_id`)
@@ -449,11 +473,11 @@ SQL from `createDb` (`CREATE TABLE IF NOT EXISTS events`): `id INTEGER PRIMARY K
 
 ### Env (`registerAuth`)
 
-Required (throw `missing required environment variable …` if empty): `SESSION_SECRET`, `OAUTH_GITHUB_CLIENT_ID`, `OAUTH_GITHUB_CLIENT_SECRET`, `OAUTH_GITLAB_CLIENT_ID`, `OAUTH_GITLAB_CLIENT_SECRET`, `OAUTH_GITLAB_BASE_URL`, `OAUTH_GITEA_CLIENT_ID`, `OAUTH_GITEA_CLIENT_SECRET`, `OAUTH_GITEA_BASE_URL`.
+Required (throw `missing required environment variable …` if empty): `SESSION_SECRET`, `OAUTH_GITHUB_CLIENT_ID`, `OAUTH_GITHUB_CLIENT_SECRET`, `OAUTH_GITLAB_CLIENT_ID`, `OAUTH_GITLAB_CLIENT_SECRET`, `OAUTH_GITLAB_BASE_URL`, `OAUTH_GITEA_CLIENT_ID`, `OAUTH_GITEA_CLIENT_SECRET`, `OAUTH_GITEA_BASE_URL`. GitHub client id/secret remain **required at boot** (`requireEnv` in `registerAuth`) even though GitHub login is retired (`GET /login/github` is 404); they are unused for login. GitLab / Gitea OAuth apps are what the login buttons use.
 
-Optional: `PUBLIC_URL` default `http://localhost:31415` (trailing slash stripped via `trimTrailingSlash` / `replace(/\/+$/, '')` in `auth.ts`; write-back uses the same default with `replace(/\/+$/u, '')`). Optional `KAOLA_ADMINS`: comma/whitespace-separated `github:username` or `github:id:<remote_id>` (`gitlab` / `gitea` same shape); empty/unset still `buildApp()`. Process `index.ts`: `PORT` default `'31415'`, `HOST` default `'0.0.0.0'`, `SQLITE_PATH` default `':memory:'` (compose overrides to `/data/kaola.sqlite`; non-compose unset still in-memory). Optional `WEB_DIST` and `VITE_DEV_TARGET` (not required by `registerAuth`). Optional `KAOLA_HOME` for `kaola-mcp` (default `~/.kaola`).
+Optional: `PUBLIC_URL` default `http://localhost:31415` (trailing slash stripped via `trimTrailingSlash` / `replace(/\/+$/, '')` in `auth.ts`; write-back uses the same default with `replace(/\/+$/u, '')`). `KAOLA_ADMINS` if set is **ignored** (not an invite list, does not grant GitHub login, does not fail boot). Process `index.ts`: `PORT` default `'31415'`, `HOST` default `'0.0.0.0'`, `SQLITE_PATH` default `':memory:'` (compose overrides to `/data/kaola.sqlite`; non-compose unset still in-memory). Optional `WEB_DIST` and `VITE_DEV_TARGET` (not required by `registerAuth`). Optional `KAOLA_HOME` for `kaola-mcp` (default `~/.kaola`).
 
-Callback URIs: `${publicUrl}/login/{github|gitlab|gitea}/callback` (`publicUrl` is the trimmed `PUBLIC_URL`). Post-login redirect is still `reply.redirect('/')` (relative). Intranet deploy: forge OAuth Redirect URI is that callback under the browser-facing `PUBLIC_URL` (may coexist with a localhost callback); `OAUTH_GITLAB_BASE_URL` / `OAUTH_GITEA_BASE_URL` are the **server-to-forge** origins (trim trailing slash), not the public entry.
+Callback URIs actually registered: `${publicUrl}/login/gitlab/callback` and `${publicUrl}/login/gitea/callback` (`publicUrl` is the trimmed `PUBLIC_URL`). `${publicUrl}/login/github/callback` is a 404 handler, not an OAuth callback. Post-login redirect is still `reply.redirect('/')` (relative). Intranet deploy: forge OAuth Redirect URI is the GitLab/Gitea callback under the browser-facing `PUBLIC_URL` (may coexist with a localhost callback); `OAUTH_GITLAB_BASE_URL` / `OAUTH_GITEA_BASE_URL` are the **server-to-forge** origins (trim trailing slash), not the public entry.
 
 Cookie `Secure` and Fastify `trustProxy` (`cookieSecureFromPublicUrl`, `COOKIE_SECURE_TRUST_PROXY` in `auth.ts`; constructor in `app.ts`): `cookieSecure` is true iff trimmed `PUBLIC_URL` `startsWith('https:')` (not `'auto'`). Session `@fastify/session` cookie: `{ path: '/', secure: cookieSecure, httpOnly: true, sameSite: 'lax' }`, `saveUninitialized: false`. OAuth `@fastify/oauth2` cookie: `{ path: '/', secure: cookieSecure }`. When `cookieSecure`, `buildApp` uses `Fastify({ trustProxy: [...COOKIE_SECURE_TRUST_PROXY] })` where the list is `'127.0.0.1'`, `'::1'`, `'10.0.0.0/8'`, `'172.16.0.0/12'`, `'192.168.0.0/16'` (loopback + RFC1918 peers for a TLS-terminating reverse proxy). When not `cookieSecure`, `Fastify()` with no `trustProxy`. Do not use hop-count `1` (Fastify 5.12.1 no-op) or `true`. After OAuth login, if `request.session.cookie.secure === true` and `request.protocol !== 'https'`, `registerAuth` skips `request.session.save()` and still `redirect`s (so an untrusted peer spoofing `X-Forwarded-Proto` cannot mint a `sessionId`).
 
