@@ -171,6 +171,7 @@ pnpm build
 ## 文档
 
 - [设计文档](docs/DESIGN.md) — 产品与架构源头
+- [GitLab / Gitea 冒烟手册](docs/smoke-test.md)
 - [文档索引](docs/README.md)
 - [变更日志](CHANGELOG.md)
 

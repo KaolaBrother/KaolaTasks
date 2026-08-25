@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- GitLab / Gitea 活测收成可重复手册：[docs/smoke-test.md](docs/smoke-test.md)（浏览器 **配合** 与注入会话两种跑法）。发布面不含 GitHub。`pnpm smoke:forge -- gitlab|gitea`（`scripts/forge-smoke.ts`）：隔离 SQLite + stub GitLab OAuth，走档案→导入→认领→clone 信封→PR→合并→`已完成`。令牌只读 `GITLAB_TOKEN` / `GITEA_TOKEN`，不进 git / mcp.json。认领身份是设备证明 + 远程绑定，认领者无自己的 forge PAT。GitLab 脚本实测 `clone_auth=gitlab-basic-oauth2`；Gitea 实测信封可用。传入 `github` 会明确失败。
 - README 生产向部署与用户说明改为短清单；cookie / `trustProxy` / MCP 协议细节仍在 [docs/api.md](docs/api.md)。
 - `#24` 内网服务器 + 公网 IP 入口：`PUBLIC_URL` 以 `https:` 开头时会话 cookie 与 OAuth state cookie 带 `Secure`；`buildApp` 此时 `Fastify({ trustProxy: ['127.0.0.1', '::1', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'] })`（环回 + RFC1918，不是 hop-count `1`、不是 `true`）。`secure === true` 且 `request.protocol !== 'https'` 时跳过 `session.save()`。`http://localhost` 仍 `secure: false`、无 `trustProxy`。compose：`127.0.0.1:31415:31415`、`SQLITE_PATH=/data/kaola.sqlite`、`env_file: .env`、必填密钥与 `PUBLIC_URL` 经 `${…}` 注入；`index.ts` 未设 `SQLITE_PATH` 时默认仍是 `:memory:`。DESIGN §12 / api.md / architecture.md 同步。测试 `apps/server/src/auth-cookie.test.ts`。不改 Task Brief、状态机、MCP 工具面、token 揭示通道、封闭加入。
 
