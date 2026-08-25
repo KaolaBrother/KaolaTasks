@@ -52,6 +52,24 @@ function trimTrailingSlash(url: string): string {
   return url.replace(/\/+$/, '')
 }
 
+function publicUrlFromEnv(): string {
+  return trimTrailingSlash(process.env.PUBLIC_URL ?? 'http://localhost:31415')
+}
+
+/** True when PUBLIC_URL (trailing slash trimmed) is https — drives cookie Secure and trustProxy. */
+export function cookieSecureFromPublicUrl(): boolean {
+  return publicUrlFromEnv().startsWith('https:')
+}
+
+/** Loopback + RFC1918 peers for TLS-terminating proxies. Never hop-count `1` (Fastify 5.12.1 no-op) or `true`. */
+export const COOKIE_SECURE_TRUST_PROXY = [
+  '127.0.0.1',
+  '::1',
+  '10.0.0.0/8',
+  '172.16.0.0/12',
+  '192.168.0.0/16',
+] as const
+
 function nonemptyString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() !== '' ? value : undefined
 }
@@ -326,6 +344,12 @@ async function completeOAuthLogin(
     return reply.redirect(outcome.redirect)
   }
   request.session.userId = outcome.user.id
+  // @fastify/session onSend still Set-Cookies a pre-saved session when
+  // cookie.secure && protocol !== 'https'. Skip save so an untrusted peer
+  // spoofing X-Forwarded-Proto cannot mint a sessionId.
+  if (request.session.cookie.secure === true && request.protocol !== 'https') {
+    return reply.redirect(outcome.redirect)
+  }
   await request.session.save()
   return reply.redirect(outcome.redirect)
 }
@@ -334,7 +358,8 @@ export function registerAuth(app: FastifyInstance, db: AppDb) {
   const kaolaAdmins = parseKaolaAdmins(process.env.KAOLA_ADMINS)
   app.decorate('kaolaAdmins', kaolaAdmins)
   const sessionSecret = requireEnv('SESSION_SECRET')
-  const publicUrl = trimTrailingSlash(process.env.PUBLIC_URL ?? 'http://localhost:31415')
+  const publicUrl = publicUrlFromEnv()
+  const cookieSecure = cookieSecureFromPublicUrl()
   const githubClientId = requireEnv('OAUTH_GITHUB_CLIENT_ID')
   const githubClientSecret = requireEnv('OAUTH_GITHUB_CLIENT_SECRET')
   const gitlabClientId = requireEnv('OAUTH_GITLAB_CLIENT_ID')
@@ -344,12 +369,12 @@ export function registerAuth(app: FastifyInstance, db: AppDb) {
   const giteaClientSecret = requireEnv('OAUTH_GITEA_CLIENT_SECRET')
   const giteaBaseUrl = trimTrailingSlash(requireEnv('OAUTH_GITEA_BASE_URL'))
 
-  const oauthCookie = { path: '/' as const }
+  const oauthCookie = { path: '/' as const, secure: cookieSecure }
 
   app.register(cookie)
   app.register(session, {
     secret: sessionSecret,
-    cookie: { path: '/', secure: false, httpOnly: true, sameSite: 'lax' },
+    cookie: { path: '/', secure: cookieSecure, httpOnly: true, sameSite: 'lax' },
     saveUninitialized: false,
   })
 
