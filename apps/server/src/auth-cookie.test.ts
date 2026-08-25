@@ -1,9 +1,11 @@
-import { describe, test } from 'node:test'
+import { describe, it, test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   DEFAULT_SETUP,
+  JSON_HEADERS,
   PROVIDERS,
   applyOauthTestEnv,
+  assertNoIdentitySecrets,
   ensureSetup,
   postSetup,
   stubTokenExchange,
@@ -124,5 +126,44 @@ describe('HTTPS PUBLIC_URL cookie Secure', { concurrency: false }, () => {
       undefined,
       'trustProxy must not be true: a direct public peer spoofing X-Forwarded-Proto must not receive sessionId',
     )
+  })
+
+  it('setup from untrusted public peer does not Set-Cookie sessionId', async (t) => {
+    const app = await createApp(t)
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/setup',
+      remoteAddress: '203.0.113.10',
+      headers: { 'x-forwarded-proto': 'https', 'content-type': 'application/json' },
+      payload: DEFAULT_SETUP,
+    })
+    assert.equal(res.statusCode, 201, `POST /api/v1/setup: ${res.statusCode} ${res.body}`)
+    const cookieHeader = setCookieHeaders(res).join('\n')
+    assert.equal(
+      cookieHeader.includes(`${SESSION_COOKIE}=`),
+      false,
+      `untrusted public peer must not receive sessionId Set-Cookie: ${cookieHeader || '(none)'}`,
+    )
+    assertNoIdentitySecrets(res, DEFAULT_SETUP.password)
+  })
+
+  it('login from untrusted public peer does not Set-Cookie sessionId', async (t) => {
+    const app = await createApp(t)
+    await ensureSetup(app)
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/login',
+      remoteAddress: '203.0.113.10',
+      headers: { ...JSON_HEADERS, 'x-forwarded-proto': 'https' },
+      payload: { username: DEFAULT_SETUP.username, password: DEFAULT_SETUP.password },
+    })
+    assert.equal(res.statusCode, 200, `POST /api/v1/login: ${res.statusCode} ${res.body}`)
+    const cookieHeader = setCookieHeaders(res).join('\n')
+    assert.equal(
+      cookieHeader.includes(`${SESSION_COOKIE}=`),
+      false,
+      `untrusted public peer must not receive sessionId Set-Cookie: ${cookieHeader || '(none)'}`,
+    )
+    assertNoIdentitySecrets(res, DEFAULT_SETUP.password)
   })
 })
