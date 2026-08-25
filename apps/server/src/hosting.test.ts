@@ -164,12 +164,36 @@ describe('issue #17 single-port 31415 hosting', { concurrency: false }, () => {
     assert.doesNotMatch(src, /127\.0\.0\.1:3000/)
   })
 
-  test('docker-compose maps 31415:31415 and sets PORT 31415', () => {
+  test('docker-compose binds 127.0.0.1:31415:31415, sets PORT 31415, and injects SQLITE_PATH plus secrets', () => {
     const src = readRepoFile('docker-compose.yml')
-    assert.match(src, /['"]31415:31415['"]/)
+    assert.match(src, /['"]127\.0\.0\.1:31415:31415['"]/)
+    assert.doesNotMatch(src, /['"]31415:31415['"]/)
     assert.match(src, /PORT:\s*["']31415["']/)
     assert.doesNotMatch(src, /['"]3000:3000['"]/)
     assert.doesNotMatch(src, /PORT:\s*["']3000["']/)
+    assert.match(src, /SQLITE_PATH(?:=|:)\s*["']?\/data\/kaola\.sqlite["']?/)
+    assert.match(src, /env_file:[\s\n-]*["']?\.env["']?/)
+    const passThrough = [
+      'PUBLIC_URL',
+      'SESSION_SECRET',
+      'VAULT_MASTER_KEY',
+      'OAUTH_GITHUB_CLIENT_ID',
+      'OAUTH_GITHUB_CLIENT_SECRET',
+      'OAUTH_GITLAB_CLIENT_ID',
+      'OAUTH_GITLAB_CLIENT_SECRET',
+      'OAUTH_GITLAB_BASE_URL',
+      'OAUTH_GITEA_CLIENT_ID',
+      'OAUTH_GITEA_CLIENT_SECRET',
+      'OAUTH_GITEA_BASE_URL',
+    ]
+    for (const name of passThrough) {
+      assert.match(src, new RegExp(name))
+      assert.doesNotMatch(
+        src,
+        new RegExp(`${name}:\\s*["'](?!\\$\\{)[^"']+["']`),
+        `${name} must be env interpolation or env_file, not a secret literal in git`,
+      )
+    }
   })
 
   test('Dockerfile EXPOSE 31415, ENV PORT=31415, and image build includes web dist', () => {
