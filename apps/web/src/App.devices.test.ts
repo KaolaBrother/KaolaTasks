@@ -71,6 +71,64 @@ const EXISTING_CLAIMANT = {
 
 const BIND_TRAP_TOKEN = 'gitea-BIND-TRAP-TOKEN-zzq7'
 
+type ListedUser = {
+  id: number
+  provider: string
+  username: string
+  display_name: string
+  status: string
+  permission_level: string
+}
+
+const USER_LOCAL_ADMIN: ListedUser = {
+  id: 1,
+  provider: 'local',
+  username: 'kaola-admin',
+  display_name: 'kaola-admin',
+  status: 'active',
+  permission_level: 'admin',
+}
+const USER_GITLAB_FULL: ListedUser = {
+  id: 8,
+  provider: 'gitlab',
+  username: 'zhang.wei',
+  display_name: '张伟',
+  status: 'active',
+  permission_level: 'full',
+}
+const USER_GITEA_FULL: ListedUser = {
+  id: 9,
+  provider: 'gitea',
+  username: 'li.na',
+  display_name: '李娜',
+  status: 'active',
+  permission_level: 'full',
+}
+const USER_GITHUB_FULL: ListedUser = {
+  id: 10,
+  provider: 'github',
+  username: 'octo',
+  display_name: 'Octo',
+  status: 'active',
+  permission_level: 'full',
+}
+const USER_GITLAB_ADMIN: ListedUser = {
+  id: 11,
+  provider: 'gitlab',
+  username: 'already-admin',
+  display_name: 'Already Admin',
+  status: 'active',
+  permission_level: 'admin',
+}
+
+const DEFAULT_USERS: ListedUser[] = [
+  USER_LOCAL_ADMIN,
+  USER_GITLAB_FULL,
+  USER_GITEA_FULL,
+  USER_GITHUB_FULL,
+  USER_GITLAB_ADMIN,
+]
+
 type FetchCall = {
   url: string
   method: string
@@ -148,6 +206,7 @@ type MountOpts = {
   mine?: typeof MINE_DEVICE[]
   pending?: typeof PENDING_DEVICE[]
   claimants?: typeof EXISTING_CLAIMANT[]
+  users?: ListedUser[]
 }
 
 async function mountApp(me: Record<string, unknown> = ME_ADMIN, opts: MountOpts = {}) {
@@ -169,6 +228,9 @@ async function mountApp(me: Record<string, unknown> = ME_ADMIN, opts: MountOpts 
   )
   routes.set('GET /api/v1/claimants', () =>
     jsonResponse(200, { claimants: opts.claimants ?? [EXISTING_CLAIMANT] }),
+  )
+  routes.set('GET /api/v1/users', () =>
+    jsonResponse(200, { users: opts.users ?? DEFAULT_USERS }),
   )
 
   const wrapper = mount(App, { global: { plugins: [naive] } })
@@ -253,6 +315,22 @@ function claimantGets(calls: FetchCall[]) {
 
 function agentKeyGets(calls: FetchCall[]) {
   return calls.filter((call) => call.url.startsWith('/api/v1/agent-keys'))
+}
+
+function usersGets(calls: FetchCall[]) {
+  return calls.filter((call) => call.method === 'GET' && call.url === '/api/v1/users')
+}
+
+async function openKeysPane(wrapper: VueWrapper) {
+  await node(wrapper, 'workbench-nav-keys').trigger('click')
+  await settle()
+}
+
+function userRow(wrapper: VueWrapper, needle: string) {
+  const rows = wrapper.findAll('[data-testid="user-row"]')
+  const found = rows.find((candidate) => candidate.text().includes(needle))
+  if (found == null) throw new Error(`no [data-testid="user-row"] containing ${JSON.stringify(needle)}`)
+  return found
 }
 
 describe('登录文案', () => {
@@ -469,6 +547,10 @@ describe('电脑页 — leftover claim_only 防御视图', () => {
     expect(deviceGets(calls)).toHaveLength(0)
     expect(claimantGets(calls)).toHaveLength(0)
     expect(node(wrapper, 'trusted-automation-toggle').exists()).toBe(false)
+    await openKeysPane(wrapper)
+    expect(usersGets(calls)).toHaveLength(0)
+    expect(node(wrapper, 'users-promote').exists()).toBe(false)
+    expect(node(wrapper, 'user-promote').exists()).toBe(false)
   })
 })
 
@@ -482,5 +564,82 @@ describe('电脑页 — 发布者没有实例管理', () => {
     expect(pendingGets(calls)).toHaveLength(0)
     expect(claimantGets(calls)).toHaveLength(0)
     expect(node(wrapper, 'trusted-automation-toggle').exists()).toBe(false)
+    await openKeysPane(wrapper)
+    expect(usersGets(calls)).toHaveLength(0)
+    expect(node(wrapper, 'users-promote').exists()).toBe(false)
+    expect(node(wrapper, 'user-promote').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('升级为管理员')
+  })
+})
+
+describe('电脑页 — admin 升级入口', () => {
+  it('打开电脑后 GET /api/v1/users，gitlab/gitea full 行可升级', async () => {
+    const { wrapper, calls } = await mountApp(ME_ADMIN)
+    await openKeysPane(wrapper)
+
+    const gets = usersGets(calls)
+    expect(gets.length).toBeGreaterThanOrEqual(1)
+    expect(gets[0].url).toBe('/api/v1/users')
+    expect(gets[0].credentials).toBe('include')
+    expect(gets[0].headers.accept).toBe('application/json')
+
+    expect(node(wrapper, 'users-promote').exists()).toBe(true)
+    expect(textOf(wrapper, 'users-promote')).toContain('升级')
+
+    const gitlab = userRow(wrapper, USER_GITLAB_FULL.display_name)
+    expect(gitlab.text()).toContain(USER_GITLAB_FULL.username)
+    expect(gitlab.text()).toContain(USER_GITLAB_FULL.display_name)
+    const gitlabPromote = gitlab.find('[data-testid="user-promote"]')
+    expect(gitlabPromote.exists()).toBe(true)
+    expect(gitlabPromote.text()).toMatch(/升级(为管理员)?/)
+
+    const gitea = userRow(wrapper, USER_GITEA_FULL.display_name)
+    expect(gitea.text()).toContain(USER_GITEA_FULL.username)
+    expect(gitea.find('[data-testid="user-promote"]').exists()).toBe(true)
+  })
+
+  it('点击升级 POST /api/v1/users/:id/promote 后重新 GET users，该行显示 admin', async () => {
+    let listed: ListedUser[] = DEFAULT_USERS.map((user) => ({ ...user }))
+    const { wrapper, calls, routes } = await mountApp(ME_ADMIN, { users: listed })
+    routes.set('GET /api/v1/users', () => jsonResponse(200, { users: listed }))
+    routes.set(`POST /api/v1/users/${USER_GITLAB_FULL.id}/promote`, () => {
+      listed = listed.map((user) =>
+        user.id === USER_GITLAB_FULL.id ? { ...user, permission_level: 'admin' } : user,
+      )
+      return jsonResponse(200, { ok: true })
+    })
+
+    await openKeysPane(wrapper)
+    const getsBefore = usersGets(calls).length
+    const gitlab = userRow(wrapper, USER_GITLAB_FULL.display_name)
+    await gitlab.find('[data-testid="user-promote"]').trigger('click')
+    await settle()
+
+    const posts = calls.filter(
+      (call) =>
+        call.method === 'POST' &&
+        call.url === `/api/v1/users/${USER_GITLAB_FULL.id}/promote`,
+    )
+    expect(posts).toHaveLength(1)
+    expectMutationHeaders(posts[0])
+    expect(posts[0].body).toEqual({})
+    expect(usersGets(calls).length).toBeGreaterThan(getsBefore)
+
+    const after = userRow(wrapper, USER_GITLAB_FULL.display_name)
+    expect(after.text()).toMatch(/admin|管理员/)
+  })
+
+  it('local 与 github 行没有升级按钮；已是 admin 的 gitlab 行也没有', async () => {
+    const { wrapper } = await mountApp(ME_ADMIN)
+    await openKeysPane(wrapper)
+
+    const local = userRow(wrapper, USER_LOCAL_ADMIN.username)
+    expect(local.find('[data-testid="user-promote"]').exists()).toBe(false)
+
+    const github = userRow(wrapper, USER_GITHUB_FULL.username)
+    expect(github.find('[data-testid="user-promote"]').exists()).toBe(false)
+
+    const already = userRow(wrapper, USER_GITLAB_ADMIN.display_name)
+    expect(already.find('[data-testid="user-promote"]').exists()).toBe(false)
   })
 })
