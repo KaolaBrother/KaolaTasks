@@ -3,6 +3,7 @@ import oauthPlugin from '@fastify/oauth2'
 import session from '@fastify/session'
 import { and, eq } from 'drizzle-orm'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
+import { BlockList } from 'node:net'
 import { Readable } from 'node:stream'
 import type { AppDb } from './db.ts'
 import { hashPassword, verifyPassword } from './password.ts'
@@ -61,6 +62,23 @@ export const COOKIE_SECURE_TRUST_PROXY = [
   '172.16.0.0/12',
   '192.168.0.0/16',
 ] as const
+
+const trustedSessionPeers = new BlockList()
+for (const entry of COOKIE_SECURE_TRUST_PROXY) {
+  const slash = entry.indexOf('/')
+  if (slash === -1) {
+    trustedSessionPeers.addAddress(entry, entry.includes(':') ? 'ipv6' : 'ipv4')
+  } else {
+    trustedSessionPeers.addSubnet(entry.slice(0, slash), Number(entry.slice(slash + 1)), 'ipv4')
+  }
+}
+
+function isTrustedSessionPeer(request: FastifyRequest): boolean {
+  let addr = request.socket.remoteAddress
+  if (addr == null || addr === '') return false
+  if (addr.startsWith('::ffff:')) addr = addr.slice('::ffff:'.length)
+  return trustedSessionPeers.check(addr, addr.includes(':') ? 'ipv6' : 'ipv4')
+}
 
 function nonemptyString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() !== '' ? value : undefined
@@ -304,7 +322,11 @@ function oauthTokenErrorMessage(err: unknown): string | undefined {
 }
 
 function shouldSkipSessionSave(request: FastifyRequest): boolean {
-  return request.session.cookie.secure === true && request.protocol !== 'https'
+  return (
+    request.session.cookie.secure === true &&
+    request.protocol !== 'https' &&
+    !isTrustedSessionPeer(request)
+  )
 }
 
 async function persistSession(
@@ -528,7 +550,7 @@ export function registerAuth(app: FastifyInstance, db: AppDb) {
       actorUserId: inserted.id,
       details: { user_id: inserted.id },
     })
-    await persistSession(request, inserted.id)
+    await persistSession(request, inserted.id, { skipUntrusted: true })
     return reply.code(201).send(publicUser(inserted))
   })
 
@@ -543,7 +565,7 @@ export function registerAuth(app: FastifyInstance, db: AppDb) {
     }
     const ok = await verifyPassword(password, user.passwordHash)
     if (!ok) return unauthorized()
-    await persistSession(request, user.id)
+    await persistSession(request, user.id, { skipUntrusted: true })
     return reply.send(publicUser(user))
   })
 
