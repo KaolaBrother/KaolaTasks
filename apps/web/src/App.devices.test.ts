@@ -321,12 +321,12 @@ describe('电脑页 — full+active 列表与绑定', () => {
   })
 
   it('空 我的电脑 列表显示 暂无已绑定的电脑。', async () => {
-    const { wrapper } = await mountApp(ME_FULL, { mine: [] })
+    const { wrapper } = await mountApp(ME_ADMIN, { mine: [] })
     expect(textOf(wrapper, 'devices-mine')).toContain('暂无已绑定的电脑。')
   })
 
   it('空认领者下拉提示输入显示名新建', async () => {
-    const { wrapper } = await mountApp(ME_FULL, { claimants: [] })
+    const { wrapper } = await mountApp(ME_ADMIN, { claimants: [] })
     expect(wrapper.text()).toContain('暂无认领者，请输入显示名新建。')
   })
 
@@ -358,7 +358,7 @@ describe('电脑页 — full+active 列表与绑定', () => {
   })
 
   it('认领者显示名提交 POST { claimant_display_name }，不展示 forge token', async () => {
-    const { wrapper, calls, routes } = await mountApp(ME_FULL, { claimants: [] })
+    const { wrapper, calls, routes } = await mountApp(ME_ADMIN, { claimants: [] })
     routes.set(`POST /api/v1/devices/${PENDING_DEVICE.id}/bind`, () =>
       jsonResponse(200, {
         ok: true,

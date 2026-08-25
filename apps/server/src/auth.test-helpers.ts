@@ -2,6 +2,9 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { TestContext } from 'node:test'
+import type { FastifyInstance } from 'fastify'
+import type Database from 'better-sqlite3'
 import { createDb } from './db.ts'
 
 export const GITLAB_BASE_URL = 'https://gitlab.example.test'
@@ -21,22 +24,69 @@ export const IDENTITY_SECRET_KEYS = ['password', 'password_hash', 'hash', 'token
 
 export const PROVIDERS = {
   gitlab: {
-    decoratorName: 'gitlabOAuth2',
+    decoratorName: 'gitlabOAuth2' as const,
     startPath: '/login/gitlab',
     callbackPath: '/login/gitlab/callback',
   },
   gitea: {
-    decoratorName: 'giteaOAuth2',
+    decoratorName: 'giteaOAuth2' as const,
     startPath: '/login/gitea',
     callbackPath: '/login/gitea/callback',
   },
 }
 
-const setupSessions = new WeakMap()
+export type OauthDecoratorName = (typeof PROVIDERS)[keyof typeof PROVIDERS]['decoratorName']
+
+export type CookieJar = Record<string, string>
+
+export type InjectCookieResponse = {
+  cookies: Array<{ name: string; value: string }>
+  statusCode: number
+  body: string
+  json: () => unknown
+}
+
+export type MeBody = {
+  id: number
+  provider: string
+  remote_id: string
+  username: string
+  display_name: string
+  status: string
+  permission_level: string
+  trusted_automation?: boolean
+  [key: string]: unknown
+}
+
+export type AuthSession = {
+  response: InjectCookieResponse
+  cookies: CookieJar
+  me: InjectCookieResponse
+  body: MeBody
+}
+
+type AppDb = ReturnType<typeof createDb>
+
+type Oauth2Plugin = {
+  getAccessTokenFromAuthorizationCodeFlow: (request?: unknown) => Promise<{
+    token: { access_token: string; token_type: string; expires_in: number }
+  }>
+}
+
+type SeedUserSpec = {
+  provider: string
+  remoteId: string | number
+  username: string
+  displayName: string
+  status: string
+  permissionLevel: string
+}
+
+const setupSessions = new WeakMap<FastifyInstance, AuthSession>()
 
 let tokenSeq = 0
 
-export function applyOauthTestEnv(overrides = {}) {
+export function applyOauthTestEnv(overrides: Record<string, string | undefined> = {}) {
   process.env.OAUTH_GITHUB_CLIENT_ID = 'test-github-client-id'
   process.env.OAUTH_GITHUB_CLIENT_SECRET = 'test-github-client-secret'
   process.env.OAUTH_GITLAB_CLIENT_ID = 'test-gitlab-client-id'
@@ -50,20 +100,20 @@ export function applyOauthTestEnv(overrides = {}) {
   Object.assign(process.env, overrides)
 }
 
-export function nextAccessToken(label) {
+export function nextAccessToken(label: string) {
   tokenSeq += 1
   return `test-access-token-${label}-${tokenSeq}`
 }
 
-export function cookieJar(response) {
-  const jar = {}
+export function cookieJar(response: InjectCookieResponse): CookieJar {
+  const jar: CookieJar = {}
   for (const cookie of response.cookies) {
     jar[cookie.name] = cookie.value
   }
   return jar
 }
 
-export function sqliteFile(t, prefix = 'kaola-auth-') {
+export function sqliteFile(t: TestContext, prefix = 'kaola-auth-') {
   const dir = mkdtempSync(join(tmpdir(), prefix))
   const sqlitePath = join(dir, 'kaola.sqlite')
   t.after(() => {
@@ -72,7 +122,7 @@ export function sqliteFile(t, prefix = 'kaola-auth-') {
   return sqlitePath
 }
 
-export function openDb(t, sqlitePath) {
+export function openDb(t: TestContext, sqlitePath: string) {
   const db = createDb(sqlitePath)
   t.after(() => {
     db.$client.close()
@@ -80,11 +130,12 @@ export function openDb(t, sqlitePath) {
   return db
 }
 
-export function countUsers(db) {
-  return Number(db.$client.prepare('SELECT COUNT(*) AS n FROM users').get().n)
+export function countUsers(db: AppDb) {
+  const row = db.$client.prepare('SELECT COUNT(*) AS n FROM users').get() as { n: number }
+  return Number(row.n)
 }
 
-export function seedUser(db, { provider, remoteId, username, displayName, status, permissionLevel }) {
+export function seedUser(db: AppDb, { provider, remoteId, username, displayName, status, permissionLevel }: SeedUserSpec) {
   db.$client
     .prepare(
       `INSERT INTO users (provider, remote_id, username, display_name, status, permission_level, trusted_automation)
@@ -94,7 +145,7 @@ export function seedUser(db, { provider, remoteId, username, displayName, status
   return db.$client.prepare('SELECT * FROM users WHERE provider = ? AND remote_id = ?').get(provider, String(remoteId))
 }
 
-export function withAdmins(t, spec) {
+export function withAdmins(t: TestContext, spec: string | null | undefined) {
   const previous = process.env.KAOLA_ADMINS
   if (spec == null || spec === '') delete process.env.KAOLA_ADMINS
   else process.env.KAOLA_ADMINS = spec
@@ -104,35 +155,40 @@ export function withAdmins(t, spec) {
   })
 }
 
-function requestUrl(input) {
+function requestUrl(input: unknown) {
   if (typeof input === 'string') return input
   if (input instanceof URL) return input.href
-  if (input && typeof input === 'object' && 'url' in input) return String(input.url)
+  if (input && typeof input === 'object' && 'url' in input) return String((input as { url: unknown }).url)
   return String(input)
 }
 
-function readAuthorization(headers) {
+function readAuthorization(headers: unknown) {
   if (headers == null) return undefined
   if (typeof Headers !== 'undefined' && headers instanceof Headers) {
     return headers.get('authorization') ?? headers.get('Authorization') ?? undefined
   }
   if (Array.isArray(headers)) {
-    const hit = headers.find(([name]) => String(name).toLowerCase() === 'authorization')
-    return hit?.[1]
+    const hit = headers.find(([name]) => String(name).toLowerCase() === 'authorization') as [unknown, unknown] | undefined
+    return hit?.[1] == null ? undefined : String(hit[1])
   }
-  return headers.authorization ?? headers.Authorization
-}
-
-export function authorizationHeader(input, init) {
-  const fromInit = readAuthorization(init?.headers)
-  if (fromInit) return fromInit
-  if (input && typeof input === 'object' && 'headers' in input) {
-    return readAuthorization(input.headers)
+  if (typeof headers === 'object') {
+    const record = headers as Record<string, unknown>
+    const value = record.authorization ?? record.Authorization
+    return value == null ? undefined : String(value)
   }
   return undefined
 }
 
-export function stubUserinfoByAccessToken(t, profiles) {
+export function authorizationHeader(input: unknown, init?: { headers?: unknown }) {
+  const fromInit = readAuthorization(init?.headers)
+  if (fromInit) return fromInit
+  if (input && typeof input === 'object' && 'headers' in input) {
+    return readAuthorization((input as { headers?: unknown }).headers)
+  }
+  return undefined
+}
+
+export function stubUserinfoByAccessToken(t: TestContext, profiles: Map<string, unknown>) {
   const originalFetch = globalThis.fetch
   t.after(() => {
     globalThis.fetch = originalFetch
@@ -155,13 +211,14 @@ export function stubUserinfoByAccessToken(t, profiles) {
   }
 }
 
-export function stubTokenExchange(app, decoratorName, accessToken) {
-  const oauth = app[decoratorName]
+export function stubTokenExchange(app: FastifyInstance, decoratorName: string, accessToken: string) {
+  const oauth = (app as FastifyInstance & Record<string, Oauth2Plugin | undefined>)[decoratorName]
   assert.equal(
     typeof oauth?.getAccessTokenFromAuthorizationCodeFlow,
     'function',
     `${decoratorName}.getAccessTokenFromAuthorizationCodeFlow must exist so tests can stub token exchange`,
   )
+  assert.ok(oauth)
   oauth.getAccessTokenFromAuthorizationCodeFlow = async () => ({
     token: {
       access_token: accessToken,
@@ -171,7 +228,10 @@ export function stubTokenExchange(app, decoratorName, accessToken) {
   })
 }
 
-export async function completeOauthCallback(app, { decoratorName, callbackPath, accessToken }) {
+export async function completeOauthCallback(
+  app: FastifyInstance,
+  { decoratorName, callbackPath, accessToken }: { decoratorName: string; callbackPath: string; accessToken: string },
+) {
   stubTokenExchange(app, decoratorName, accessToken)
   return app.inject({
     method: 'GET',
@@ -179,7 +239,10 @@ export async function completeOauthCallback(app, { decoratorName, callbackPath, 
   })
 }
 
-export async function loginViaCallback(app, { decoratorName, callbackPath, accessToken }) {
+export async function loginViaCallback(
+  app: FastifyInstance,
+  { decoratorName, callbackPath, accessToken }: { decoratorName: string; callbackPath: string; accessToken: string },
+) {
   const callback = await completeOauthCallback(app, { decoratorName, callbackPath, accessToken })
   assert.ok(
     callback.statusCode >= 200 && callback.statusCode < 400,
@@ -193,10 +256,10 @@ export async function loginViaCallback(app, { decoratorName, callbackPath, acces
     headers: { accept: 'application/json' },
   })
   assert.equal(me.statusCode, 200, `GET /api/v1/me after callback: ${me.statusCode} ${me.body}`)
-  return { callback, cookies, me, body: me.json() }
+  return { callback, cookies, me, body: me.json() as MeBody }
 }
 
-export function collectKeys(value, acc = new Set()) {
+export function collectKeys(value: unknown, acc: Set<string> = new Set()): Set<string> {
   if (Array.isArray(value)) {
     for (const item of value) collectKeys(item, acc)
     return acc
@@ -210,17 +273,22 @@ export function collectKeys(value, acc = new Set()) {
   return acc
 }
 
-export function assertNoIdentitySecrets(resOrBody, ...plaintexts) {
-  const dumped = typeof resOrBody === 'string' ? resOrBody : resOrBody?.body != null ? String(resOrBody.body) : JSON.stringify(resOrBody)
+export function assertNoIdentitySecrets(resOrBody: unknown, ...plaintexts: Array<string | undefined | null>) {
+  const dumped =
+    typeof resOrBody === 'string'
+      ? resOrBody
+      : resOrBody != null && typeof resOrBody === 'object' && 'body' in resOrBody && (resOrBody as { body?: unknown }).body != null
+        ? String((resOrBody as { body: unknown }).body)
+        : JSON.stringify(resOrBody)
   for (const plaintext of plaintexts) {
     if (plaintext) {
       assert.equal(dumped.includes(plaintext), false, `response leaked plaintext: ${dumped}`)
     }
   }
-  let parsed = resOrBody
-  if (resOrBody != null && typeof resOrBody === 'object' && typeof resOrBody.json === 'function') {
+  let parsed: unknown = resOrBody
+  if (resOrBody != null && typeof resOrBody === 'object' && 'json' in resOrBody && typeof (resOrBody as { json?: unknown }).json === 'function') {
     try {
-      parsed = resOrBody.json()
+      parsed = (resOrBody as { json: () => unknown }).json()
     } catch {
       parsed = null
     }
@@ -240,7 +308,7 @@ export function assertNoIdentitySecrets(resOrBody, ...plaintexts) {
   }
 }
 
-export async function getSetup(app) {
+export async function getSetup(app: FastifyInstance) {
   return app.inject({
     method: 'GET',
     url: '/api/v1/setup',
@@ -248,7 +316,7 @@ export async function getSetup(app) {
   })
 }
 
-export async function postSetup(app, body = DEFAULT_SETUP) {
+export async function postSetup(app: FastifyInstance, body: { username: string; password: string } = DEFAULT_SETUP) {
   return app.inject({
     method: 'POST',
     url: '/api/v1/setup',
@@ -257,7 +325,7 @@ export async function postSetup(app, body = DEFAULT_SETUP) {
   })
 }
 
-export async function postLogin(app, body) {
+export async function postLogin(app: FastifyInstance, body: { username: string; password: string }) {
   return app.inject({
     method: 'POST',
     url: '/api/v1/login',
@@ -266,7 +334,7 @@ export async function postLogin(app, body) {
   })
 }
 
-export async function getMe(app, cookies) {
+export async function getMe(app: FastifyInstance, cookies: CookieJar) {
   return app.inject({
     method: 'GET',
     url: '/api/v1/me',
@@ -275,22 +343,23 @@ export async function getMe(app, cookies) {
   })
 }
 
-async function sessionFromAuthResponse(app, response) {
+async function sessionFromAuthResponse(app: FastifyInstance, response: InjectCookieResponse): Promise<AuthSession> {
   const cookies = cookieJar(response)
   const me = await getMe(app, cookies)
   assert.equal(me.statusCode, 200, `GET /api/v1/me after auth: ${me.statusCode} ${me.body}`)
-  return { response, cookies, me, body: me.json() }
+  return { response, cookies, me, body: me.json() as MeBody }
 }
 
-export function getSetupAdmin(app) {
+export function getSetupAdmin(app: FastifyInstance) {
   return setupSessions.get(app)
 }
 
-export async function ensureSetup(app, creds = DEFAULT_SETUP) {
+export async function ensureSetup(app: FastifyInstance, creds: { username: string; password: string } = DEFAULT_SETUP) {
   const cached = setupSessions.get(app)
   if (cached) return cached
   const probe = await getSetup(app)
-  if (probe.statusCode === 200 && probe.json()?.setup_complete === true) {
+  const probeBody = probe.json() as { setup_complete?: boolean } | null
+  if (probe.statusCode === 200 && probeBody?.setup_complete === true) {
     const login = await postLogin(app, { username: creds.username, password: creds.password })
     if (login.statusCode === 200) {
       const session = await sessionFromAuthResponse(app, login)
@@ -305,7 +374,7 @@ export async function ensureSetup(app, creds = DEFAULT_SETUP) {
   return session
 }
 
-export async function loginGitlabPublisher(app, stubOauthMap, label = 'gitlab') {
+export async function loginGitlabPublisher(app: FastifyInstance, stubOauthMap: Map<string, unknown>, label = 'gitlab') {
   await ensureSetup(app)
   const accessToken = nextAccessToken(label)
   stubOauthMap.set(accessToken, {
@@ -316,7 +385,7 @@ export async function loginGitlabPublisher(app, stubOauthMap, label = 'gitlab') 
   return loginViaCallback(app, { ...PROVIDERS.gitlab, accessToken })
 }
 
-export async function loginGiteaPublisher(app, stubOauthMap, label = 'gitea') {
+export async function loginGiteaPublisher(app: FastifyInstance, stubOauthMap: Map<string, unknown>, label = 'gitea') {
   await ensureSetup(app)
   const accessToken = nextAccessToken(label)
   stubOauthMap.set(accessToken, {
@@ -327,7 +396,7 @@ export async function loginGiteaPublisher(app, stubOauthMap, label = 'gitea') {
   return loginViaCallback(app, { ...PROVIDERS.gitea, accessToken })
 }
 
-export function assertPersistedUser(body, expected) {
+export function assertPersistedUser(body: MeBody, expected: Omit<MeBody, 'id' | 'trusted_automation'> & { id?: number }) {
   assert.equal(typeof body, 'object')
   assert.ok(body)
   assert.ok(Number.isInteger(Number(body.id)) && Number(body.id) > 0, `id must be a positive integer, got ${body.id}`)
@@ -340,12 +409,13 @@ export function assertPersistedUser(body, expected) {
   assert.equal(body.permission_level, expected.permission_level)
 }
 
-export function assertNotAUserBody(body) {
+export function assertNotAUserBody(body: unknown) {
   if (body == null || typeof body !== 'object') return
-  assert.equal(body.provider, undefined)
-  assert.equal(body.remote_id, undefined)
-  assert.equal(body.username, undefined)
-  assert.equal(body.permission_level, undefined)
+  const record = body as Record<string, unknown>
+  assert.equal(record.provider, undefined)
+  assert.equal(record.remote_id, undefined)
+  assert.equal(record.username, undefined)
+  assert.equal(record.permission_level, undefined)
 }
 
 export const LEGACY_USERS_DDL = `
@@ -362,7 +432,7 @@ CREATE TABLE users (
 )
 `
 
-export function insertLegacyUser(sqlite, { provider, remoteId, username, displayName, status, permissionLevel }) {
+export function insertLegacyUser(sqlite: Database.Database, { provider, remoteId, username, displayName, status, permissionLevel }: SeedUserSpec) {
   sqlite
     .prepare(
       `INSERT INTO users (provider, remote_id, username, display_name, status, permission_level, trusted_automation)

@@ -37,11 +37,6 @@ applyOauthTestEnv()
 const { buildApp } = await import('./app.ts')
 
 const PROVIDERS = {
-  github: {
-    decoratorName: 'githubOAuth2',
-    startPath: '/login/github',
-    callbackPath: '/login/github/callback',
-  },
   gitlab: {
     decoratorName: 'gitlabOAuth2',
     startPath: '/login/gitlab',
@@ -549,6 +544,7 @@ describe('GitLab and Gitea full+active self-service', () => {
     const leftoverMixed = await agentWhoami(app, { authorization: `BeArEr ${unlabeled.json().token}` })
     assertDeviceUnauthorized(leftoverMixed)
 
+    const admin = await ensureSetup(app)
     const paired = await pairDeviceToSelf(app, gitlab.cookies)
     const whoami = await injectSigned(app, paired.identity, {
       method: 'GET',
@@ -558,7 +554,7 @@ describe('GitLab and Gitea full+active self-service', () => {
     assertWhoamiDeviceOwner(whoami, {
       deviceId: paired.deviceId,
       fingerprint: paired.identity.fingerprint,
-      userId: gitlab.body.id,
+      userId: admin.body.id,
     })
     assertNoPlaintextOrHash(parseJson(whoami), [
       unlabeled.json().token,
@@ -593,6 +589,7 @@ describe('GitLab and Gitea full+active self-service', () => {
     const leftover = await agentWhoami(app, { token: created.json().token })
     assertDeviceUnauthorized(leftover)
 
+    const admin = await ensureSetup(app)
     const paired = await pairDeviceToSelf(app, gitea.cookies)
     const whoami = await injectSigned(app, paired.identity, {
       method: 'GET',
@@ -602,7 +599,7 @@ describe('GitLab and Gitea full+active self-service', () => {
     assertWhoamiDeviceOwner(whoami, {
       deviceId: paired.deviceId,
       fingerprint: paired.identity.fingerprint,
-      userId: gitea.body.id,
+      userId: admin.body.id,
     })
     assertNoPlaintextOrHash(parseJson(whoami), [created.json().token])
   })

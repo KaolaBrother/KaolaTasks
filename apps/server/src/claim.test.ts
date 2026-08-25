@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseTaskBrief } from '@kaola/shared'
 import { createDb } from './db.ts'
-import { injectSigned, pairDeviceToSelf, generateDeviceIdentity } from './device-proof.test-helpers.ts'
+import { injectSigned, pairDeviceToSelf, pairDeviceToClaimant, generateDeviceIdentity } from './device-proof.test-helpers.ts'
 import { ensureSetup } from './auth.test-helpers.ts'
 
 // Issue #9 REST claim / progress / release. Seams copied from tasks.test.ts (do not import that file).
@@ -74,20 +74,10 @@ applyOauthTestEnv()
 const { buildApp } = await import('./app.ts')
 
 const PROVIDERS = {
-  github: {
-    decoratorName: 'githubOAuth2',
-    startPath: '/login/github',
-    callbackPath: '/login/github/callback',
-  },
   gitlab: {
     decoratorName: 'gitlabOAuth2',
     startPath: '/login/gitlab',
     callbackPath: '/login/gitlab/callback',
-  },
-  gitea: {
-    decoratorName: 'giteaOAuth2',
-    startPath: '/login/gitea',
-    callbackPath: '/login/gitea/callback',
   },
 }
 
@@ -1188,13 +1178,13 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       assertNoForgeSecretMaterial(res, INLINE_TOKEN)
     })
 
-    test('active full can claim', async (t) => {
+    test('active admin can claim via bind_to_self', async (t) => {
       const clock = freezeNow(t)
       const { app, stub } = await boot(t, { admins: 'gitea:gt-full-claimer' })
       const poster = await loginGitlab(app, stub, 'full-poster')
       const claimer = await loginGitea(app, stub, 'full-claimer')
       assert.equal(claimer.body.status, 'active')
-      assert.equal(claimer.body.permission_level, 'full')
+      assert.equal(claimer.body.permission_level, 'admin')
       const { brief } = await createTaskOk(app, poster.cookies)
       const key = await mintAgentKey(app, claimer.cookies, 'full-bot')
       const res = await claimTask(app, { identity: key.identity, publicId: brief.id })
@@ -1215,9 +1205,10 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       allowForgeToken(stub, INLINE_TOKEN)
       const poster = await loginGitea(app, stub, 'first-holder')
       const other = await loginGitlab(app, stub, 'second-claimer')
+      assert.equal(other.body.permission_level, 'full')
       const { brief } = await createTaskOk(app, poster.cookies)
       const firstKey = await mintAgentKey(app, poster.cookies, 'holder')
-      const otherKey = await mintAgentKey(app, other.cookies, 'rival')
+      const otherKey = await pairDeviceToClaimant(app, poster.cookies, 'rival', { hostname: 'rival' })
 
       const first = await claimTask(app, { identity: firstKey.identity, publicId: brief.id })
       assert.equal(first.statusCode, 201, `first claim: ${first.statusCode} ${first.body}`)
@@ -1279,9 +1270,10 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       const { app, stub } = await boot(t, { admins: 'gitlab:gl-bystander' })
       const poster = await loginGitea(app, stub, 'holder')
       const other = await loginGitlab(app, stub, 'bystander')
+      assert.equal(other.body.permission_level, 'full')
       const { brief } = await createTaskOk(app, poster.cookies)
       const holderKey = await mintAgentKey(app, poster.cookies, 'holder-key')
-      const otherKey = await mintAgentKey(app, other.cookies, 'bystander-key')
+      const otherKey = await pairDeviceToClaimant(app, poster.cookies, 'bystander', { hostname: 'bystander-key' })
 
       const claimed = await claimTask(app, { identity: holderKey.identity, publicId: brief.id })
       assert.equal(claimed.statusCode, 201, `claim: ${claimed.statusCode} ${claimed.body}`)
@@ -1571,9 +1563,10 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       allowForgeToken(stub, INLINE_TOKEN)
       const poster = await loginGitea(app, stub, 'expiry-reclaim-owner')
       const other = await loginGitlab(app, stub, 'expiry-reclaim-other')
+      assert.equal(other.body.permission_level, 'full')
       const { brief } = await createTaskOk(app, poster.cookies)
       const firstKey = await mintAgentKey(app, poster.cookies, 'first')
-      const secondKey = await mintAgentKey(app, other.cookies, 'second')
+      const secondKey = await pairDeviceToClaimant(app, poster.cookies, 'second', { hostname: 'second' })
 
       const first = await claimTask(app, { identity: firstKey.identity, publicId: brief.id })
       assert.equal(first.statusCode, 201, `first claim: ${first.statusCode} ${first.body}`)
@@ -1698,7 +1691,8 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       assert.equal(activeLeaseRows(db, task.id).length, 1)
 
       const rival = await loginGitlab(app, stub, 'lease-rival')
-      const rivalKey = await mintAgentKey(app, rival.cookies, 'rival')
+      assert.equal(rival.body.permission_level, 'full')
+      const rivalKey = await pairDeviceToClaimant(app, poster.cookies, 'lease-rival', { hostname: 'rival' })
       const second = await claimTask(app, { identity: rivalKey.identity, publicId: brief.id })
       assert.equal(second.statusCode, 409)
       assert.equal(activeLeaseRows(db, task.id).length, 1)

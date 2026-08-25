@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseTaskBrief } from '@kaola/shared'
 import { createDb } from './db.ts'
-import { injectSigned, pairDeviceToSelf } from './device-proof.test-helpers.ts'
+import { injectSigned, pairDeviceToSelf, pairDeviceToClaimant } from './device-proof.test-helpers.ts'
 import { ensureSetup } from './auth.test-helpers.ts'
 
 // Issue #10 MCP server. Seams copied from claim.test.ts (do not import that file).
@@ -85,20 +85,10 @@ applyOauthTestEnv()
 const { buildApp } = await import('./app.ts')
 
 const PROVIDERS = {
-  github: {
-    decoratorName: 'githubOAuth2',
-    startPath: '/login/github',
-    callbackPath: '/login/github/callback',
-  },
   gitlab: {
     decoratorName: 'gitlabOAuth2',
     startPath: '/login/gitlab',
     callbackPath: '/login/gitlab/callback',
-  },
-  gitea: {
-    decoratorName: 'giteaOAuth2',
-    startPath: '/login/gitea',
-    callbackPath: '/login/gitea/callback',
   },
 }
 
@@ -1298,9 +1288,10 @@ describe('issue #10 MCP server', { concurrency: false }, () => {
       const { app, stub } = await boot(t, sqlitePath, { admins: 'gitlab:gl-rival' })
       const poster = await loginGitea(app, stub, 'second-claim')
       const other = await loginGitlab(app, stub, 'rival')
+      assert.equal(other.body.permission_level, 'full')
       const { brief } = await createTaskOk(app, poster.cookies)
       const firstKey = await mintAgentKey(app, poster.cookies, 'holder')
-      const rivalKey = await mintAgentKey(app, other.cookies, 'rival')
+      const rivalKey = await pairDeviceToClaimant(app, poster.cookies, 'rival', { hostname: 'rival' })
       const holder = await readyMcp(app, firstKey.identity)
       const rival = await readyMcp(app, rivalKey.identity)
 
@@ -1440,9 +1431,10 @@ describe('issue #10 MCP server', { concurrency: false }, () => {
       const { app, stub } = await boot(t, { admins: 'gitlab:gl-bystander' })
       const poster = await loginGitea(app, stub, 'holder')
       const other = await loginGitlab(app, stub, 'bystander')
+      assert.equal(other.body.permission_level, 'full')
       const { brief } = await createTaskOk(app, poster.cookies)
       const holderKey = await mintAgentKey(app, poster.cookies, 'holder-key')
-      const otherKey = await mintAgentKey(app, other.cookies, 'bystander-key')
+      const otherKey = await pairDeviceToClaimant(app, poster.cookies, 'bystander', { hostname: 'bystander-key' })
       assert.equal(
         (await claimTaskHttp(app, { token: holderKey.identity, publicId: brief.id })).statusCode,
         201,
@@ -1548,11 +1540,12 @@ describe('issue #10 MCP server', { concurrency: false }, () => {
       const { app, stub } = await boot(t, sqlitePath, { admins: 'gitlab:gl-submit-fail-other' })
       const poster = await loginGitea(app, stub, 'submit-fail-owner')
       const other = await loginGitlab(app, stub, 'submit-fail-other')
+      assert.equal(other.body.permission_level, 'full')
       const live = await createTaskOk(app, poster.cookies)
       const unused = await createTaskOk(app, poster.cookies, taskPayload({ title: '从未认领' }))
       const cancelled = await createTaskOk(app, poster.cookies, taskPayload({ title: '将取消' }))
       const holderKey = await mintAgentKey(app, poster.cookies, 'holder')
-      const otherKey = await mintAgentKey(app, other.cookies, 'other')
+      const otherKey = await pairDeviceToClaimant(app, poster.cookies, 'other', { hostname: 'other' })
       assert.equal(
         (await claimTaskHttp(app, { token: holderKey.identity, publicId: live.brief.id })).statusCode,
         201,

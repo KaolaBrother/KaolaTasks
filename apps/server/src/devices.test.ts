@@ -43,20 +43,10 @@ applyOauthTestEnv()
 const { buildApp } = await import('./app.ts')
 
 const PROVIDERS = {
-  github: {
-    decoratorName: 'githubOAuth2',
-    startPath: '/login/github',
-    callbackPath: '/login/github/callback',
-  },
   gitlab: {
     decoratorName: 'gitlabOAuth2',
     startPath: '/login/gitlab',
     callbackPath: '/login/gitlab/callback',
-  },
-  gitea: {
-    decoratorName: 'giteaOAuth2',
-    startPath: '/login/gitea',
-    callbackPath: '/login/gitea/callback',
   },
 }
 

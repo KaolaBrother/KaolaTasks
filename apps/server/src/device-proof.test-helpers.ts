@@ -247,6 +247,17 @@ export async function pairDeviceToSelf(
   return pairDevice(app, admin.cookies, { bind_to_self: true }, opts)
 }
 
+/** Bind a pending device to a new claimant. `cookies` must be an admin session — publishers cannot bind. */
+export async function pairDeviceToClaimant(
+  app: FastifyInstance,
+  cookies: Record<string, string> | undefined,
+  claimantDisplayName: string,
+  opts?: { hostname?: string },
+) {
+  const paired = await pairDevice(app, cookies, { claimant_display_name: claimantDisplayName }, opts)
+  return { id: paired.deviceId, identity: paired.identity, deviceId: paired.deviceId }
+}
+
 function bodyBytes(body: DeviceProofBody | object): Buffer {
   if (body == null || body === '') return Buffer.alloc(0)
   if (Buffer.isBuffer(body)) return body

@@ -49,13 +49,9 @@ const { buildApp } = await import('./app.ts')
 const { createDb } = await import('./db.ts')
 
 const PROVIDERS = {
-  github: {
-    decoratorName: 'githubOAuth2',
-    callbackPath: '/login/github/callback',
-  },
-  gitea: {
-    decoratorName: 'giteaOAuth2',
-    callbackPath: '/login/gitea/callback',
+  gitlab: {
+    decoratorName: 'gitlabOAuth2',
+    callbackPath: '/login/gitlab/callback',
   },
 }
 
