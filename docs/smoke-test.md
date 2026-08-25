@@ -76,6 +76,12 @@
 
 不要点「使用 Gitea 登录」。
 
+### Cloud Agent 续测（2026-08-25）
+
+在 Cursor Cloud Agent 这台机器上（不是笔记本）：`pnpm dev` 已在 `http://localhost:31415`。未登录 `GET /api/v1/me`（`Accept: application/json`）为 401。浏览器打开 `/login` 可见三家登录；点「使用 GitLab 登录」会跳到 gitlab.com，但 Cloud Agent 浏览器被 Cloudflare 人机验证挡住，**网页 Authorize 仍须在你本机配合**。
+
+用环境里的 `GITLAB_TOKEN` / `GITEA_TOKEN`（账号均为 `KaolaBrother`）走完一轮真实 forge 闭环（注入会话 bootstrap，不经过浏览器 cookie）：凭证档案 → 列出 Issue → 导入并发布 → 电脑绑到自己 → MCP `claim_task` / clone / 推分支 / 开 PR / `submit_pr` / 合并 / 轮询 `已完成`。GitLab [Issue #4](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/issues/4) → [MR !3](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/merge_requests/3)（另有同轮先开的 [MR !2](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/merge_requests/2) 已合）。Gitea [Issue #5](https://gitea.com/KaolaBrother/kaola-tasks-smoke/issues/5) → [PR #6](https://gitea.com/KaolaBrother/kaola-tasks-smoke/pulls/6)。两源 Issue 都有认领 / 提交PR / 完成回写。Git clone：GitLab 用 Basic `oauth2:token`，Gitea 用信封 `Authorization: token …`；remote URL 无凭证。
+
 **不要**生成 Agent Key，**不要**配 `KAOLA_AGENT_KEY`，**不要**重开或改 #22。
 
 ## 本轮之后（不写入本表状态，只作规划）
