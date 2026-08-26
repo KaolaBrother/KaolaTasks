@@ -1,0 +1,4099 @@
+=== pnpm test ===
+TAP version 13
+# (node:12704) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: @kaola/mcp package
+    # Subtest: package.json is @kaola/mcp ESM, Node >=22, bin kaola-mcp
+    ok 1 - package.json is @kaola/mcp ESM, Node >=22, bin kaola-mcp
+      ---
+      duration_ms: 0.659026
+      ...
+    # Subtest: committed mcp.json example is command plus url and contains no secrets
+    ok 2 - committed mcp.json example is command plus url and contains no secrets
+      ---
+      duration_ms: 0.62374
+      ...
+    1..2
+ok 1 - @kaola/mcp package
+  ---
+  duration_ms: 1.83004
+  type: 'suite'
+  ...
+# Subtest: resolveKaolaUrl
+    # Subtest: --url wins, then KAOLA_URL, then localhost:31415; trailing slash is stripped
+    ok 1 - --url wins, then KAOLA_URL, then localhost:31415; trailing slash is stripped
+      ---
+      duration_ms: 69.238249
+      ...
+    1..1
+ok 2 - resolveKaolaUrl
+  ---
+  duration_ms: 69.390544
+  type: 'suite'
+  ...
+# Subtest: ensureDeviceIdentity
+    # Subtest: creates ~/.kaola-shaped dir 0700 and device.json 0600 Ed25519 PKCS8+SPKI when missing
+    ok 1 - creates ~/.kaola-shaped dir 0700 and device.json 0600 Ed25519 PKCS8+SPKI when missing
+      ---
+      duration_ms: 4.104845
+      ...
+    1..1
+ok 3 - ensureDeviceIdentity
+  ---
+  duration_ms: 4.292241
+  type: 'suite'
+  ...
+# Subtest: forwardMcpRequest
+    # Subtest: POSTs to {url}/api/mcp with canonical device proof headers
+    ok 1 - POSTs to {url}/api/mcp with canonical device proof headers
+      ---
+      duration_ms: 27.673885
+      ...
+    # Subtest: HTTP 202 authorization_required becomes a JSON-RPC error, never a successful token result
+    ok 2 - HTTP 202 authorization_required becomes a JSON-RPC error, never a successful token result
+      ---
+      duration_ms: 8.551726
+      ...
+    # Subtest: successful claim JSON-RPC may contain token but KAOLA_HOME never stores it
+    ok 3 - successful claim JSON-RPC may contain token but KAOLA_HOME never stores it
+      ---
+      duration_ms: 5.684001
+      ...
+    1..3
+ok 4 - forwardMcpRequest
+  ---
+  duration_ms: 42.231849
+  type: 'suite'
+  ...
+# Subtest: stdio bridge Streamable HTTP session
+    # Subtest: captures MCP-Session-Id from initialize without putting it on the JSON-RPC body
+    ok 1 - captures MCP-Session-Id from initialize without putting it on the JSON-RPC body
+      ---
+      duration_ms: 9.150647
+      ...
+    # Subtest: runStdioBridge session replay
+        # Subtest: replays captured mcp-session-id on the next stdin tools/list
+        ok 1 - replays captured mcp-session-id on the next stdin tools/list
+          ---
+          duration_ms: 10.610308
+          ...
+        # Subtest: omits mcp-session-id on later stdin when initialize response had no such header
+        ok 2 - omits mcp-session-id on later stdin when initialize response had no such header
+          ---
+          duration_ms: 11.068363
+          ...
+        1..2
+    ok 2 - runStdioBridge session replay
+      ---
+      duration_ms: 21.806734
+      type: 'suite'
+      ...
+    1..2
+ok 5 - stdio bridge Streamable HTTP session
+  ---
+  duration_ms: 31.04991
+  type: 'suite'
+  ...
+# (node:12705) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: unauthenticated session agent-key routes
+    # Subtest: JSON Accept is 401 unauthorized without WWW-Authenticate; browser-like requests redirect to /login
+    ok 1 - JSON Accept is 401 unauthorized without WWW-Authenticate; browser-like requests redirect to /login
+      ---
+      duration_ms: 71.605896
+      ...
+    1..1
+ok 6 - unauthenticated session agent-key routes
+  ---
+  duration_ms: 72.210963
+  type: 'suite'
+  ...
+# Subtest: GET /api/v1/agent/whoami device-proof failures
+    # Subtest: missing, leftover ktk_, and non-device credentials are 401 with WWW-Authenticate Kaola-Device
+    ok 1 - missing, leftover ktk_, and non-device credentials are 401 with WWW-Authenticate Kaola-Device
+      ---
+      duration_ms: 29.450265
+      ...
+    # Subtest: a session cookie does not authorize whoami; GET /api/v1/me does not accept Bearer
+    ok 2 - a session cookie does not authorize whoami; GET /api/v1/me does not accept Bearer
+      ---
+      duration_ms: 81.590348
+      ...
+    1..2
+ok 7 - GET /api/v1/agent/whoami device-proof failures
+  ---
+  duration_ms: 111.280442
+  type: 'suite'
+  ...
+# Subtest: leftover 待批准 GitHub cannot generate Agent Keys
+    # Subtest: leftover 待批准 GitHub POST /api/v1/agent-keys returns 403 with the generate-gate message
+    ok 1 - leftover 待批准 GitHub POST /api/v1/agent-keys returns 403 with the generate-gate message
+      ---
+      duration_ms: 81.28474
+      ...
+    1..1
+ok 8 - leftover 待批准 GitHub cannot generate Agent Keys
+  ---
+  duration_ms: 81.430784
+  type: 'suite'
+  ...
+# Subtest: leftover GitHub claim_only session CRUD (unused-compat)
+    # Subtest: leftover active claim_only can generate, list without plaintext, and revoke; leftover ktk_ is not whoami
+    ok 1 - leftover active claim_only can generate, list without plaintext, and revoke; leftover ktk_ is not whoami
+      ---
+      duration_ms: 111.076354
+      ...
+    1..1
+ok 9 - leftover GitHub claim_only session CRUD (unused-compat)
+  ---
+  duration_ms: 111.323962
+  type: 'suite'
+  ...
+# Subtest: GitLab and Gitea full+active self-service
+    # Subtest: GitLab full+active can generate keys without VAULT_MASTER_KEY; GET / stays 考拉任务服务占位
+    ok 1 - GitLab full+active can generate keys without VAULT_MASTER_KEY; GET / stays 考拉任务服务占位
+      ---
+      duration_ms: 73.789835
+      ...
+    # Subtest: Gitea full+active can generate, list, and use device-proof whoami
+    ok 2 - Gitea full+active can generate, list, and use device-proof whoami
+      ---
+      duration_ms: 72.188663
+      ...
+    1..2
+ok 10 - GitLab and Gitea full+active self-service
+  ---
+  duration_ms: 146.185548
+  type: 'suite'
+  ...
+# Subtest: list and revoke are own keys only
+    # Subtest: a full member cannot list or revoke another user's key; missing and not-owned DELETE are 404 not_found
+    ok 1 - a full member cannot list or revoke another user's key; missing and not-owned DELETE are 404 not_found
+      ---
+      duration_ms: 53.782568
+      ...
+    1..1
+ok 11 - list and revoke are own keys only
+  ---
+  duration_ms: 53.881452
+  type: 'suite'
+  ...
+# Subtest: agent_keys hashed storage
+    # Subtest: SQLite stores sha256 hex of plaintext utf8, never the token, unique key_hash; failed Bearer does not set last_used_at
+    ok 1 - SQLite stores sha256 hex of plaintext utf8, never the token, unique key_hash; failed Bearer does not set last_used_at
+      ---
+      duration_ms: 82.399338
+      ...
+    1..1
+ok 12 - agent_keys hashed storage
+  ---
+  duration_ms: 82.501388
+  type: 'suite'
+  ...
+# (node:12706) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: HTTPS PUBLIC_URL cookie Secure
+    # Subtest: POST /api/v1/setup session Set-Cookie includes Secure when PUBLIC_URL is https
+    ok 1 - POST /api/v1/setup session Set-Cookie includes Secure when PUBLIC_URL is https
+      ---
+      duration_ms: 114.365907
+      ...
+    # Subtest: GET /login/gitlab OAuth state Set-Cookie includes Secure when PUBLIC_URL is https
+    ok 2 - GET /login/gitlab OAuth state Set-Cookie includes Secure when PUBLIC_URL is https
+      ---
+      duration_ms: 63.249615
+      ...
+    # Subtest: login callback session Set-Cookie includes Secure behind X-Forwarded-Proto https (loopback peer)
+    ok 3 - login callback session Set-Cookie includes Secure behind X-Forwarded-Proto https (loopback peer)
+      ---
+      duration_ms: 56.499121
+      ...
+    # Subtest: login callback session Set-Cookie includes Secure behind X-Forwarded-Proto https (docker-bridge peer)
+    ok 4 - login callback session Set-Cookie includes Secure behind X-Forwarded-Proto https (docker-bridge peer)
+      ---
+      duration_ms: 48.694395
+      ...
+    # Subtest: untrusted public peer cannot mint a Secure session cookie via spoofed X-Forwarded-Proto
+    ok 5 - untrusted public peer cannot mint a Secure session cookie via spoofed X-Forwarded-Proto
+      ---
+      duration_ms: 63.723404
+      ...
+    1..5
+ok 13 - HTTPS PUBLIC_URL cookie Secure
+  ---
+  duration_ms: 347.421735
+  type: 'suite'
+  ...
+# (node:12737) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: login start paths
+    # Subtest: GET /login is allowed without a session
+    ok 1 - GET /login is allowed without a session
+      ---
+      duration_ms: 66.138204
+      ...
+    # Subtest: GET /login/github is 404
+    ok 2 - GET /login/github is 404
+      ---
+      duration_ms: 12.162018
+      ...
+    # Subtest: GET /login/gitlab redirects to the configured GitLab authorize URL after setup
+    ok 3 - GET /login/gitlab redirects to the configured GitLab authorize URL after setup
+      ---
+      duration_ms: 75.874013
+      ...
+    # Subtest: GET /login/gitea redirects to the configured Gitea authorize URL after setup
+    ok 4 - GET /login/gitea redirects to the configured Gitea authorize URL after setup
+      ---
+      duration_ms: 48.683502
+      ...
+    1..4
+ok 14 - login start paths
+  ---
+  duration_ms: 203.782239
+  type: 'suite'
+  ...
+# Subtest: unauthenticated GET /api/v1/me
+    # Subtest: browser-like GET /api/v1/me redirects to /login and does not return a user
+    ok 1 - browser-like GET /api/v1/me redirects to /login and does not return a user
+      ---
+      duration_ms: 9.435366
+      ...
+    # Subtest: JSON GET /api/v1/me without a session returns 401 and does not return a user
+    ok 2 - JSON GET /api/v1/me without a session returns 401 and does not return a user
+      ---
+      duration_ms: 11.095072
+      ...
+    1..2
+ok 15 - unauthenticated GET /api/v1/me
+  ---
+  duration_ms: 20.757495
+  type: 'suite'
+  ...
+# Subtest: OAuth publishers after setup
+    # Subtest: session Set-Cookie does not include Secure when PUBLIC_URL is http://localhost
+    ok 1 - session Set-Cookie does not include Secure when PUBLIC_URL is http://localhost
+      ---
+      duration_ms: 105.257245
+      ...
+    # Subtest: GitLab after setup persists active full publisher
+    ok 2 - GitLab after setup persists active full publisher
+      ---
+      duration_ms: 55.054099
+      ...
+    # Subtest: Gitea after setup persists active full publisher; display_name falls back to login
+    ok 3 - Gitea after setup persists active full publisher; display_name falls back to login
+      ---
+      duration_ms: 74.779609
+      ...
+    # Subtest: second GitLab callback with the same remote_id reuses the same user id
+    ok 4 - second GitLab callback with the same remote_id reuses the same user id
+      ---
+      duration_ms: 52.980978
+      ...
+    1..4
+ok 16 - OAuth publishers after setup
+  ---
+  duration_ms: 288.457992
+  type: 'suite'
+  ...
+# Subtest: leftover 待批准 via GitLab reuse; approve retired
+    # Subtest: seeded leftover 待批准 GitLab user cannot call retired approve (404)
+    ok 1 - seeded leftover 待批准 GitLab user cannot call retired approve (404)
+      ---
+      duration_ms: 85.986476
+      ...
+    1..1
+ok 17 - leftover 待批准 via GitLab reuse; approve retired
+  ---
+  duration_ms: 90.052129
+  type: 'suite'
+  ...
+# Subtest: KAOLA_ADMINS
+    # Subtest: empty KAOLA_ADMINS still buildApp() and GitHub login stays 404
+    ok 1 - empty KAOLA_ADMINS still buildApp() and GitHub login stays 404
+      ---
+      duration_ms: 11.783217
+      ...
+    # Subtest: KAOLA_ADMINS github:octo-admin is ignored and does not insert github login
+    ok 2 - KAOLA_ADMINS github:octo-admin is ignored and does not insert github login
+      ---
+      duration_ms: 82.346372
+      ...
+    1..2
+ok 18 - KAOLA_ADMINS
+  ---
+  duration_ms: 94.246729
+  type: 'suite'
+  ...
+# Subtest: revoked re-login
+    # Subtest: revoked GitLab user re-login does not become active and does not set a session
+    ok 1 - revoked GitLab user re-login does not become active and does not set a session
+      ---
+      duration_ms: 55.677119
+      ...
+    1..1
+ok 19 - revoked re-login
+  ---
+  duration_ms: 55.757649
+  type: 'suite'
+  ...
+# (node:12748) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: issue \#16 claim-confirmation for autonomous polling agents
+    # Subtest: instructed claims stay MVP 认领即授权 (comment overrides the issue body)
+        # Subtest: no body and explicit autonomous:false both still return 201 with a token (assertClaim201 shape unchanged)
+        ok 1 - no body and explicit autonomous:false both still return 201 with a token (assertClaim201 shape unchanged)
+          ---
+          duration_ms: 179.089764
+          ...
+        # Subtest: MCP claim_task without autonomous still returns the token envelope
+        ok 2 - MCP claim_task without autonomous still returns the token envelope
+          ---
+          duration_ms: 100.602968
+          ...
+        # Subtest: instructed claim ignores a leftover rejected confirmation row for the same (task, user, key)
+        ok 3 - instructed claim ignores a leftover rejected confirmation row for the same (task, user, key)
+          ---
+          duration_ms: 105.028899
+          ...
+        1..3
+    ok 1 - instructed claims stay MVP 认领即授权 (comment overrides the issue body)
+      ---
+      duration_ms: 385.3328
+      type: 'suite'
+      ...
+    # Subtest: autonomous claim gate — 待批准 first
+        # Subtest: 待批准 users are still 403 before the autonomous gate, even with autonomous:true
+        ok 1 - 待批准 users are still 403 before the autonomous gate, even with autonomous:true
+          ---
+          duration_ms: 75.401057
+          ...
+        1..1
+    ok 2 - autonomous claim gate — 待批准 first
+      ---
+      duration_ms: 75.607651
+      type: 'suite'
+      ...
+    # Subtest: autonomous claim gate — automation off (default)
+        # Subtest: autonomous + off + unconfirmed → 202 confirmation_required; no token; no token 揭示; task stays 待认领; writes 认领待确认
+        ok 1 - autonomous + off + unconfirmed → 202 confirmation_required; no token; no token 揭示; task stays 待认领; writes 认领待确认
+          ---
+          duration_ms: 98.298917
+          ...
+        # Subtest: MCP claim_task autonomous:true pending is isError false, structuredContent { pending:true, error:confirmation_required }, no token
+        ok 2 - MCP claim_task autonomous:true pending is isError false, structuredContent { pending:true, error:confirmation_required }, no token
+          ---
+          duration_ms: 70.038651
+          ...
+        # Subtest: idempotent re-request while pending returns 202 again and reuses one pending row
+        ok 3 - idempotent re-request while pending returns 202 again and reuses one pending row
+          ---
+          duration_ms: 101.160126
+          ...
+        1..3
+    ok 3 - autonomous claim gate — automation off (default)
+      ---
+      duration_ms: 269.815995
+      type: 'suite'
+      ...
+    # Subtest: settings — trusted_automation
+        # Subtest: GET /api/v1/me defaults trusted_automation false; PUT settings true unlocks 直通 201; PUT false again reinstates 202
+        ok 1 - GET /api/v1/me defaults trusted_automation false; PUT settings true unlocks 直通 201; PUT false again reinstates 202
+          ---
+          duration_ms: 81.839068
+          ...
+        # Subtest: trusted_automation persists across a new buildApp on the same sqlite file path
+        ok 2 - trusted_automation persists across a new buildApp on the same sqlite file path
+          ---
+          duration_ms: 122.091628
+          ...
+        1..2
+    ok 4 - settings — trusted_automation
+      ---
+      duration_ms: 204.121013
+      type: 'suite'
+      ...
+    # Subtest: approve / reject a pending claim confirmation (session, not Bearer)
+        # Subtest: approve consumes the pending row: agent retry succeeds; approve itself reveals no token, inserts no lease, flips no status
+        ok 1 - approve consumes the pending row: agent retry succeeds; approve itself reveals no token, inserts no lease, flips no status
+          ---
+          duration_ms: 96.654262
+          ...
+        # Subtest: MCP: approve a pending confirmation then retry claim_task succeeds with a token
+        ok 2 - MCP: approve a pending confirmation then retry claim_task succeeds with a token
+          ---
+          duration_ms: 58.754346
+          ...
+        # Subtest: reject sets state rejected; retry of autonomous claim starts a fresh pending, still no token
+        ok 3 - reject sets state rejected; retry of autonomous claim starts a fresh pending, still no token
+          ---
+          duration_ms: 102.984633
+          ...
+        # Subtest: approve/reject on another user's confirmation id is 404; GET list only shows the current user's rows
+        ok 4 - approve/reject on another user's confirmation id is 404; GET list only shows the current user's rows
+          ---
+          duration_ms: 99.007315
+          ...
+        1..4
+    ok 5 - approve / reject a pending claim confirmation (session, not Bearer)
+      ---
+      duration_ms: 357.631871
+      type: 'suite'
+      ...
+    # Subtest: authentication sanity around the new surfaces
+        # Subtest: an unauthenticated session cannot read or act on claim-confirmations, and Bearer alone does not authorize them
+        ok 1 - an unauthenticated session cannot read or act on claim-confirmations, and Bearer alone does not authorize them
+          ---
+          duration_ms: 42.940286
+          ...
+        # Subtest: claimant-owned device skips \#16: autonomous claim is 201 with token, no confirmation row
+        ok 2 - claimant-owned device skips \#16: autonomous claim is 201 with token, no confirmation row
+          ---
+          duration_ms: 55.69104
+          ...
+        1..2
+    ok 6 - authentication sanity around the new surfaces
+      ---
+      duration_ms: 98.764214
+      type: 'suite'
+      ...
+    1..6
+ok 20 - issue \#16 claim-confirmation for autonomous polling agents
+  ---
+  duration_ms: 1391.783413
+  type: 'suite'
+  ...
+# (node:12759) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: issue \#9 lease-based claiming
+    # Subtest: authentication — device proof
+        # Subtest: unauthenticated claim, progress, and release are 401 unauthorized with WWW-Authenticate Kaola-Device
+        ok 1 - unauthenticated claim, progress, and release are 401 unauthorized with WWW-Authenticate Kaola-Device
+          ---
+          duration_ms: 138.371617
+          ...
+        # Subtest: signed unpaired device proof on claim is 202 authorization_required with no token and no lease
+        ok 2 - signed unpaired device proof on claim is 202 authorization_required with no token and no lease
+          ---
+          duration_ms: 80.170878
+          ...
+        # Subtest: wrong and non-device credentials are 401 with WWW-Authenticate Kaola-Device
+        ok 3 - wrong and non-device credentials are 401 with WWW-Authenticate Kaola-Device
+          ---
+          duration_ms: 52.736212
+          ...
+        # Subtest: a session cookie without Bearer does not authorize claim, progress, or release
+        ok 4 - a session cookie without Bearer does not authorize claim, progress, or release
+          ---
+          duration_ms: 64.452457
+          ...
+        # Subtest: unknown publicId with a valid Bearer key is 404 not_found
+        ok 5 - unknown publicId with a valid Bearer key is 404 not_found
+          ---
+          duration_ms: 67.162843
+          ...
+        # Subtest: numeric PK in the path with a valid Bearer key is 404 not_found
+        ok 6 - numeric PK in the path with a valid Bearer key is 404 not_found
+          ---
+          duration_ms: 68.967445
+          ...
+        1..6
+    ok 1 - authentication — device proof
+      ---
+      duration_ms: 472.737715
+      type: 'suite'
+      ...
+    # Subtest: POST /api/v1/tasks/:publicId/claim — 201 envelope
+        # Subtest: claiming an inline task returns 201 with task, forge token, lease TTL, and clone guidance
+        ok 1 - claiming an inline task returns 201 with task, forge token, lease TTL, and clone guidance
+          ---
+          duration_ms: 56.651531
+          ...
+        # Subtest: claiming a profile task returns 201; credential stays { profile_id }; token is the profile forge plaintext
+        ok 2 - claiming a profile task returns 201; credential stays { profile_id }; token is the profile forge plaintext
+          ---
+          duration_ms: 59.221872
+          ...
+        # Subtest: claiming a second publicId returns that task's token, not the first task's
+        ok 3 - claiming a second publicId returns that task's token, not the first task's
+          ---
+          duration_ms: 70.102221
+          ...
+        # Subtest: claiming a github task returns Bearer extra_header and a web-origin remote_url, not api.github.com
+        ok 4 - claiming a github task returns Bearer extra_header and a web-origin remote_url, not api.github.com
+          ---
+          duration_ms: 59.630297
+          ...
+        # Subtest: claiming a gitlab subgroup task keeps slashes in remote_url and uses Bearer extra_header
+        ok 5 - claiming a gitlab subgroup task keeps slashes in remote_url and uses Bearer extra_header
+          ---
+          duration_ms: 52.670622
+          ...
+        # Subtest: claim remote_url strips trailing slashes from stored repo.base_url
+        ok 6 - claim remote_url strips trailing slashes from stored repo.base_url
+          ---
+          duration_ms: 52.731791
+          ...
+        # Subtest: session GET list and GET one after a successful claim still omit forge token and secret keys
+        ok 7 - session GET list and GET one after a successful claim still omit forge token and secret keys
+          ---
+          duration_ms: 53.347471
+          ...
+        1..7
+    ok 2 - POST /api/v1/tasks/:publicId/claim — 201 envelope
+      ---
+      duration_ms: 404.840701
+      type: 'suite'
+      ...
+    # Subtest: AuthZ
+        # Subtest: leftover ktk_ Bearer is 401 unauthorized, not a claim identity, and writes no token 揭示
+        ok 1 - leftover ktk_ Bearer is 401 unauthorized, not a claim identity, and writes no token 揭示
+          ---
+          duration_ms: 69.596693
+          ...
+        # Subtest: leftover claim_only session cannot bind a device, and leftover ktk_ cannot claim
+        ok 2 - leftover claim_only session cannot bind a device, and leftover ktk_ cannot claim
+          ---
+          duration_ms: 74.425069
+          ...
+        # Subtest: active admin can claim via bind_to_self
+        ok 3 - active admin can claim via bind_to_self
+          ---
+          duration_ms: 56.458019
+          ...
+        1..3
+    ok 3 - AuthZ
+      ---
+      duration_ms: 200.668381
+      type: 'suite'
+      ...
+    # Subtest: conflicts / illegal states
+        # Subtest: second claim while 进行中 is 409 conflict, no token, and no second reveal
+        ok 1 - second claim while 进行中 is 409 conflict, no token, and no second reveal
+          ---
+          duration_ms: 128.779442
+          ...
+        # Subtest: claiming a 已取消 task is 409 illegal_transition
+        ok 2 - claiming a 已取消 task is 409 illegal_transition
+          ---
+          duration_ms: 56.612018
+          ...
+        # Subtest: claiming a 待验收 task is 409 illegal_transition
+        ok 3 - claiming a 待验收 task is 409 illegal_transition
+          ---
+          duration_ms: 66.296484
+          ...
+        # Subtest: progress and release by a non-holder are 403 forbidden
+        ok 4 - progress and release by a non-holder are 403 forbidden
+          ---
+          duration_ms: 54.816585
+          ...
+        # Subtest: progress and release with no live lease are 409 conflict 任务未被认领
+        ok 5 - progress and release with no live lease are 409 conflict 任务未被认领
+          ---
+          duration_ms: 44.691001
+          ...
+        # Subtest: progress and release after the holder released are 409 任务未被认领
+        ok 6 - progress and release after the holder released are 409 任务未被认领
+          ---
+          duration_ms: 51.78024
+          ...
+        1..6
+    ok 4 - conflicts / illegal states
+      ---
+      duration_ms: 403.24859
+      type: 'suite'
+      ...
+    # Subtest: heartbeat
+        # Subtest: omitted note still renews expires_at from heartbeat time and writes 心跳 with note empty string
+        ok 1 - omitted note still renews expires_at from heartbeat time and writes 心跳 with note empty string
+          ---
+          duration_ms: 118.909876
+          ...
+        # Subtest: a progress note is persisted on the 心跳 event; empty note still renews
+        ok 2 - a progress note is persisted on the 心跳 event; empty note still renews
+          ---
+          duration_ms: 84.233309
+          ...
+        1..2
+    ok 5 - heartbeat
+      ---
+      duration_ms: 203.281233
+      type: 'suite'
+      ...
+    # Subtest: release
+        # Subtest: holder release returns 200 { task } 待认领, marks the lease released, and writes 状态迁移 without reason
+        ok 1 - holder release returns 200 { task } 待认领, marks the lease released, and writes 状态迁移 without reason
+          ---
+          duration_ms: 83.640486
+          ...
+        # Subtest: release with reason stores reason on the 状态迁移 event
+        ok 2 - release with reason stores reason on the 状态迁移 event
+          ---
+          duration_ms: 67.249476
+          ...
+        1..2
+    ok 6 - release
+      ---
+      duration_ms: 151.024813
+      type: 'suite'
+      ...
+    # Subtest: expiry
+        # Subtest: check-on-read: after TTL, session GET list and GET one show 待认领, lease expired, actor_user_id null, reveal rows unchanged
+        ok 1 - check-on-read: after TTL, session GET list and GET one show 待认领, lease expired, actor_user_id null, reveal rows unchanged
+          ---
+          duration_ms: 73.715515
+          ...
+        # Subtest: check-on-write: after TTL, progress sweeps then returns 409 任务未被认领
+        ok 2 - check-on-write: after TTL, progress sweeps then returns 409 任务未被认领
+          ---
+          duration_ms: 75.331395
+          ...
+        # Subtest: after expiry a different Agent Key can claim again and writes a second token 揭示
+        ok 3 - after expiry a different Agent Key can claim again and writes a second token 揭示
+          ---
+          duration_ms: 111.962257
+          ...
+        1..3
+    ok 7 - expiry
+      ---
+      duration_ms: 261.223864
+      type: 'suite'
+      ...
+    # Subtest: reveal audit
+        # Subtest: inline claim writes token 揭示 { task_id, device_id, credential: inline } and 状态迁移 待认领→进行中
+        ok 1 - inline claim writes token 揭示 { task_id, device_id, credential: inline } and 状态迁移 待认领→进行中
+          ---
+          duration_ms: 79.445954
+          ...
+        # Subtest: profile claim writes token 揭示 with credential profile and integer profile_id; no plaintext or ciphertext
+        ok 2 - profile claim writes token 揭示 with credential profile and integer profile_id; no plaintext or ciphertext
+          ---
+          duration_ms: 90.287897
+          ...
+        1..2
+    ok 8 - reveal audit
+      ---
+      duration_ms: 169.874688
+      type: 'suite'
+      ...
+    # Subtest: leases table
+        # Subtest: successful claim inserts one active lease keyed by tasks.id PK; at most one active row per task
+        ok 1 - successful claim inserts one active lease keyed by tasks.id PK; at most one active row per task
+          ---
+          duration_ms: 112.035637
+          ...
+        1..1
+    ok 9 - leases table
+      ---
+      duration_ms: 112.125724
+      type: 'suite'
+      ...
+    1..9
+ok 21 - issue \#9 lease-based claiming
+  ---
+  duration_ms: 2379.737361
+  type: 'suite'
+  ...
+# (node:12770) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: issue \#19 GET /api/v1/credential-profiles/:id/issues
+    # Subtest: authentication and permission gate (same as credential-profile CRUD)
+        # Subtest: unauthenticated JSON GET returns 401 unauthorized (same oracle as GET /api/v1/me)
+        ok 1 - unauthenticated JSON GET returns 401 unauthorized (same oracle as GET /api/v1/me)
+          ---
+          duration_ms: 75.179402
+          ...
+        # Subtest: browser-like GET without a session redirects to /login
+        ok 2 - browser-like GET without a session redirects to /login
+          ---
+          duration_ms: 13.772575
+          ...
+        # Subtest: leftover 待批准 GitHub user gets 403 forbidden with no message
+        ok 3 - leftover 待批准 GitHub user gets 403 forbidden with no message
+          ---
+          duration_ms: 70.59908
+          ...
+        # Subtest: leftover active GitHub claim_only still gets 403 forbidden with no message
+        ok 4 - leftover active GitHub claim_only still gets 403 forbidden with no message
+          ---
+          duration_ms: 86.474461
+          ...
+        1..4
+    ok 1 - authentication and permission gate (same as credential-profile CRUD)
+      ---
+      duration_ms: 246.772751
+      type: 'suite'
+      ...
+    # Subtest: missing profile or bad :id
+        # Subtest: missing row is 404 not_found
+        ok 1 - missing row is 404 not_found
+          ---
+          duration_ms: 58.268322
+          ...
+        # Subtest: non-positive / non-integer :id (abc, 0, -1) is 404 not_found
+        ok 2 - non-positive / non-integer :id (abc, 0, -1) is 404 not_found
+          ---
+          duration_ms: 61.09933
+          ...
+        1..2
+    ok 2 - missing profile or bad :id
+      ---
+      duration_ms: 119.709001
+      type: 'suite'
+      ...
+    # Subtest: success lists open issues from the profile row
+        # Subtest: Gitea 200 maps number/title, constructs issue_url, pins list URL, omits secrets, does not write token 揭示
+        ok 1 - Gitea 200 maps number/title, constructs issue_url, pins list URL, omits secrets, does not write token 揭示
+          ---
+          duration_ms: 97.963606
+          ...
+        # Subtest: GitLab 200 maps iid not id and constructs /-/issues/{iid} on the profile base_url
+        ok 2 - GitLab 200 maps iid not id and constructs /-/issues/{iid} on the profile base_url
+          ---
+          duration_ms: 79.993189
+          ...
+        1..2
+    ok 3 - success lists open issues from the profile row
+      ---
+      duration_ms: 178.240299
+      type: 'suite'
+      ...
+    # Subtest: error mapping
+        # Subtest: unset or invalid VAULT_MASTER_KEY after profile exists is 500 vault_unconfigured
+        ok 1 - unset or invalid VAULT_MASTER_KEY after profile exists is 500 vault_unconfigured
+          ---
+          duration_ms: 52.161265
+          ...
+        # Subtest: forge HTTP 401 is 422 token_check_failed with missing 读
+        ok 2 - forge HTTP 401 is 422 token_check_failed with missing 读
+          ---
+          duration_ms: 48.964484
+          ...
+        # Subtest: forge HTTP 500 is 502 forge_unreachable with 列出 Issue copy
+        ok 3 - forge HTTP 500 is 502 forge_unreachable with 列出 Issue copy
+          ---
+          duration_ms: 52.114279
+          ...
+        # Subtest: fetch/network throw is 502 forge_unreachable with 列出 Issue copy
+        ok 4 - fetch/network throw is 502 forge_unreachable with 列出 Issue copy
+          ---
+          duration_ms: 42.286174
+          ...
+        # Subtest: forge HTTP 404 (and 410) is 502 列出, not issue_not_found
+        ok 5 - forge HTTP 404 (and 410) is 502 列出, not issue_not_found
+          ---
+          duration_ms: 47.516177
+          ...
+        1..5
+    ok 4 - error mapping
+      ---
+      duration_ms: 243.326795
+      type: 'suite'
+      ...
+    1..4
+ok 22 - issue \#19 GET /api/v1/credential-profiles/:id/issues
+  ---
+  duration_ms: 789.15211
+  type: 'suite'
+  ...
+# (node:12781) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: device proof canonical string
+    # Subtest: canonical payload is five newline-separated lines with no trailing newline after the hash
+    ok 1 - canonical payload is five newline-separated lines with no trailing newline after the hash
+      ---
+      duration_ms: 0.590974
+      ...
+    1..1
+ok 23 - device proof canonical string
+  ---
+  duration_ms: 1.133684
+  type: 'suite'
+  ...
+# Subtest: issue \#23 device proof + admin bind
+    # Subtest: signed unknown device on MCP initialize is 202 authorization_required, no token, creates pending
+    ok 1 - signed unknown device on MCP initialize is 202 authorization_required, no token, creates pending
+      ---
+      duration_ms: 137.080852
+      ...
+    # Subtest: signed unknown device on REST claim is 202 authorization_required, no token, no lease
+    ok 2 - signed unknown device on REST claim is 202 authorization_required, no token, no lease
+      ---
+      duration_ms: 93.691431
+      ...
+    # Subtest: retry of the same pending device does not extend pending expires_at
+    ok 3 - retry of the same pending device does not extend pending expires_at
+      ---
+      duration_ms: 94.90287
+      ...
+    # Subtest: missing device headers on MCP is 401 unauthorized, not 202
+    ok 4 - missing device headers on MCP is 401 unauthorized, not 202
+      ---
+      duration_ms: 11.266357
+      ...
+    # Subtest: bad signature on an otherwise complete proof is 401 unauthorized, not 202
+    ok 5 - bad signature on an otherwise complete proof is 401 unauthorized, not 202
+      ---
+      duration_ms: 16.508206
+      ...
+    # Subtest: leftover ktk_ Bearer is not MCP identity: 401, not 202
+    ok 6 - leftover ktk_ Bearer is not MCP identity: 401, not 202
+      ---
+      duration_ms: 11.406943
+      ...
+    # Subtest: full session lists pending; bind { claimant_display_name } does not claim and does not return a forge token
+    ok 7 - full session lists pending; bind { claimant_display_name } does not claim and does not return a forge token
+      ---
+      duration_ms: 92.36527
+      ...
+    # Subtest: after bind, the same keypair claim is 201 with a forge token
+    ok 8 - after bind, the same keypair claim is 201 with a forge token
+      ---
+      duration_ms: 103.777621
+      ...
+    # Subtest: bind { bind_to_self: true } works
+    ok 9 - bind { bind_to_self: true } works
+      ---
+      duration_ms: 72.026061
+      ...
+    # Subtest: bind to existing claimant_id
+    ok 10 - bind to existing claimant_id
+      ---
+      duration_ms: 43.063395
+      ...
+    # Subtest: non-full leftover claim_only session cannot bind (403)
+    ok 11 - non-full leftover claim_only session cannot bind (403)
+      ---
+      duration_ms: 97.882198
+      ...
+    # Subtest: revoke claimant → next proof is 403, no token
+    ok 12 - revoke claimant → next proof is 403, no token
+      ---
+      duration_ms: 88.41722
+      ...
+    # Subtest: revoke device → next proof is 403
+    ok 13 - revoke device → next proof is 403
+      ---
+      duration_ms: 45.312726
+      ...
+    # Subtest: max_devices 409; PATCH max age does not rewrite existing expires_at
+    ok 14 - max_devices 409; PATCH max age does not rewrite existing expires_at
+      ---
+      duration_ms: 57.597772
+      ...
+    # Subtest: GET /api/v1/agent/whoami after bind_to_self returns the device owner, never a forge token
+    ok 15 - GET /api/v1/agent/whoami after bind_to_self returns the device owner, never a forge token
+      ---
+      duration_ms: 41.535268
+      ...
+    # Subtest: pending whoami is the same 202 authorization_required as MCP
+    ok 16 - pending whoami is the same 202 authorization_required as MCP
+      ---
+      duration_ms: 9.792372
+      ...
+    # Subtest: pending device MCP list_tasks is HTTP 202 authorization_required, not a successful tool result
+    ok 17 - pending device MCP list_tasks is HTTP 202 authorization_required, not a successful tool result
+      ---
+      duration_ms: 42.449855
+      ...
+    1..17
+ok 24 - issue \#23 device proof + admin bind
+  ---
+  duration_ms: 1060.125331
+  type: 'suite'
+  ...
+# (node:12782) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: issue \#15 audit log HTTP + team stats
+    # Subtest: authentication — session cookie, same mechanism as GET /api/v1/tasks
+        # Subtest: unauthenticated GET /api/v1/events and GET /api/v1/stats are 401 unauthorized
+        ok 1 - unauthenticated GET /api/v1/events and GET /api/v1/stats are 401 unauthorized
+          ---
+          duration_ms: 65.183911
+          ...
+        # Subtest: 待批准 GitHub user is 401 on events and stats (never sees the member workbench)
+        ok 2 - 待批准 GitHub user is 401 on events and stats (never sees the member workbench)
+          ---
+          duration_ms: 89.875778
+          ...
+        # Subtest: approved claim_only user can read events and stats, same as the board
+        ok 3 - approved claim_only user can read events and stats, same as the board
+          ---
+          duration_ms: 86.238493
+          ...
+        1..3
+    ok 1 - authentication — session cookie, same mechanism as GET /api/v1/tasks
+      ---
+      duration_ms: 241.865995
+      type: 'suite'
+      ...
+    # Subtest: GET /api/v1/events
+        # Subtest: envelope is { events: [] } with newest-first EventRow shape; no query string needed
+        ok 1 - envelope is { events: [] } with newest-first EventRow shape; no query string needed
+          ---
+          duration_ms: 86.673662
+          ...
+        # Subtest: list carries real writers rows with parsed details and actor_username resolved via left-join
+        ok 2 - list carries real writers rows with parsed details and actor_username resolved via left-join
+          ---
+          duration_ms: 65.113127
+          ...
+        # Subtest: system-driven rows (actor_user_id null) still appear, with actor_username null
+        ok 3 - system-driven rows (actor_user_id null) still appear, with actor_username null
+          ---
+          duration_ms: 87.249975
+          ...
+        1..3
+    ok 2 - GET /api/v1/events
+      ---
+      duration_ms: 239.43337
+      type: 'suite'
+      ...
+    # Subtest: GET /api/v1/stats
+        # Subtest: empty DB returns { completed_count: 0, completed_by_username: {} }
+        ok 1 - empty DB returns { completed_count: 0, completed_by_username: {} }
+          ---
+          duration_ms: 45.002395
+          ...
+        # Subtest: completed_count counts 状态迁移 rows with details.to === 已完成; null actor groups under 系统
+        ok 2 - completed_count counts 状态迁移 rows with details.to === 已完成; null actor groups under 系统
+          ---
+          duration_ms: 82.993025
+          ...
+        # Subtest: a 已完成 task row with no matching event does not inflate stats (near-miss vs COUNT(*) FROM tasks)
+        ok 3 - a 已完成 task row with no matching event does not inflate stats (near-miss vs COUNT(*) FROM tasks)
+          ---
+          duration_ms: 111.579892
+          ...
+        1..3
+    ok 3 - GET /api/v1/stats
+      ---
+      duration_ms: 239.878324
+      type: 'suite'
+      ...
+    1..3
+ok 25 - issue \#15 audit log HTTP + team stats
+  ---
+  duration_ms: 721.675906
+  type: 'suite'
+  ...
+# (node:12803) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: issue \#17 single-port 31415 hosting
+    # Subtest: omitted hosting options keep GET / as 考拉任务服务占位 with text/plain; webDist serves index.html at /
+    ok 1 - omitted hosting options keep GET / as 考拉任务服务占位 with text/plain; webDist serves index.html at /
+      ---
+      duration_ms: 122.901804
+      ...
+    # Subtest: webDist SPA-fallbacks unmatched GET, serves assets, and does not swallow /api or /login
+    ok 2 - webDist SPA-fallbacks unmatched GET, serves assets, and does not swallow /api or /login
+      ---
+      duration_ms: 23.934065
+      ...
+    # Subtest: when webDist and viteDevTarget are both set, webDist wins
+    ok 3 - when webDist and viteDevTarget are both set, webDist wins
+      ---
+      duration_ms: 25.034891
+      ...
+    # Subtest: index.ts PORT default is 31415 (source pin; does not import index.ts)
+    ok 4 - index.ts PORT default is 31415 (source pin; does not import index.ts)
+      ---
+      duration_ms: 0.686321
+      ...
+    # Subtest: auth.ts PUBLIC_URL default is http://localhost:31415 (source pin)
+    ok 5 - auth.ts PUBLIC_URL default is http://localhost:31415 (source pin)
+      ---
+      duration_ms: 0.281988
+      ...
+    # Subtest: vite.config.ts proxies /api and /login to http://127.0.0.1:31415
+    ok 6 - vite.config.ts proxies /api and /login to http://127.0.0.1:31415
+      ---
+      duration_ms: 0.210376
+      ...
+    # Subtest: docker-compose binds 127.0.0.1:31415:31415, sets PORT 31415, and injects SQLITE_PATH plus secrets
+    ok 7 - docker-compose binds 127.0.0.1:31415:31415, sets PORT 31415, and injects SQLITE_PATH plus secrets
+      ---
+      duration_ms: 0.498688
+      ...
+    # Subtest: Dockerfile EXPOSE 31415, ENV PORT=31415, and image build includes web dist
+    ok 8 - Dockerfile EXPOSE 31415, ENV PORT=31415, and image build includes web dist
+      ---
+      duration_ms: 0.216571
+      ...
+    # Subtest: root package.json has a non-empty dev script
+    ok 9 - root package.json has a non-empty dev script
+      ---
+      duration_ms: 0.17365
+      ...
+    1..9
+ok 26 - issue \#17 single-port 31415 hosting
+  ---
+  duration_ms: 174.927706
+  type: 'suite'
+  ...
+# (node:12814) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: users schema after createDb
+    # Subtest: new sqlite has nullable password_hash, local provider, and admin permission_level
+    ok 1 - new sqlite has nullable password_hash, local provider, and admin permission_level
+      ---
+      duration_ms: 45.724757
+      ...
+    # Subtest: two local rows with the same trimmed username fail; OAuth usernames may collide across providers
+    ok 2 - two local rows with the same trimmed username fail; OAuth usernames may collide across providers
+      ---
+      duration_ms: 20.97461
+      ...
+    1..2
+ok 27 - users schema after createDb
+  ---
+  duration_ms: 67.3011
+  type: 'suite'
+  ...
+# Subtest: legacy sqlite migration
+    # Subtest: createDb promotes only the earliest gitlab/gitea/local full to admin; github full stays full
+    ok 1 - createDb promotes only the earliest gitlab/gitea/local full to admin; github full stays full
+      ---
+      duration_ms: 113.877802
+      ...
+    # Subtest: old file with only github active+full still has zero loginable admins
+    ok 2 - old file with only github active+full still has zero loginable admins
+      ---
+      duration_ms: 55.850171
+      ...
+    1..2
+ok 28 - legacy sqlite migration
+  ---
+  duration_ms: 170.00585
+  type: 'suite'
+  ...
+# Subtest: GET /api/v1/setup
+    # Subtest: unauthenticated probe is 200 { setup_complete: boolean }; empty DB is false
+    ok 1 - unauthenticated probe is 200 { setup_complete: boolean }; empty DB is false
+      ---
+      duration_ms: 10.865892
+      ...
+    1..1
+ok 29 - GET /api/v1/setup
+  ---
+  duration_ms: 10.982352
+  type: 'suite'
+  ...
+# Subtest: POST /api/v1/setup
+    # Subtest: creates local admin session; me has no hash fields; display_name defaults to trimmed username
+    ok 1 - creates local admin session; me has no hash fields; display_name defaults to trimmed username
+      ---
+      duration_ms: 69.949271
+      ...
+    # Subtest: second setup is 409 setup_complete; concurrent setups leave at most one admin
+    ok 2 - second setup is 409 setup_complete; concurrent setups leave at most one admin
+      ---
+      duration_ms: 126.199422
+      ...
+    # Subtest: missing/empty username or empty password is 400
+    ok 3 - missing/empty username or empty password is 400
+      ---
+      duration_ms: 11.438671
+      ...
+    1..3
+ok 30 - POST /api/v1/setup
+  ---
+  duration_ms: 207.993746
+  type: 'suite'
+  ...
+# Subtest: POST /api/v1/login
+    # Subtest: correct password is 200; wrong, unknown, and empty are all 401 with the same shape
+    ok 1 - correct password is 200; wrong, unknown, and empty are all 401 with the same shape
+      ---
+      duration_ms: 206.92994
+      ...
+    1..1
+ok 31 - POST /api/v1/login
+  ---
+  duration_ms: 207.03897
+  type: 'suite'
+  ...
+# Subtest: GET /login HTML
+    # Subtest: before setup the page is a username/password wizard, not OAuth as the way in
+    ok 1 - before setup the page is a username/password wizard, not OAuth as the way in
+      ---
+      duration_ms: 16.616
+      ...
+    # Subtest: after setup: GitLab + Gitea links, local login affordance, no GitHub
+    ok 2 - after setup: GitLab + Gitea links, local login affordance, no GitHub
+      ---
+      duration_ms: 40.924919
+      ...
+    1..2
+ok 32 - GET /login HTML
+  ---
+  duration_ms: 57.682913
+  type: 'suite'
+  ...
+# Subtest: OAuth after identity split
+    # Subtest: empty DB GitLab callback does not insert a user or set a session
+    ok 1 - empty DB GitLab callback does not insert a user or set a session
+      ---
+      duration_ms: 22.820595
+      ...
+    # Subtest: empty DB Gitea callback does not insert a user or set a session
+    ok 2 - empty DB Gitea callback does not insert a user or set a session
+      ---
+      duration_ms: 34.259349
+      ...
+    # Subtest: GET /login/github and callback are 404
+    ok 3 - GET /login/github and callback are 404
+      ---
+      duration_ms: 7.294344
+      ...
+    # Subtest: after setup, GitLab and Gitea OAuth insert active+full publishers and set a session
+    ok 4 - after setup, GitLab and Gitea OAuth insert active+full publishers and set a session
+      ---
+      duration_ms: 47.643597
+      ...
+    1..4
+ok 33 - OAuth after identity split
+  ---
+  duration_ms: 112.235947
+  type: 'suite'
+  ...
+# Subtest: KAOLA_ADMINS is ignored
+    # Subtest: malformed KAOLA_ADMINS still buildApp and does not grant GitHub login or extra admin
+    ok 1 - malformed KAOLA_ADMINS still buildApp and does not grant GitHub login or extra admin
+      ---
+      duration_ms: 59.192163
+      ...
+    1..1
+ok 34 - KAOLA_ADMINS is ignored
+  ---
+  duration_ms: 59.304405
+  type: 'suite'
+  ...
+# Subtest: users list, promote, retired approve
+    # Subtest: GET /api/v1/users: unauth 401, publisher 403, admin 200 without hash fields
+    ok 1 - GET /api/v1/users: unauth 401, publisher 403, admin 200 without hash fields
+      ---
+      duration_ms: 68.418912
+      ...
+    # Subtest: admin promotes gitlab/gitea full; already admin is 200; local/github/missing are 404 or 400; publisher 403
+    ok 2 - admin promotes gitlab/gitea full; already admin is 200; local/github/missing are 404 or 400; publisher 403
+      ---
+      duration_ms: 88.964559
+      ...
+    # Subtest: POST /api/v1/users/:id/approve is retired 404
+    ok 3 - POST /api/v1/users/:id/approve is retired 404
+      ---
+      duration_ms: 55.600814
+      ...
+    1..3
+ok 35 - users list, promote, retired approve
+  ---
+  duration_ms: 213.174025
+  type: 'suite'
+  ...
+# Subtest: admin vs publisher HTTP gates
+    # Subtest: publisher can post tasks; cannot list devices, users, promote, settings, or claim-confirmations
+    ok 1 - publisher can post tasks; cannot list devices, users, promote, settings, or claim-confirmations
+      ---
+      duration_ms: 42.775959
+      ...
+    # Subtest: leftover claim_only via GitLab reuse cannot publish or manage devices
+    ok 2 - leftover claim_only via GitLab reuse cannot publish or manage devices
+      ---
+      duration_ms: 61.43849
+      ...
+    1..2
+ok 36 - admin vs publisher HTTP gates
+  ---
+  duration_ms: 104.359665
+  type: 'suite'
+  ...
+# (node:12825) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: issue \#12 POST /api/v1/tasks/import
+    # Subtest: authentication (same gate as POST /api/v1/tasks)
+        # Subtest: unauthenticated JSON POST returns 401 unauthorized
+        ok 1 - unauthenticated JSON POST returns 401 unauthorized
+          ---
+          duration_ms: 70.145769
+          ...
+        # Subtest: leftover 待批准 GitHub user gets 403 forbidden
+        ok 2 - leftover 待批准 GitHub user gets 403 forbidden
+          ---
+          duration_ms: 43.436144
+          ...
+        # Subtest: leftover active claim_only GitHub user gets 403 forbidden
+        ok 3 - leftover active claim_only GitHub user gets 403 forbidden
+          ---
+          duration_ms: 114.423237
+          ...
+        1..3
+    ok 1 - authentication (same gate as POST /api/v1/tasks)
+      ---
+      duration_ms: 228.679606
+      type: 'suite'
+      ...
+    # Subtest: success is a pre-publish draft (200, no tasks row, no token)
+        # Subtest: inline credential returns 200 mapped fields and does not insert a tasks row
+        ok 1 - inline credential returns 200 mapped fields and does not insert a tasks row
+          ---
+          duration_ms: 99.505044
+          ...
+        # Subtest: optional repo.full_name matching the parsed name still 200
+        ok 2 - optional repo.full_name matching the parsed name still 200
+          ---
+          duration_ms: 95.842731
+          ...
+        # Subtest: trailing slash on issue_url is stripped in source.issue_url
+        ok 3 - trailing slash on issue_url is stripped in source.issue_url
+          ---
+          duration_ms: 60.385938
+          ...
+        # Subtest: gitea constructor baseUrl is used, not the pasted issue host (SSRF)
+        ok 4 - gitea constructor baseUrl is used, not the pasted issue host (SSRF)
+          ---
+          duration_ms: 54.610038
+          ...
+        1..4
+    ok 2 - success is a pre-publish draft (200, no tasks row, no token)
+      ---
+      duration_ms: 310.849266
+      type: 'suite'
+      ...
+    # Subtest: error mapping
+        # Subtest: generic parse / missing issue_url / missing forge is 400 invalid_body with no message
+        ok 1 - generic parse / missing issue_url / missing forge is 400 invalid_body with no message
+          ---
+          duration_ms: 52.710553
+          ...
+        # Subtest: unparseable issue_url is 400 with 无法解析 Issue 地址 and does not fetch
+        ok 2 - unparseable issue_url is 400 with 无法解析 Issue 地址 and does not fetch
+          ---
+          duration_ms: 59.91046
+          ...
+        # Subtest: repo.full_name that does not equal the parsed name is 400 Issue 地址与仓库不匹配
+        ok 3 - repo.full_name that does not equal the parsed name is 400 Issue 地址与仓库不匹配
+          ---
+          duration_ms: 50.67973
+          ...
+        # Subtest: repo.base_url that is not http(s)+host uses the publish Chinese message
+        ok 4 - repo.base_url that is not http(s)+host uses the publish Chinese message
+          ---
+          duration_ms: 44.855759
+          ...
+        # Subtest: forge 404 is 404 issue_not_found
+        ok 5 - forge 404 is 404 issue_not_found
+          ---
+          duration_ms: 42.517805
+          ...
+        # Subtest: forge 410 is 404 issue_not_found
+        ok 6 - forge 410 is 404 issue_not_found
+          ---
+          duration_ms: 47.212194
+          ...
+        # Subtest: forge 401 is 422 token_check_failed with missing 读
+        ok 7 - forge 401 is 422 token_check_failed with missing 读
+          ---
+          duration_ms: 37.331267
+          ...
+        # Subtest: other non-OK forge status is 502 forge_unreachable
+        ok 8 - other non-OK forge status is 502 forge_unreachable
+          ---
+          duration_ms: 44.148749
+          ...
+        # Subtest: fetch/network throw is 502 forge_unreachable
+        ok 9 - fetch/network throw is 502 forge_unreachable
+          ---
+          duration_ms: 44.035707
+          ...
+        1..9
+    ok 3 - error mapping
+      ---
+      duration_ms: 423.863418
+      type: 'suite'
+      ...
+    # Subtest: profile credential bind, decrypt, and token 揭示
+        # Subtest: matching profile 200 writes token 揭示 outcome ok; no tasks row; no token in JSON
+        ok 1 - matching profile 200 writes token 揭示 outcome ok; no tasks row; no token in JSON
+          ---
+          duration_ms: 93.776975
+          ...
+        # Subtest: profile-path 404 still writes token 揭示 with outcome issue_not_found
+        ok 2 - profile-path 404 still writes token 揭示 with outcome issue_not_found
+          ---
+          duration_ms: 90.466286
+          ...
+        # Subtest: profile-path 401 still writes token 揭示 with outcome token_check_failed
+        ok 3 - profile-path 401 still writes token 揭示 with outcome token_check_failed
+          ---
+          duration_ms: 76.270637
+          ...
+        # Subtest: profile-path 502 still writes token 揭示 with outcome forge_unreachable
+        ok 4 - profile-path 502 still writes token 揭示 with outcome forge_unreachable
+          ---
+          duration_ms: 87.648675
+          ...
+        # Subtest: unparseable issue_url with profile_id does not decrypt (no token 揭示, no fetch)
+        ok 5 - unparseable issue_url with profile_id does not decrypt (no token 揭示, no fetch)
+          ---
+          duration_ms: 67.399774
+          ...
+        # Subtest: missing profile is 400 所选凭证档案不存在
+        ok 6 - missing profile is 400 所选凭证档案不存在
+          ---
+          duration_ms: 42.440527
+          ...
+        # Subtest: profile bind is exact forge/base_url/parsed full_name (mismatch does not decrypt)
+        ok 7 - profile bind is exact forge/base_url/parsed full_name (mismatch does not decrypt)
+          ---
+          duration_ms: 73.876739
+          ...
+        # Subtest: profile path without VAULT_MASTER_KEY returns 500 vault_unconfigured
+        ok 8 - profile path without VAULT_MASTER_KEY returns 500 vault_unconfigured
+          ---
+          duration_ms: 44.120975
+          ...
+        1..8
+    ok 4 - profile credential bind, decrypt, and token 揭示
+      ---
+      duration_ms: 576.388656
+      type: 'suite'
+      ...
+    1..4
+ok 37 - issue \#12 POST /api/v1/tasks/import
+  ---
+  duration_ms: 1540.181959
+  type: 'suite'
+  ...
+# (node:12836) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: issue \#10 MCP server
+    # Subtest: authentication — device proof, HTTP 401 before JSON-RPC
+        # Subtest: unauthenticated POST /api/mcp (missing device headers) is 401 unauthorized with WWW-Authenticate Kaola-Device
+        ok 1 - unauthenticated POST /api/mcp (missing device headers) is 401 unauthorized with WWW-Authenticate Kaola-Device
+          ---
+          duration_ms: 64.326128
+          ...
+        # Subtest: Token scheme, Basic, leftover ktk_, and wrong device proof on POST /api/mcp are 401 with WWW-Authenticate Kaola-Device
+        ok 2 - Token scheme, Basic, leftover ktk_, and wrong device proof on POST /api/mcp are 401 with WWW-Authenticate Kaola-Device
+          ---
+          duration_ms: 70.538821
+          ...
+        # Subtest: a session cookie without device proof does not authorize POST /api/mcp
+        ok 3 - a session cookie without device proof does not authorize POST /api/mcp
+          ---
+          duration_ms: 70.272295
+          ...
+        # Subtest: authenticated tools/list includes the six tools and claim_task describes token hygiene
+        ok 4 - authenticated tools/list includes the six tools and claim_task describes token hygiene
+          ---
+          duration_ms: 90.298372
+          ...
+        1..4
+    ok 1 - authentication — device proof, HTTP 401 before JSON-RPC
+      ---
+      duration_ms: 296.227505
+      type: 'suite'
+      ...
+    # Subtest: list_tasks / get_task_brief
+        # Subtest: list_tasks returns { tasks } briefs that parse and never contain forge secrets
+        ok 1 - list_tasks returns { tasks } briefs that parse and never contain forge secrets
+          ---
+          duration_ms: 76.695903
+          ...
+        # Subtest: list_tasks filters by exact status, tag membership of one tag, and exact repo.forge
+        ok 2 - list_tasks filters by exact status, tag membership of one tag, and exact repo.forge
+          ---
+          duration_ms: 91.644437
+          ...
+        # Subtest: list_tasks and get_task_brief apply sweepExpiredLeases so an expired 进行中 task shows as 待认领
+        ok 3 - list_tasks and get_task_brief apply sweepExpiredLeases so an expired 进行中 task shows as 待认领
+          ---
+          duration_ms: 79.880889
+          ...
+        # Subtest: a leftover ktk_ Bearer cannot list_tasks: 401 unauthorized, not a successful tool result
+        ok 4 - a leftover ktk_ Bearer cannot list_tasks: 401 unauthorized, not a successful tool result
+          ---
+          duration_ms: 75.209339
+          ...
+        # Subtest: get_task_brief returns a top-level brief; missing and numeric ids are isError not_found
+        ok 5 - get_task_brief returns a top-level brief; missing and numeric ids are isError not_found
+          ---
+          duration_ms: 64.493571
+          ...
+        1..5
+    ok 2 - list_tasks / get_task_brief
+      ---
+      duration_ms: 388.324772
+      type: 'suite'
+      ...
+    # Subtest: claim_task
+        # Subtest: claim_task success envelope keys are exactly task, token, lease, clone with the REST clone pin
+        ok 1 - claim_task success envelope keys are exactly task, token, lease, clone with the REST clone pin
+          ---
+          duration_ms: 61.430173
+          ...
+        # Subtest: claim_task on a second task_id returns that task's token, not the first task's
+        ok 2 - claim_task on a second task_id returns that task's token, not the first task's
+          ---
+          duration_ms: 58.633663
+          ...
+        # Subtest: claim_task on a github task returns Bearer extra_header and github.com remote_url, not api.github.com
+        ok 3 - claim_task on a github task returns Bearer extra_header and github.com remote_url, not api.github.com
+          ---
+          duration_ms: 44.825546
+          ...
+        # Subtest: claim_task on a gitlab task returns Bearer extra_header and keeps slashes in remote_url
+        ok 4 - claim_task on a gitlab task returns Bearer extra_header and keeps slashes in remote_url
+          ---
+          duration_ms: 66.711238
+          ...
+        # Subtest: leftover ktk_ Bearer cannot claim_task: 401 unauthorized, no token 揭示
+        ok 5 - leftover ktk_ Bearer cannot claim_task: 401 unauthorized, no token 揭示
+          ---
+          duration_ms: 73.047077
+          ...
+        # Subtest: second claim_task is conflict; list_tasks and get_task_brief still omit the forge token
+        ok 6 - second claim_task is conflict; list_tasks and get_task_brief still omit the forge token
+          ---
+          duration_ms: 113.905104
+          ...
+        1..6
+    ok 3 - claim_task
+      ---
+      duration_ms: 418.923237
+      type: 'suite'
+      ...
+    # Subtest: report_progress / release_task
+        # Subtest: report_progress wraps REST: optional note (omit → empty string), envelope { task, lease }, no token
+        ok 1 - report_progress wraps REST: optional note (omit → empty string), envelope { task, lease }, no token
+          ---
+          duration_ms: 107.929898
+          ...
+        # Subtest: release_task wraps REST: optional reason, envelope { task } 待认领, no token
+        ok 2 - release_task wraps REST: optional reason, envelope { task } 待认领, no token
+          ---
+          duration_ms: 148.340784
+          ...
+        # Subtest: non-holder report_progress and release_task are isError forbidden with no message
+        ok 3 - non-holder report_progress and release_task are isError forbidden with no message
+          ---
+          duration_ms: 62.909104
+          ...
+        # Subtest: report_progress and release_task with no live lease are isError 任务未被认领
+        ok 4 - report_progress and release_task with no live lease are isError 任务未被认领
+          ---
+          duration_ms: 48.885212
+          ...
+        1..4
+    ok 4 - report_progress / release_task
+      ---
+      duration_ms: 368.272725
+      type: 'suite'
+      ...
+    # Subtest: submit_pr
+        # Subtest: submit_pr success is { task, pr_url, summary } 待验收, persists submissions, clears the lease, writes 状态迁移
+        ok 1 - submit_pr success is { task, pr_url, summary } 待验收, persists submissions, clears the lease, writes 状态迁移
+          ---
+          duration_ms: 95.404702
+          ...
+        # Subtest: submit_pr fails for non-holder, no lease, and not 进行中
+        ok 2 - submit_pr fails for non-holder, no lease, and not 进行中
+          ---
+          duration_ms: 161.978658
+          ...
+        1..2
+    ok 5 - submit_pr
+      ---
+      duration_ms: 257.534046
+      type: 'suite'
+      ...
+    1..5
+ok 38 - issue \#10 MCP server
+  ---
+  duration_ms: 1729.750341
+  type: 'suite'
+  ...
+# (node:12847) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: password hasher
+    # Subtest: correct password verifies; wrong password does not
+    ok 1 - correct password verifies; wrong password does not
+      ---
+      duration_ms: 105.640153
+      ...
+    # Subtest: hash is not the plaintext and never equals the password string
+    ok 2 - hash is not the plaintext and never equals the password string
+      ---
+      duration_ms: 35.986238
+      ...
+    # Subtest: hashPassword rejects an empty password
+    ok 3 - hashPassword rejects an empty password
+      ---
+      duration_ms: 0.32262
+      ...
+    1..3
+ok 39 - password hasher
+  ---
+  duration_ms: 142.69244
+  type: 'suite'
+  ...
+# (node:12858) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: getPlaceholderBody returns the pinned non-empty placeholder HTTP body
+ok 40 - getPlaceholderBody returns the pinned non-empty placeholder HTTP body
+  ---
+  duration_ms: 0.474888
+  ...
+# (node:12869) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: issue \#11 poller (pollPendingReviews)
+    # Subtest: getPullRequest-driven terminal transitions
+        # Subtest: merged PR: 待验收 → 已完成, submissions.pr_state → merged, system 状态迁移 (actor_user_id null)
+        ok 1 - merged PR: 待验收 → 已完成, submissions.pr_state → merged, system 状态迁移 (actor_user_id null)
+          ---
+          duration_ms: 205.946294
+          ...
+        # Subtest: closed (unmerged) PR: 待验收 → 已退回, submissions.pr_state → closed
+        ok 2 - closed (unmerged) PR: 待验收 → 已退回, submissions.pr_state → closed
+          ---
+          duration_ms: 151.198625
+          ...
+        # Subtest: open PR: task stays 待验收, pr_state stays open
+        ok 3 - open PR: task stays 待验收, pr_state stays open
+          ---
+          duration_ms: 115.782059
+          ...
+        1..3
+    ok 1 - getPullRequest-driven terminal transitions
+      ---
+      duration_ms: 473.58022
+      type: 'suite'
+      ...
+    # Subtest: scope: only 待验收 tasks are ever fetched
+        # Subtest: 待认领/进行中/已完成/已取消/已退回 tasks are never fetched as PRs and are left untouched
+        ok 1 - 待认领/进行中/已完成/已取消/已退回 tasks are never fetched as PRs and are left untouched
+          ---
+          duration_ms: 260.517159
+          ...
+        1..1
+    ok 2 - scope: only 待验收 tasks are ever fetched
+      ---
+      duration_ms: 260.665707
+      type: 'suite'
+      ...
+    # Subtest: resilience
+        # Subtest: a fetch failure on one 待验收 task is skipped, and a sibling 待验收 task still completes
+        ok 1 - a fetch failure on one 待验收 task is skipped, and a sibling 待验收 task still completes
+          ---
+          duration_ms: 166.289684
+          ...
+        1..1
+    ok 3 - resilience
+      ---
+      duration_ms: 166.461409
+      type: 'suite'
+      ...
+    # Subtest: reopen after a poller-driven 已退回
+        # Subtest: poster PATCH { status: 待认领 } succeeds after 已退回, and prior events + the submissions row remain
+        ok 1 - poster PATCH { status: 待认领 } succeeds after 已退回, and prior events + the submissions row remain
+          ---
+          duration_ms: 128.186445
+          ...
+        1..1
+    ok 4 - reopen after a poller-driven 已退回
+      ---
+      duration_ms: 128.407365
+      type: 'suite'
+      ...
+    # Subtest: buildApp({ pollIntervalMs }) frequency contract
+        # Subtest: omitted pollIntervalMs registers no interval
+        ok 1 - omitted pollIntervalMs registers no interval
+          ---
+          duration_ms: 9.040312
+          ...
+        # Subtest: pollIntervalMs: 0 registers no interval
+        ok 2 - pollIntervalMs: 0 registers no interval
+          ---
+          duration_ms: 33.537151
+          ...
+        # Subtest: pollIntervalMs: 1234 registers setInterval with delay 1234
+        ok 3 - pollIntervalMs: 1234 registers setInterval with delay 1234
+          ---
+          duration_ms: 69.009388
+          ...
+        1..3
+    ok 5 - buildApp({ pollIntervalMs }) frequency contract
+      ---
+      duration_ms: 111.892214
+      type: 'suite'
+      ...
+    1..5
+ok 41 - issue \#11 poller (pollPendingReviews)
+  ---
+  duration_ms: 1141.582308
+  type: 'suite'
+  ...
+# Subtest: issue \#13: per-instance webhook-vs-poll config (pollPendingReviews honors forgeInstances)
+    # Subtest: a syncMode: "webhook" instance matching (repoForge, repoBaseUrl) is skipped: zero getPullRequest fetches, task stays 待验收
+    ok 1 - a syncMode: "webhook" instance matching (repoForge, repoBaseUrl) is skipped: zero getPullRequest fetches, task stays 待验收
+      ---
+      duration_ms: 109.00915
+      ...
+    # Subtest: an unlisted/mismatched instance (wrong base_url, or right base_url with the wrong forge) is still polled as before
+    ok 2 - an unlisted/mismatched instance (wrong base_url, or right base_url with the wrong forge) is still polled as before
+      ---
+      duration_ms: 98.71221
+      ...
+    # Subtest: a syncMode: "poll" instance matching (repoForge, repoBaseUrl) is still polled
+    ok 3 - a syncMode: "poll" instance matching (repoForge, repoBaseUrl) is still polled
+      ---
+      duration_ms: 112.492316
+      ...
+    # Subtest: an explicit empty forgeInstances array polls every 待验收 task exactly as omitting the argument does
+    ok 4 - an explicit empty forgeInstances array polls every 待验收 task exactly as omitting the argument does
+      ---
+      duration_ms: 99.067555
+      ...
+    1..4
+ok 42 - issue \#13: per-instance webhook-vs-poll config (pollPendingReviews honors forgeInstances)
+  ---
+  duration_ms: 419.55742
+  type: 'suite'
+  ...
+# (node:12880) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: issue \#7 tasks HTTP surface
+    # Subtest: authentication and DESIGN §11 permissions
+        # Subtest: unauthenticated JSON GET/POST/PATCH return 401 unauthorized
+        ok 1 - unauthenticated JSON GET/POST/PATCH return 401 unauthorized
+          ---
+          duration_ms: 76.579062
+          ...
+        # Subtest: browser-like GET /api/v1/tasks redirects to /login
+        ok 2 - browser-like GET /api/v1/tasks redirects to /login
+          ---
+          duration_ms: 10.115665
+          ...
+        # Subtest: leftover 待批准 GitHub user may read the board (§11 查看任务板 ✓) but not post
+        ok 3 - leftover 待批准 GitHub user may read the board (§11 查看任务板 ✓) but not post
+          ---
+          duration_ms: 57.41912
+          ...
+        # Subtest: leftover active GitHub claim_only user may read the board but not post or patch
+        ok 4 - leftover active GitHub claim_only user may read the board but not post or patch
+          ---
+          duration_ms: 94.138418
+          ...
+        # Subtest: only the 发布者 may cancel — another active full member gets 403
+        ok 5 - only the 发布者 may cancel — another active full member gets 403
+          ---
+          duration_ms: 67.855672
+          ...
+        1..5
+    ok 1 - authentication and DESIGN §11 permissions
+      ---
+      duration_ms: 306.929642
+      type: 'suite'
+      ...
+    # Subtest: POST /api/v1/tasks — 凭证档案下拉选择 path
+        # Subtest: profile path creates a 待认领 task whose credential is { profile_id }
+        ok 1 - profile path creates a 待认领 task whose credential is { profile_id }
+          ---
+          duration_ms: 74.241737
+          ...
+        # Subtest: profile_id is accepted as a number and as a numeric string
+        ok 2 - profile_id is accepted as a number and as a numeric string
+          ---
+          duration_ms: 60.02921
+          ...
+        # Subtest: an unknown profile_id is refused with 400 invalid_body and a Chinese message
+        ok 3 - an unknown profile_id is refused with 400 invalid_body and a Chinese message
+          ---
+          duration_ms: 63.881945
+          ...
+        1..3
+    ok 2 - POST /api/v1/tasks — 凭证档案下拉选择 path
+      ---
+      duration_ms: 198.735669
+      type: 'suite'
+      ...
+    # Subtest: POST /api/v1/tasks — 单任务临时 token path
+        # Subtest: inline token path creates a 待认领 task whose credential is { inline: true }
+        ok 1 - inline token path creates a 待认领 task whose credential is { inline: true }
+          ---
+          duration_ms: 55.493821
+          ...
+        # Subtest: inline token is stored as ciphertext and recoverable through the vault
+        ok 2 - inline token is stored as ciphertext and recoverable through the vault
+          ---
+          duration_ms: 73.020596
+          ...
+        # Subtest: both credential paths return 500 vault_unconfigured without VAULT_MASTER_KEY
+        ok 3 - both credential paths return 500 vault_unconfigured without VAULT_MASTER_KEY
+          ---
+          duration_ms: 39.922804
+          ...
+        1..3
+    ok 3 - POST /api/v1/tasks — 单任务临时 token path
+      ---
+      duration_ms: 168.631916
+      type: 'suite'
+      ...
+    # Subtest: 发布即校验 — DESIGN §5
+        # Subtest: a token missing 推 and PR is refused with 422 and names both capabilities
+        ok 1 - a token missing 推 and PR is refused with 422 and names both capabilities
+          ---
+          duration_ms: 61.456063
+          ...
+        # Subtest: a token that can push but cannot open PRs is refused naming only PR
+        ok 2 - a token that can push but cannot open PRs is refused naming only PR
+          ---
+          duration_ms: 37.9198
+          ...
+        # Subtest: a 401 token is refused with the token-invalid message, not the 权限不足 one
+        ok 3 - a 401 token is refused with the token-invalid message, not the 权限不足 one
+          ---
+          duration_ms: 49.568557
+          ...
+        # Subtest: a token with no access to the repo is refused with the token-invalid message
+        ok 4 - a token with no access to the repo is refused with the token-invalid message
+          ---
+          duration_ms: 41.833842
+          ...
+        # Subtest: an unreachable forge is a DIFFERENT outcome: 502 with its own Chinese message
+        ok 5 - an unreachable forge is a DIFFERENT outcome: 502 with its own Chinese message
+          ---
+          duration_ms: 46.455628
+          ...
+        # Subtest: the profile path is validated too — an under-scoped profile token is refused
+        ok 6 - the profile path is validated too — an under-scoped profile token is refused
+          ---
+          duration_ms: 43.594684
+          ...
+        1..6
+    ok 4 - 发布即校验 — DESIGN §5
+      ---
+      duration_ms: 281.123294
+      type: 'suite'
+      ...
+    # Subtest: 任务卡字段完整符合 §6 schema
+        # Subtest: a full request body round-trips every DESIGN §6 field
+        ok 1 - a full request body round-trips every DESIGN §6 field
+          ---
+          duration_ms: 41.778158
+          ...
+        # Subtest: pr_convention is derived from the public id, per DESIGN §6
+        ok 2 - pr_convention is derived from the public id, per DESIGN §6
+          ---
+          duration_ms: 40.746857
+          ...
+        # Subtest: a client-supplied pr_convention or id or status is ignored — the server owns them
+        ok 3 - a client-supplied pr_convention or id or status is ignored — the server owns them
+          ---
+          duration_ms: 43.919104
+          ...
+        # Subtest: an imported source round-trips issue_url; a native source carries only type
+        ok 4 - an imported source round-trips issue_url; a native source carries only type
+          ---
+          duration_ms: 50.08954
+          ...
+        # Subtest: a minimal request body is completed with the documented defaults
+        ok 5 - a minimal request body is completed with the documented defaults
+          ---
+          duration_ms: 42.982569
+          ...
+        # Subtest: created_at is ISO-8601 with offset and matches the stored unix seconds
+        ok 6 - created_at is ISO-8601 with offset and matches the stored unix seconds
+          ---
+          duration_ms: 67.732038
+          ...
+        # Subtest: POST with no title returns 400 invalid_body
+        ok 7 - POST with no title returns 400 invalid_body
+          ---
+          duration_ms: 54.158902
+          ...
+        # Subtest: POST with an empty title returns 400 invalid_body
+        ok 8 - POST with an empty title returns 400 invalid_body
+          ---
+          duration_ms: 44.168423
+          ...
+        # Subtest: POST with no repo returns 400 invalid_body
+        ok 9 - POST with no repo returns 400 invalid_body
+          ---
+          duration_ms: 42.820321
+          ...
+        # Subtest: POST with an unknown forge returns 400 invalid_body
+        ok 10 - POST with an unknown forge returns 400 invalid_body
+          ---
+          duration_ms: 41.805153
+          ...
+        # Subtest: POST with no repo.full_name returns 400 invalid_body
+        ok 11 - POST with no repo.full_name returns 400 invalid_body
+          ---
+          duration_ms: 40.14529
+          ...
+        # Subtest: POST with an unknown priority returns 400 invalid_body
+        ok 12 - POST with an unknown priority returns 400 invalid_body
+          ---
+          duration_ms: 41.826396
+          ...
+        # Subtest: POST with an unknown source type returns 400 invalid_body
+        ok 13 - POST with an unknown source type returns 400 invalid_body
+          ---
+          duration_ms: 52.805338
+          ...
+        # Subtest: POST with an imported source without issue_url returns 400 invalid_body
+        ok 14 - POST with an imported source without issue_url returns 400 invalid_body
+          ---
+          duration_ms: 43.616022
+          ...
+        # Subtest: POST with no credential returns 400 invalid_body
+        ok 15 - POST with no credential returns 400 invalid_body
+          ---
+          duration_ms: 58.129474
+          ...
+        # Subtest: POST with an empty credential returns 400 invalid_body
+        ok 16 - POST with an empty credential returns 400 invalid_body
+          ---
+          duration_ms: 38.181841
+          ...
+        # Subtest: POST with both credential forms at once returns 400 invalid_body
+        ok 17 - POST with both credential forms at once returns 400 invalid_body
+          ---
+          duration_ms: 45.362839
+          ...
+        # Subtest: POST with a bare inline marker and no token returns 400 invalid_body
+        ok 18 - POST with a bare inline marker and no token returns 400 invalid_body
+          ---
+          duration_ms: 37.83164
+          ...
+        # Subtest: POST with an empty inline token returns 400 invalid_body
+        ok 19 - POST with an empty inline token returns 400 invalid_body
+          ---
+          duration_ms: 37.834282
+          ...
+        1..19
+    ok 5 - 任务卡字段完整符合 §6 schema
+      ---
+      duration_ms: 866.685295
+      type: 'suite'
+      ...
+    # Subtest: public_id — kt-YYYY-NNNN
+        # Subtest: public_id has the kt-YYYY-NNNN form and carries the current year
+        ok 1 - public_id has the kt-YYYY-NNNN form and carries the current year
+          ---
+          duration_ms: 42.731007
+          ...
+        # Subtest: public ids are distinct and their sequence increases
+        ok 2 - public ids are distinct and their sequence increases
+          ---
+          duration_ms: 47.6771
+          ...
+        # Subtest: public_id is UNIQUE in SQLite
+        ok 3 - public_id is UNIQUE in SQLite
+          ---
+          duration_ms: 58.011731
+          ...
+        1..3
+    ok 6 - public_id — kt-YYYY-NNNN
+      ---
+      duration_ms: 148.57687
+      type: 'suite'
+      ...
+    # Subtest: token secrecy — DESIGN §7
+        # Subtest: no create/list/get response carries the inline token in any field
+        ok 1 - no create/list/get response carries the inline token in any field
+          ---
+          duration_ms: 44.382553
+          ...
+        # Subtest: no create/list/get response carries the profile token in any field
+        ok 2 - no create/list/get response carries the profile token in any field
+          ---
+          duration_ms: 57.848036
+          ...
+        1..2
+    ok 7 - token secrecy — DESIGN §7
+      ---
+      duration_ms: 102.37792
+      type: 'suite'
+      ...
+    # Subtest: GET /api/v1/tasks and GET /api/v1/tasks/:public_id
+        # Subtest: list returns every task under a tasks key, each a §6 brief
+        ok 1 - list returns every task under a tasks key, each a §6 brief
+          ---
+          duration_ms: 39.71521
+          ...
+        # Subtest: get by public_id returns exactly the brief that create returned
+        ok 2 - get by public_id returns exactly the brief that create returned
+          ---
+          duration_ms: 48.205476
+          ...
+        # Subtest: an unknown public_id returns 404 not_found
+        ok 3 - an unknown public_id returns 404 not_found
+          ---
+          duration_ms: 40.828277
+          ...
+        # Subtest: a numeric-looking id returns 404 not_found — tasks are addressed by public_id only
+        ok 4 - a numeric-looking id returns 404 not_found — tasks are addressed by public_id only
+          ---
+          duration_ms: 43.401155
+          ...
+        1..4
+    ok 8 - GET /api/v1/tasks and GET /api/v1/tasks/:public_id
+      ---
+      duration_ms: 172.348819
+      type: 'suite'
+      ...
+    # Subtest: PATCH /api/v1/tasks/:public_id — 取消 / 重新开放
+        # Subtest: 待认领 → 已取消 by the poster returns the updated brief
+        ok 1 - 待认领 → 已取消 by the poster returns the updated brief
+          ---
+          duration_ms: 47.607876
+          ...
+        # Subtest: 已退回 → 待认领 reopens the task
+        ok 2 - 已退回 → 待认领 reopens the task
+          ---
+          duration_ms: 79.579937
+          ...
+        # Subtest: 已退回 → 已取消 by the poster
+        ok 3 - 已退回 → 已取消 by the poster
+          ---
+          duration_ms: 66.479978
+          ...
+        # Subtest: an illegal transition 待认领 → 已完成 returns 409 with a Chinese message
+        ok 4 - an illegal transition 待认领 → 已完成 returns 409 with a Chinese message
+          ---
+          duration_ms: 55.587289
+          ...
+        # Subtest: 待认领 → 进行中 is claim territory, not a poster edit: 409 illegal_transition
+        ok 5 - 待认领 → 进行中 is claim territory, not a poster edit: 409 illegal_transition
+          ---
+          duration_ms: 58.246736
+          ...
+        # Subtest: 已取消 is terminal — 已取消 → 待认领 returns 409
+        ok 6 - 已取消 is terminal — 已取消 → 待认领 returns 409
+          ---
+          duration_ms: 42.552617
+          ...
+        # Subtest: an unknown status value returns 400 invalid_body
+        ok 7 - an unknown status value returns 400 invalid_body
+          ---
+          duration_ms: 46.146599
+          ...
+        # Subtest: PATCH on an unknown public_id returns 404 not_found
+        ok 8 - PATCH on an unknown public_id returns 404 not_found
+          ---
+          duration_ms: 53.871858
+          ...
+        1..8
+    ok 9 - PATCH /api/v1/tasks/:public_id — 取消 / 重新开放
+      ---
+      duration_ms: 450.502613
+      type: 'suite'
+      ...
+    # Subtest: audit — 状态迁移 events (DESIGN §10)
+        # Subtest: cancelling writes one 状态迁移 event naming the task, from, to and actor
+        ok 1 - cancelling writes one 状态迁移 event naming the task, from, to and actor
+          ---
+          duration_ms: 67.876131
+          ...
+        # Subtest: reopening writes a 状态迁移 event from 已退回 to 待认领
+        ok 2 - reopening writes a 状态迁移 event from 已退回 to 待认领
+          ---
+          duration_ms: 75.072854
+          ...
+        # Subtest: a refused transition writes no 状态迁移 event
+        ok 3 - a refused transition writes no 状态迁移 event
+          ---
+          duration_ms: 65.355357
+          ...
+        1..3
+    ok 10 - audit — 状态迁移 events (DESIGN §10)
+      ---
+      duration_ms: 208.536938
+      type: 'suite'
+      ...
+    # Subtest: tasks table invariants (DESIGN §10: credential_profile_id / inline_token_encrypted 二选一)
+        # Subtest: the profile path stores credential_profile_id and leaves inline_token_encrypted NULL
+        ok 1 - the profile path stores credential_profile_id and leaves inline_token_encrypted NULL
+          ---
+          duration_ms: 72.891265
+          ...
+        # Subtest: SQLite refuses a row with BOTH credential columns set
+        ok 2 - SQLite refuses a row with BOTH credential columns set
+          ---
+          duration_ms: 72.370329
+          ...
+        # Subtest: SQLite refuses a row with NEITHER credential column set
+        ok 3 - SQLite refuses a row with NEITHER credential column set
+          ---
+          duration_ms: 72.532162
+          ...
+        1..3
+    ok 11 - tasks table invariants (DESIGN §10: credential_profile_id / inline_token_encrypted 二选一)
+      ---
+      duration_ms: 217.997351
+      type: 'suite'
+      ...
+    # Subtest: POST /api/v1/tasks — security-review repair (profile binding / base_url / audit)
+        # Subtest: F1 — profile-to-repo binding (exact forge + base_url + full_name)
+            # Subtest: gitlab profile + gitea request is 400 before decrypt and never sends the plaintext token
+            ok 1 - gitlab profile + gitea request is 400 before decrypt and never sends the plaintext token
+              ---
+              duration_ms: 76.71008
+              ...
+            # Subtest: matching forge and full_name with an attacker base_url is 400 before decrypt
+            ok 2 - matching forge and full_name with an attacker base_url is 400 before decrypt
+              ---
+              duration_ms: 63.044999
+              ...
+            # Subtest: matching forge and base_url with a different full_name is 400 before decrypt
+            ok 3 - matching forge and base_url with a different full_name is 400 before decrypt
+              ---
+              duration_ms: 85.740794
+              ...
+            1..3
+        ok 1 - F1 — profile-to-repo binding (exact forge + base_url + full_name)
+          ---
+          duration_ms: 225.770128
+          type: 'suite'
+          ...
+        # Subtest: F2 — repo.base_url must be http(s) with a non-empty host
+            # Subtest: POST with repo.base_url a file: URL returns 400 invalid_body before any forge fetch
+            ok 1 - POST with repo.base_url a file: URL returns 400 invalid_body before any forge fetch
+              ---
+              duration_ms: 49.515872
+              ...
+            # Subtest: POST with repo.base_url a javascript: URL returns 400 invalid_body before any forge fetch
+            ok 2 - POST with repo.base_url a javascript: URL returns 400 invalid_body before any forge fetch
+              ---
+              duration_ms: 66.387173
+              ...
+            # Subtest: POST with repo.base_url a missing scheme returns 400 invalid_body before any forge fetch
+            ok 3 - POST with repo.base_url a missing scheme returns 400 invalid_body before any forge fetch
+              ---
+              duration_ms: 64.525243
+              ...
+            # Subtest: POST with repo.base_url an empty host returns 400 invalid_body before any forge fetch
+            ok 4 - POST with repo.base_url an empty host returns 400 invalid_body before any forge fetch
+              ---
+              duration_ms: 43.922932
+              ...
+            1..4
+        ok 2 - F2 — repo.base_url must be http(s) with a non-empty host
+          ---
+          duration_ms: 224.642254
+          type: 'suite'
+          ...
+        # Subtest: F3 — decrypting a stored profile for 发布即校验 writes token 揭示
+            # Subtest: a matching profile 201 writes token 揭示 with pinned details; an inline token does not
+            ok 1 - a matching profile 201 writes token 揭示 with pinned details; an inline token does not
+              ---
+              duration_ms: 91.01717
+              ...
+            # Subtest: a profile-path 422 still writes token 揭示 (plaintext already left the process)
+            ok 2 - a profile-path 422 still writes token 揭示 (plaintext already left the process)
+              ---
+              duration_ms: 75.639963
+              ...
+            # Subtest: a profile-path 502 still writes token 揭示 (plaintext already left the process)
+            ok 3 - a profile-path 502 still writes token 揭示 (plaintext already left the process)
+              ---
+              duration_ms: 72.723609
+              ...
+            1..3
+        ok 3 - F3 — decrypting a stored profile for 发布即校验 writes token 揭示
+          ---
+          duration_ms: 239.588239
+          type: 'suite'
+          ...
+        1..3
+    ok 12 - POST /api/v1/tasks — security-review repair (profile binding / base_url / audit)
+      ---
+      duration_ms: 690.156514
+      type: 'suite'
+      ...
+    1..12
+ok 43 - issue \#7 tasks HTTP surface
+  ---
+  duration_ms: 3813.55173
+  type: 'suite'
+  ...
+# (node:12891) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: issue \#5 credential vault
+    # Subtest: placeholder pin
+        # Subtest: GET / still returns 考拉任务服务占位
+        ok 1 - GET / still returns 考拉任务服务占位
+          ---
+          duration_ms: 60.381917
+          ...
+        1..1
+    ok 1 - placeholder pin
+      ---
+      duration_ms: 60.832533
+      type: 'suite'
+      ...
+    # Subtest: unauthenticated credential-profile routes
+        # Subtest: JSON GET/POST/DELETE without a session return 401 unauthorized
+        ok 1 - JSON GET/POST/DELETE without a session return 401 unauthorized
+          ---
+          duration_ms: 17.91067
+          ...
+        # Subtest: browser-like GET /api/v1/credential-profiles redirects to /login
+        ok 2 - browser-like GET /api/v1/credential-profiles redirects to /login
+          ---
+          duration_ms: 9.372937
+          ...
+        1..2
+    ok 2 - unauthenticated credential-profile routes
+      ---
+      duration_ms: 27.534032
+      type: 'suite'
+      ...
+    # Subtest: credential profile CRUD (session, active full)
+        # Subtest: GitLab POST returns 201 public fields and GET lists them without secrets
+        ok 1 - GitLab POST returns 201 public fields and GET lists them without secrets
+          ---
+          duration_ms: 69.07314
+          ...
+        # Subtest: Gitea active full member can POST a credential profile
+        ok 2 - Gitea active full member can POST a credential profile
+          ---
+          duration_ms: 57.973705
+          ...
+        # Subtest: duplicate (forge, base_url, repo_full_name) returns 409 conflict
+        ok 3 - duplicate (forge, base_url, repo_full_name) returns 409 conflict
+          ---
+          duration_ms: 62.974123
+          ...
+        # Subtest: DELETE returns forge-revoke copy; missing id is 404 not_found
+        ok 4 - DELETE returns forge-revoke copy; missing id is 404 not_found
+          ---
+          duration_ms: 56.248882
+          ...
+        # Subtest: any active full member lists and deletes team-shared profiles
+        ok 5 - any active full member lists and deletes team-shared profiles
+          ---
+          duration_ms: 62.16969
+          ...
+        1..5
+    ok 3 - credential profile CRUD (session, active full)
+      ---
+      duration_ms: 308.988049
+      type: 'suite'
+      ...
+    # Subtest: permission gate (profiles are active+full only)
+        # Subtest: leftover 待批准 GitHub user gets 403 forbidden on POST/GET/DELETE
+        ok 1 - leftover 待批准 GitHub user gets 403 forbidden on POST/GET/DELETE
+          ---
+          duration_ms: 26.76533
+          ...
+        # Subtest: leftover active GitHub claim_only still gets 403 forbidden on POST/GET/DELETE
+        ok 2 - leftover active GitHub claim_only still gets 403 forbidden on POST/GET/DELETE
+          ---
+          duration_ms: 82.45194
+          ...
+        1..2
+    ok 4 - permission gate (profiles are active+full only)
+      ---
+      duration_ms: 109.393661
+      type: 'suite'
+      ...
+    # Subtest: SQLite: no plaintext token; 变更 events
+        # Subtest: token_encrypted TEXT omits plaintext and create writes 变更
+        ok 1 - token_encrypted TEXT omits plaintext and create writes 变更
+          ---
+          duration_ms: 81.196916
+          ...
+        # Subtest: DELETE writes 变更 action delete
+        ok 2 - DELETE writes 变更 action delete
+          ---
+          duration_ms: 64.129932
+          ...
+        1..2
+    ok 5 - SQLite: no plaintext token; 变更 events
+      ---
+      duration_ms: 145.461089
+      type: 'suite'
+      ...
+    # Subtest: vault_unconfigured
+        # Subtest: HTTP POST without VAULT_MASTER_KEY returns 500 vault_unconfigured
+        ok 1 - HTTP POST without VAULT_MASTER_KEY returns 500 vault_unconfigured
+          ---
+          duration_ms: 56.233115
+          ...
+        1..1
+    ok 6 - vault_unconfigured
+      ---
+      duration_ms: 56.350667
+      type: 'suite'
+      ...
+    # Subtest: encryptToken / decryptToken (dynamic import ./vault.ts)
+        # Subtest: round-trips a one-off token string and ciphertext omits plaintext
+        ok 1 - round-trips a one-off token string and ciphertext omits plaintext
+          ---
+          duration_ms: 0.506678
+          ...
+        # Subtest: encryptToken throws when VAULT_MASTER_KEY is missing
+        ok 2 - encryptToken throws when VAULT_MASTER_KEY is missing
+          ---
+          duration_ms: 0.36861
+          ...
+        1..2
+    ok 7 - encryptToken / decryptToken (dynamic import ./vault.ts)
+      ---
+      duration_ms: 0.9437
+      type: 'suite'
+      ...
+    # Subtest: revealCredentialProfile (dynamic import ./vault.ts)
+        # Subtest: returns plaintext, writes token 揭示 audit, and throws after DELETE
+        ok 1 - returns plaintext, writes token 揭示 audit, and throws after DELETE
+          ---
+          duration_ms: 73.506286
+          ...
+        1..1
+    ok 8 - revealCredentialProfile (dynamic import ./vault.ts)
+      ---
+      duration_ms: 73.598661
+      type: 'suite'
+      ...
+    1..8
+ok 44 - issue \#5 credential vault
+  ---
+  duration_ms: 783.694838
+  type: 'suite'
+  ...
+# (node:12902) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: issue \#13 webhook receiver (POST /api/v1/webhooks/:publicId)
+    # Subtest: unknown publicId (no matching forgeInstances entry) → 404 { error: "not_found" }, no signature required
+    ok 1 - unknown publicId (no matching forgeInstances entry) → 404 { error: "not_found" }, no signature required
+      ---
+      duration_ms: 126.333021
+      ...
+    # Subtest: bad signature (wrong secret) → 401 { error: "invalid_signature" }, and the response never leaks the secret
+    ok 2 - bad signature (wrong secret) → 401 { error: "invalid_signature" }, and the response never leaks the secret
+      ---
+      duration_ms: 19.405469
+      ...
+    # Subtest: bad signature (missing signature header) → 401 { error: "invalid_signature" }
+    ok 3 - bad signature (missing signature header) → 401 { error: "invalid_signature" }
+      ---
+      duration_ms: 24.332999
+      ...
+    # Subtest: ping/irrelevant event with a correct signature → 204 empty body
+    ok 4 - ping/irrelevant event with a correct signature → 204 empty body
+      ---
+      duration_ms: 21.645312
+      ...
+    # Subtest: merge event with a matching 待验收 submission → 204, task 已完成, submissions.pr_state merged, system 状态迁移 event
+    ok 5 - merge event with a matching 待验收 submission → 204, task 已完成, submissions.pr_state merged, system 状态迁移 event
+      ---
+      duration_ms: 151.722767
+      ...
+    # Subtest: closed-unmerged event with a matching 待验收 submission → 204, task 已退回, submissions.pr_state closed
+    ok 6 - closed-unmerged event with a matching 待验收 submission → 204, task 已退回, submissions.pr_state closed
+      ---
+      duration_ms: 121.658859
+      ...
+    # Subtest: a delivery whose pr_url matches no 待验收 submission → 204 no-op, no task/event changes
+    ok 7 - a delivery whose pr_url matches no 待验收 submission → 204 no-op, no task/event changes
+      ---
+      duration_ms: 94.111644
+      ...
+    # Subtest: a syncMode: "poll" instance webhook still completes the task (mode gates the poller, not this receiver)
+    ok 8 - a syncMode: "poll" instance webhook still completes the task (mode gates the poller, not this receiver)
+      ---
+      duration_ms: 122.51251
+      ...
+    # Subtest: no session cookie and no Bearer token are required or accepted as auth — the signature alone gates the request
+    ok 9 - no session cookie and no Bearer token are required or accepted as auth — the signature alone gates the request
+      ---
+      duration_ms: 124.100738
+      ...
+    # Subtest: cross-forge dispatch: a github forgeInstances entry is verified with X-Hub-Signature-256, not the gitea scheme
+    ok 10 - cross-forge dispatch: a github forgeInstances entry is verified with X-Hub-Signature-256, not the gitea scheme
+      ---
+      duration_ms: 30.089621
+      ...
+    # Subtest: confused deputy: a correctly-signed github delivery must not complete an unrelated gitea instance's task merely because pr_url matches
+    ok 11 - confused deputy: a correctly-signed github delivery must not complete an unrelated gitea instance's task merely because pr_url matches
+      ---
+      duration_ms: 114.055345
+      ...
+    1..11
+ok 45 - issue \#13 webhook receiver (POST /api/v1/webhooks/:publicId)
+  ---
+  duration_ms: 951.448054
+  type: 'suite'
+  ...
+# (node:12913) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: issue \#14 write-back (commentOnIssue on 认领 / 提交PR / 完成)
+    # Subtest: 认领 (claim) write-back
+        # Subtest: imported gitea task: REST claim posts a write-back comment with the task credential, not the agent key
+        ok 1 - imported gitea task: REST claim posts a write-back comment with the task credential, not the agent key
+          ---
+          duration_ms: 186.738742
+          ...
+        # Subtest: native task: REST claim never posts a write-back comment and writes no 回写 event
+        ok 2 - native task: REST claim never posts a write-back comment and writes no 回写 event
+          ---
+          duration_ms: 102.575337
+          ...
+        # Subtest: imported github task: claim posts to the GitHub Issues API with a Bearer task-credential header
+        ok 3 - imported github task: claim posts to the GitHub Issues API with a Bearer task-credential header
+          ---
+          duration_ms: 99.512283
+          ...
+        # Subtest: imported gitlab task: claim posts a note with a PRIVATE-TOKEN task-credential header
+        ok 4 - imported gitlab task: claim posts a note with a PRIVATE-TOKEN task-credential header
+          ---
+          duration_ms: 112.570285
+          ...
+        # Subtest: a forge 5xx on the claim comment never blocks the claim, and no successful 回写 is recorded
+        ok 5 - a forge 5xx on the claim comment never blocks the claim, and no successful 回写 is recorded
+          ---
+          duration_ms: 103.438401
+          ...
+        1..5
+    ok 1 - 认领 (claim) write-back
+      ---
+      duration_ms: 605.751766
+      type: 'suite'
+      ...
+    # Subtest: 提交 PR (submit_pr) write-back
+        # Subtest: imported gitea task: MCP submit_pr posts a write-back comment containing publicId, PUBLIC_URL, and pr_url
+        ok 1 - imported gitea task: MCP submit_pr posts a write-back comment containing publicId, PUBLIC_URL, and pr_url
+          ---
+          duration_ms: 156.202895
+          ...
+        # Subtest: a forge network failure on the submit_pr comment never blocks submit_pr, and no successful 回写 is recorded
+        ok 2 - a forge network failure on the submit_pr comment never blocks submit_pr, and no successful 回写 is recorded
+          ---
+          duration_ms: 125.900618
+          ...
+        1..2
+    ok 2 - 提交 PR (submit_pr) write-back
+      ---
+      duration_ms: 282.557863
+      type: 'suite'
+      ...
+    # Subtest: 完成 (complete) write-back
+        # Subtest: imported gitea task: pollPendingReviews posts a write-back comment on 已完成 (merged)
+        ok 1 - imported gitea task: pollPendingReviews posts a write-back comment on 已完成 (merged)
+          ---
+          duration_ms: 125.397442
+          ...
+        # Subtest: imported gitea task: a webhook merged delivery posts a write-back comment on 已完成
+        ok 2 - imported gitea task: a webhook merged delivery posts a write-back comment on 已完成
+          ---
+          duration_ms: 125.85411
+          ...
+        # Subtest: imported gitea task: a closed (unmerged) PR via pollPendingReviews (已退回) never posts a completion write-back comment
+        ok 3 - imported gitea task: a closed (unmerged) PR via pollPendingReviews (已退回) never posts a completion write-back comment
+          ---
+          duration_ms: 128.014962
+          ...
+        # Subtest: a forge 5xx on the completion comment never blocks reaching 已完成, and no successful 回写 is recorded
+        ok 4 - a forge 5xx on the completion comment never blocks reaching 已完成, and no successful 回写 is recorded
+          ---
+          duration_ms: 146.7498
+          ...
+        1..4
+    ok 3 - 完成 (complete) write-back
+      ---
+      duration_ms: 526.354991
+      type: 'suite'
+      ...
+    # Subtest: native task: no write-back at any of the three hooks
+        # Subtest: a native task never posts a write-back comment across claim, submit_pr, and completion
+        ok 1 - a native task never posts a write-back comment across claim, submit_pr, and completion
+          ---
+          duration_ms: 117.645759
+          ...
+        1..1
+    ok 4 - native task: no write-back at any of the three hooks
+      ---
+      duration_ms: 117.794491
+      type: 'suite'
+      ...
+    # Subtest: retry (retryPendingWritebacks, exported from apps/server/src/poller.ts)
+        # Subtest: re-posts a write-back comment that failed on 认领, and does not duplicate once it has succeeded
+        ok 1 - re-posts a write-back comment that failed on 认领, and does not duplicate once it has succeeded
+          ---
+          duration_ms: 112.308377
+          ...
+        # Subtest: re-posts a write-back comment that failed on 完成 (via pollPendingReviews)
+        ok 2 - re-posts a write-back comment that failed on 完成 (via pollPendingReviews)
+          ---
+          duration_ms: 87.497502
+          ...
+        # Subtest: is a safe no-op when there is nothing pending
+        ok 3 - is a safe no-op when there is nothing pending
+          ---
+          duration_ms: 15.043008
+          ...
+        1..3
+    ok 5 - retry (retryPendingWritebacks, exported from apps/server/src/poller.ts)
+      ---
+      duration_ms: 215.042193
+      type: 'suite'
+      ...
+    1..5
+ok 46 - issue \#14 write-back (commentOnIssue on 认领 / 提交PR / 完成)
+  ---
+  duration_ms: 1747.990661
+  type: 'suite'
+  ...
+# (node:12924) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: commentOnIssue shared spec
+    # Subtest: github
+        # Subtest: POSTs { body } to the comment endpoint with the same per-kind auth headers as the sibling methods
+        ok 1 - POSTs { body } to the comment endpoint with the same per-kind auth headers as the sibling methods
+          ---
+          duration_ms: 20.102513
+          ...
+        # Subtest: treats any res.ok (2xx) response as success, not only a hard-coded 201
+        ok 2 - treats any res.ok (2xx) response as success, not only a hard-coded 201
+          ---
+          duration_ms: 0.493889
+          ...
+        # Subtest: non-OK HTTP response rejects with "commentOnIssue: <kind> responded <status>", after exactly one fetch
+        ok 3 - non-OK HTTP response rejects with "commentOnIssue: <kind> responded <status>", after exactly one fetch
+          ---
+          duration_ms: 0.571069
+          ...
+        # Subtest: an unparseable issue_url rejects without calling fetch (not merely notImplemented)
+        ok 4 - an unparseable issue_url rejects without calling fetch (not merely notImplemented)
+          ---
+          duration_ms: 0.221932
+          ...
+        # Subtest: a pull/MR web path in issue_url is unparseable and must not fetch
+        ok 5 - a pull/MR web path in issue_url is unparseable and must not fetch
+          ---
+          duration_ms: 0.233065
+          ...
+        1..5
+    ok 1 - github
+      ---
+      duration_ms: 22.263911
+      type: 'suite'
+      ...
+    # Subtest: gitlab
+        # Subtest: POSTs { body } to the comment endpoint with the same per-kind auth headers as the sibling methods
+        ok 1 - POSTs { body } to the comment endpoint with the same per-kind auth headers as the sibling methods
+          ---
+          duration_ms: 0.51217
+          ...
+        # Subtest: treats any res.ok (2xx) response as success, not only a hard-coded 201
+        ok 2 - treats any res.ok (2xx) response as success, not only a hard-coded 201
+          ---
+          duration_ms: 0.314451
+          ...
+        # Subtest: non-OK HTTP response rejects with "commentOnIssue: <kind> responded <status>", after exactly one fetch
+        ok 3 - non-OK HTTP response rejects with "commentOnIssue: <kind> responded <status>", after exactly one fetch
+          ---
+          duration_ms: 0.368633
+          ...
+        # Subtest: an unparseable issue_url rejects without calling fetch (not merely notImplemented)
+        ok 4 - an unparseable issue_url rejects without calling fetch (not merely notImplemented)
+          ---
+          duration_ms: 0.298901
+          ...
+        # Subtest: a pull/MR web path in issue_url is unparseable and must not fetch
+        ok 5 - a pull/MR web path in issue_url is unparseable and must not fetch
+          ---
+          duration_ms: 0.251954
+          ...
+        1..5
+    ok 2 - gitlab
+      ---
+      duration_ms: 1.988695
+      type: 'suite'
+      ...
+    # Subtest: gitea
+        # Subtest: POSTs { body } to the comment endpoint with the same per-kind auth headers as the sibling methods
+        ok 1 - POSTs { body } to the comment endpoint with the same per-kind auth headers as the sibling methods
+          ---
+          duration_ms: 0.384206
+          ...
+        # Subtest: treats any res.ok (2xx) response as success, not only a hard-coded 201
+        ok 2 - treats any res.ok (2xx) response as success, not only a hard-coded 201
+          ---
+          duration_ms: 0.19941
+          ...
+        # Subtest: non-OK HTTP response rejects with "commentOnIssue: <kind> responded <status>", after exactly one fetch
+        ok 3 - non-OK HTTP response rejects with "commentOnIssue: <kind> responded <status>", after exactly one fetch
+          ---
+          duration_ms: 0.500286
+          ...
+        # Subtest: an unparseable issue_url rejects without calling fetch (not merely notImplemented)
+        ok 4 - an unparseable issue_url rejects without calling fetch (not merely notImplemented)
+          ---
+          duration_ms: 0.09558
+          ...
+        # Subtest: a pull/MR web path in issue_url is unparseable and must not fetch
+        ok 5 - a pull/MR web path in issue_url is unparseable and must not fetch
+          ---
+          duration_ms: 0.155008
+          ...
+        1..5
+    ok 3 - gitea
+      ---
+      duration_ms: 1.474583
+      type: 'suite'
+      ...
+    # Subtest: github: always POSTs to api.github.com regardless of a custom baseUrl option or the pasted issue host
+    ok 4 - github: always POSTs to api.github.com regardless of a custom baseUrl option or the pasted issue host
+      ---
+      duration_ms: 0.298165
+      ...
+    # Subtest: gitlab/gitea: the API origin comes from the constructor baseUrl option, never from the issue_url host (SSRF)
+    ok 5 - gitlab/gitea: the API origin comes from the constructor baseUrl option, never from the issue_url host (SSRF)
+      ---
+      duration_ms: 0.390584
+      ...
+    # Subtest: gitlab: a nested-group namespace is encodeURIComponent-ed as a single :id segment in the notes URL
+    ok 6 - gitlab: a nested-group namespace is encodeURIComponent-ed as a single :id segment in the notes URL
+      ---
+      duration_ms: 0.198063
+      ...
+    # Subtest: the same body string is sent verbatim as the JSON { body } field for every kind
+    ok 7 - the same body string is sent verbatim as the JSON { body } field for every kind
+      ---
+      duration_ms: 1.346415
+      ...
+    1..7
+ok 47 - commentOnIssue shared spec
+  ---
+  duration_ms: 28.508359
+  type: 'suite'
+  ...
+# (node:12935) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: getPullRequest shared spec
+    # Subtest: github
+        # Subtest: GETs the pull/merge-request endpoint with validateToken-style auth headers
+        ok 1 - GETs the pull/merge-request endpoint with validateToken-style auth headers
+          ---
+          duration_ms: 14.607472
+          ...
+        # Subtest: merged → { state: "merged" }
+        ok 2 - merged → { state: "merged" }
+          ---
+          duration_ms: 0.487172
+          ...
+        # Subtest: closed and not merged → { state: "closed" }
+        ok 3 - closed and not merged → { state: "closed" }
+          ---
+          duration_ms: 0.573389
+          ...
+        # Subtest: open → { state: "open" }
+        ok 4 - open → { state: "open" }
+          ---
+          duration_ms: 0.421667
+          ...
+        # Subtest: trailing slash on the pasted URL is stripped before parsing
+        ok 5 - trailing slash on the pasted URL is stripped before parsing
+          ---
+          duration_ms: 0.464805
+          ...
+        # Subtest: non-OK HTTP response rejects (after actually calling fetch, not merely throwing)
+        ok 6 - non-OK HTTP response rejects (after actually calling fetch, not merely throwing)
+          ---
+          duration_ms: 0.448385
+          ...
+        # Subtest: an unparseable prUrl rejects without calling fetch, while a valid URL from the same adapter succeeds
+        ok 7 - an unparseable prUrl rejects without calling fetch, while a valid URL from the same adapter succeeds
+          ---
+          duration_ms: 0.546076
+          ...
+        1..7
+    ok 1 - github
+      ---
+      duration_ms: 18.268183
+      type: 'suite'
+      ...
+    # Subtest: gitlab
+        # Subtest: GETs the pull/merge-request endpoint with validateToken-style auth headers
+        ok 1 - GETs the pull/merge-request endpoint with validateToken-style auth headers
+          ---
+          duration_ms: 0.668665
+          ...
+        # Subtest: merged → { state: "merged" }
+        ok 2 - merged → { state: "merged" }
+          ---
+          duration_ms: 0.775621
+          ...
+        # Subtest: closed and not merged → { state: "closed" }
+        ok 3 - closed and not merged → { state: "closed" }
+          ---
+          duration_ms: 0.649913
+          ...
+        # Subtest: open → { state: "open" }
+        ok 4 - open → { state: "open" }
+          ---
+          duration_ms: 0.331071
+          ...
+        # Subtest: trailing slash on the pasted URL is stripped before parsing
+        ok 5 - trailing slash on the pasted URL is stripped before parsing
+          ---
+          duration_ms: 0.28126
+          ...
+        # Subtest: non-OK HTTP response rejects (after actually calling fetch, not merely throwing)
+        ok 6 - non-OK HTTP response rejects (after actually calling fetch, not merely throwing)
+          ---
+          duration_ms: 0.166659
+          ...
+        # Subtest: an unparseable prUrl rejects without calling fetch, while a valid URL from the same adapter succeeds
+        ok 7 - an unparseable prUrl rejects without calling fetch, while a valid URL from the same adapter succeeds
+          ---
+          duration_ms: 0.255495
+          ...
+        1..7
+    ok 2 - gitlab
+      ---
+      duration_ms: 3.437688
+      type: 'suite'
+      ...
+    # Subtest: gitea
+        # Subtest: GETs the pull/merge-request endpoint with validateToken-style auth headers
+        ok 1 - GETs the pull/merge-request endpoint with validateToken-style auth headers
+          ---
+          duration_ms: 0.458553
+          ...
+        # Subtest: merged → { state: "merged" }
+        ok 2 - merged → { state: "merged" }
+          ---
+          duration_ms: 0.271129
+          ...
+        # Subtest: closed and not merged → { state: "closed" }
+        ok 3 - closed and not merged → { state: "closed" }
+          ---
+          duration_ms: 0.197336
+          ...
+        # Subtest: open → { state: "open" }
+        ok 4 - open → { state: "open" }
+          ---
+          duration_ms: 1.118891
+          ...
+        # Subtest: trailing slash on the pasted URL is stripped before parsing
+        ok 5 - trailing slash on the pasted URL is stripped before parsing
+          ---
+          duration_ms: 0.210899
+          ...
+        # Subtest: non-OK HTTP response rejects (after actually calling fetch, not merely throwing)
+        ok 6 - non-OK HTTP response rejects (after actually calling fetch, not merely throwing)
+          ---
+          duration_ms: 0.203321
+          ...
+        # Subtest: an unparseable prUrl rejects without calling fetch, while a valid URL from the same adapter succeeds
+        ok 7 - an unparseable prUrl rejects without calling fetch, while a valid URL from the same adapter succeeds
+          ---
+          duration_ms: 0.185885
+          ...
+        1..7
+    ok 3 - gitea
+      ---
+      duration_ms: 2.820021
+      type: 'suite'
+      ...
+    # Subtest: github: .diff and .patch suffixes on the pasted URL are stripped before parsing
+    ok 4 - github: .diff and .patch suffixes on the pasted URL are stripped before parsing
+      ---
+      duration_ms: 0.472008
+      ...
+    # Subtest: github: always calls api.github.com regardless of a custom baseUrl option
+    ok 5 - github: always calls api.github.com regardless of a custom baseUrl option
+      ---
+      duration_ms: 0.21529
+      ...
+    # Subtest: gitlab: opened → open (verified 4-valued vendor enum mapped down to 3)
+    ok 6 - gitlab: opened → open (verified 4-valued vendor enum mapped down to 3)
+      ---
+      duration_ms: 0.176811
+      ...
+    # Subtest: gitlab: locked (transient, en route to merged) → open, not merged and not closed
+    ok 7 - gitlab: locked (transient, en route to merged) → open, not merged and not closed
+      ---
+      duration_ms: 0.161816
+      ...
+    # Subtest: gitlab: a namespace path with subgroup slashes is encodeURIComponent-ed as a single :id segment
+    ok 8 - gitlab: a namespace path with subgroup slashes is encodeURIComponent-ed as a single :id segment
+      ---
+      duration_ms: 0.195668
+      ...
+    # Subtest: gitlab/gitea: the API origin comes from the constructor baseUrl option, not from the prUrl host
+    ok 9 - gitlab/gitea: the API origin comes from the constructor baseUrl option, not from the prUrl host
+      ---
+      duration_ms: 0.371823
+      ...
+    1..9
+ok 48 - getPullRequest shared spec
+  ---
+  duration_ms: 26.886166
+  type: 'suite'
+  ...
+# (node:12946) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: importIssue shared spec
+    # Subtest: github
+        # Subtest: GETs the issue endpoint with validateToken-style auth headers and returns ImportedIssue
+        ok 1 - GETs the issue endpoint with validateToken-style auth headers and returns ImportedIssue
+          ---
+          duration_ms: 16.28222
+          ...
+        # Subtest: trailing slash on the pasted URL is stripped before parsing and from returned issue_url
+        ok 2 - trailing slash on the pasted URL is stripped before parsing and from returned issue_url
+          ---
+          duration_ms: 0.545561
+          ...
+        # Subtest: query and hash on the pasted URL are dropped by pathname when building the REST URL
+        ok 3 - query and hash on the pasted URL are dropped by pathname when building the REST URL
+          ---
+          duration_ms: 0.603353
+          ...
+        # Subtest: null issue body/description maps to an empty description_md
+        ok 4 - null issue body/description maps to an empty description_md
+          ---
+          duration_ms: 0.654275
+          ...
+        # Subtest: missing issue body/description maps to an empty description_md
+        ok 5 - missing issue body/description maps to an empty description_md
+          ---
+          duration_ms: 0.655414
+          ...
+        # Subtest: returned issue_url is the pasted web URL, not html_url / web_url from JSON
+        ok 6 - returned issue_url is the pasted web URL, not html_url / web_url from JSON
+          ---
+          duration_ms: 0.413198
+          ...
+        # Subtest: missing or non-string title rejects after fetch
+        ok 7 - missing or non-string title rejects after fetch
+          ---
+          duration_ms: 0.624277
+          ...
+        # Subtest: non-OK HTTP response rejects after actually calling fetch, with status in the message
+        ok 8 - non-OK HTTP response rejects after actually calling fetch, with status in the message
+          ---
+          duration_ms: 0.533091
+          ...
+        # Subtest: an unparseable issueUrl rejects without calling fetch (not merely notImplemented)
+        ok 9 - an unparseable issueUrl rejects without calling fetch (not merely notImplemented)
+          ---
+          duration_ms: 0.554274
+          ...
+        # Subtest: a pull/MR/work-item web path is unparseable and must not fetch
+        ok 10 - a pull/MR/work-item web path is unparseable and must not fetch
+          ---
+          duration_ms: 0.561014
+          ...
+        1..10
+    ok 1 - github
+      ---
+      duration_ms: 22.246207
+      type: 'suite'
+      ...
+    # Subtest: gitlab
+        # Subtest: GETs the issue endpoint with validateToken-style auth headers and returns ImportedIssue
+        ok 1 - GETs the issue endpoint with validateToken-style auth headers and returns ImportedIssue
+          ---
+          duration_ms: 0.961511
+          ...
+        # Subtest: trailing slash on the pasted URL is stripped before parsing and from returned issue_url
+        ok 2 - trailing slash on the pasted URL is stripped before parsing and from returned issue_url
+          ---
+          duration_ms: 0.579117
+          ...
+        # Subtest: query and hash on the pasted URL are dropped by pathname when building the REST URL
+        ok 3 - query and hash on the pasted URL are dropped by pathname when building the REST URL
+          ---
+          duration_ms: 0.31733
+          ...
+        # Subtest: null issue body/description maps to an empty description_md
+        ok 4 - null issue body/description maps to an empty description_md
+          ---
+          duration_ms: 0.260745
+          ...
+        # Subtest: missing issue body/description maps to an empty description_md
+        ok 5 - missing issue body/description maps to an empty description_md
+          ---
+          duration_ms: 0.181993
+          ...
+        # Subtest: returned issue_url is the pasted web URL, not html_url / web_url from JSON
+        ok 6 - returned issue_url is the pasted web URL, not html_url / web_url from JSON
+          ---
+          duration_ms: 0.212799
+          ...
+        # Subtest: missing or non-string title rejects after fetch
+        ok 7 - missing or non-string title rejects after fetch
+          ---
+          duration_ms: 0.186149
+          ...
+        # Subtest: non-OK HTTP response rejects after actually calling fetch, with status in the message
+        ok 8 - non-OK HTTP response rejects after actually calling fetch, with status in the message
+          ---
+          duration_ms: 1.283992
+          ...
+        # Subtest: an unparseable issueUrl rejects without calling fetch (not merely notImplemented)
+        ok 9 - an unparseable issueUrl rejects without calling fetch (not merely notImplemented)
+          ---
+          duration_ms: 0.169362
+          ...
+        # Subtest: a pull/MR/work-item web path is unparseable and must not fetch
+        ok 10 - a pull/MR/work-item web path is unparseable and must not fetch
+          ---
+          duration_ms: 0.139846
+          ...
+        1..10
+    ok 2 - gitlab
+      ---
+      duration_ms: 4.590127
+      type: 'suite'
+      ...
+    # Subtest: gitea
+        # Subtest: GETs the issue endpoint with validateToken-style auth headers and returns ImportedIssue
+        ok 1 - GETs the issue endpoint with validateToken-style auth headers and returns ImportedIssue
+          ---
+          duration_ms: 1.391334
+          ...
+        # Subtest: trailing slash on the pasted URL is stripped before parsing and from returned issue_url
+        ok 2 - trailing slash on the pasted URL is stripped before parsing and from returned issue_url
+          ---
+          duration_ms: 0.423293
+          ...
+        # Subtest: query and hash on the pasted URL are dropped by pathname when building the REST URL
+        ok 3 - query and hash on the pasted URL are dropped by pathname when building the REST URL
+          ---
+          duration_ms: 0.223299
+          ...
+        # Subtest: null issue body/description maps to an empty description_md
+        ok 4 - null issue body/description maps to an empty description_md
+          ---
+          duration_ms: 0.151435
+          ...
+        # Subtest: missing issue body/description maps to an empty description_md
+        ok 5 - missing issue body/description maps to an empty description_md
+          ---
+          duration_ms: 0.164134
+          ...
+        # Subtest: returned issue_url is the pasted web URL, not html_url / web_url from JSON
+        ok 6 - returned issue_url is the pasted web URL, not html_url / web_url from JSON
+          ---
+          duration_ms: 0.139043
+          ...
+        # Subtest: missing or non-string title rejects after fetch
+        ok 7 - missing or non-string title rejects after fetch
+          ---
+          duration_ms: 0.183396
+          ...
+        # Subtest: non-OK HTTP response rejects after actually calling fetch, with status in the message
+        ok 8 - non-OK HTTP response rejects after actually calling fetch, with status in the message
+          ---
+          duration_ms: 0.224025
+          ...
+        # Subtest: an unparseable issueUrl rejects without calling fetch (not merely notImplemented)
+        ok 9 - an unparseable issueUrl rejects without calling fetch (not merely notImplemented)
+          ---
+          duration_ms: 0.121309
+          ...
+        # Subtest: a pull/MR/work-item web path is unparseable and must not fetch
+        ok 10 - a pull/MR/work-item web path is unparseable and must not fetch
+          ---
+          duration_ms: 0.178245
+          ...
+        1..10
+    ok 3 - gitea
+      ---
+      duration_ms: 3.467121
+      type: 'suite'
+      ...
+    # Subtest: github: always calls api.github.com regardless of a custom baseUrl option or pasted host
+    ok 4 - github: always calls api.github.com regardless of a custom baseUrl option or pasted host
+      ---
+      duration_ms: 0.362445
+      ...
+    # Subtest: github/gitea: a GET /issues/{n} payload that includes pull_request is still accepted
+    ok 5 - github/gitea: a GET /issues/{n} payload that includes pull_request is still accepted
+      ---
+      duration_ms: 0.434467
+      ...
+    # Subtest: gitlab: description_md comes from JSON description, not body
+    ok 6 - gitlab: description_md comes from JSON description, not body
+      ---
+      duration_ms: 0.26423
+      ...
+    # Subtest: github/gitea: description_md comes from JSON body, not description
+    ok 7 - github/gitea: description_md comes from JSON body, not description
+      ---
+      duration_ms: 0.40192
+      ...
+    # Subtest: gitlab: a nested-group namespace is encodeURIComponent-ed as a single :id segment
+    ok 8 - gitlab: a nested-group namespace is encodeURIComponent-ed as a single :id segment
+      ---
+      duration_ms: 0.266816
+      ...
+    # Subtest: gitlab: canonical /-/issues/ is not parsed as a legacy namespace ending in /-
+    ok 9 - gitlab: canonical /-/issues/ is not parsed as a legacy namespace ending in /-
+      ---
+      duration_ms: 0.242853
+      ...
+    # Subtest: gitlab: the legacy /issues/ web_url (no /-/) is also accepted
+    ok 10 - gitlab: the legacy /issues/ web_url (no /-/) is also accepted
+      ---
+      duration_ms: 0.359393
+      ...
+    # Subtest: gitlab: /-/work_items/ is unparseable (zero fetch)
+    ok 11 - gitlab: /-/work_items/ is unparseable (zero fetch)
+      ---
+      duration_ms: 0.257141
+      ...
+    # Subtest: gitlab/gitea: the API origin comes from the constructor baseUrl option, not from the issueUrl host
+    ok 12 - gitlab/gitea: the API origin comes from the constructor baseUrl option, not from the issueUrl host
+      ---
+      duration_ms: 0.50315
+      ...
+    1..12
+ok 49 - importIssue shared spec
+  ---
+  duration_ms: 34.165009
+  type: 'suite'
+  ...
+# (node:12957) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: getForgeAdaptersHealth returns the pinned non-empty forge-adapters package health string
+ok 50 - getForgeAdaptersHealth returns the pinned non-empty forge-adapters package health string
+  ---
+  duration_ms: 0.530584
+  ...
+# (node:12968) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: listIssues shared spec
+    # Subtest: github
+        # Subtest: GETs the open-issues list with importIssue-style auth headers and returns ListedIssue[]
+        ok 1 - GETs the open-issues list with importIssue-style auth headers and returns ListedIssue[]
+          ---
+          duration_ms: 15.242884
+          ...
+        # Subtest: trailing slash on repo.base_url is stripped when constructing issue_url
+        ok 2 - trailing slash on repo.base_url is stripped when constructing issue_url
+          ---
+          duration_ms: 0.437896
+          ...
+        # Subtest: non-OK HTTP 401 rejects after fetch with listIssues: github responded 401
+        ok 3 - non-OK HTTP 401 rejects after fetch with listIssues: github responded 401
+          ---
+          duration_ms: 0.765628
+          ...
+        # Subtest: non-OK HTTP 500 rejects after fetch with listIssues: github responded 500
+        ok 4 - non-OK HTTP 500 rejects after fetch with listIssues: github responded 500
+          ---
+          duration_ms: 0.318224
+          ...
+        # Subtest: a network rejection from fetch rejects the listIssues promise
+        ok 5 - a network rejection from fetch rejects the listIssues promise
+          ---
+          duration_ms: 0.351092
+          ...
+        # Subtest: keeps JSON array order and does not re-sort
+        ok 6 - keeps JSON array order and does not re-sort
+          ---
+          duration_ms: 0.466593
+          ...
+        1..6
+    ok 1 - github
+      ---
+      duration_ms: 18.220189
+      type: 'suite'
+      ...
+    # Subtest: gitlab
+        # Subtest: GETs the open-issues list with importIssue-style auth headers and returns ListedIssue[]
+        ok 1 - GETs the open-issues list with importIssue-style auth headers and returns ListedIssue[]
+          ---
+          duration_ms: 0.503294
+          ...
+        # Subtest: trailing slash on repo.base_url is stripped when constructing issue_url
+        ok 2 - trailing slash on repo.base_url is stripped when constructing issue_url
+          ---
+          duration_ms: 0.531103
+          ...
+        # Subtest: non-OK HTTP 401 rejects after fetch with listIssues: gitlab responded 401
+        ok 3 - non-OK HTTP 401 rejects after fetch with listIssues: gitlab responded 401
+          ---
+          duration_ms: 0.37138
+          ...
+        # Subtest: non-OK HTTP 500 rejects after fetch with listIssues: gitlab responded 500
+        ok 4 - non-OK HTTP 500 rejects after fetch with listIssues: gitlab responded 500
+          ---
+          duration_ms: 0.598277
+          ...
+        # Subtest: a network rejection from fetch rejects the listIssues promise
+        ok 5 - a network rejection from fetch rejects the listIssues promise
+          ---
+          duration_ms: 0.161603
+          ...
+        # Subtest: keeps JSON array order and does not re-sort
+        ok 6 - keeps JSON array order and does not re-sort
+          ---
+          duration_ms: 0.429677
+          ...
+        1..6
+    ok 2 - gitlab
+      ---
+      duration_ms: 2.979533
+      type: 'suite'
+      ...
+    # Subtest: gitea
+        # Subtest: GETs the open-issues list with importIssue-style auth headers and returns ListedIssue[]
+        ok 1 - GETs the open-issues list with importIssue-style auth headers and returns ListedIssue[]
+          ---
+          duration_ms: 0.414492
+          ...
+        # Subtest: trailing slash on repo.base_url is stripped when constructing issue_url
+        ok 2 - trailing slash on repo.base_url is stripped when constructing issue_url
+          ---
+          duration_ms: 0.322991
+          ...
+        # Subtest: non-OK HTTP 401 rejects after fetch with listIssues: gitea responded 401
+        ok 3 - non-OK HTTP 401 rejects after fetch with listIssues: gitea responded 401
+          ---
+          duration_ms: 0.151607
+          ...
+        # Subtest: non-OK HTTP 500 rejects after fetch with listIssues: gitea responded 500
+        ok 4 - non-OK HTTP 500 rejects after fetch with listIssues: gitea responded 500
+          ---
+          duration_ms: 0.130394
+          ...
+        # Subtest: a network rejection from fetch rejects the listIssues promise
+        ok 5 - a network rejection from fetch rejects the listIssues promise
+          ---
+          duration_ms: 0.210048
+          ...
+        # Subtest: keeps JSON array order and does not re-sort
+        ok 6 - keeps JSON array order and does not re-sort
+          ---
+          duration_ms: 0.512165
+          ...
+        1..6
+    ok 3 - gitea
+      ---
+      duration_ms: 1.907772
+      type: 'suite'
+      ...
+    # Subtest: github: always calls api.github.com even with constructor baseUrl and a different repo.base_url
+    ok 4 - github: always calls api.github.com even with constructor baseUrl and a different repo.base_url
+      ---
+      duration_ms: 0.431657
+      ...
+    # Subtest: github: drops an item with a pull_request object; a following real issue remains; html_url is not copied
+    ok 5 - github: drops an item with a pull_request object; a following real issue remains; html_url is not copied
+      ---
+      duration_ms: 1.339924
+      ...
+    # Subtest: gitlab: API origin is constructor baseUrl, never repo.base_url, never JSON web_url host
+    ok 6 - gitlab: API origin is constructor baseUrl, never repo.base_url, never JSON web_url host
+      ---
+      duration_ms: 0.443357
+      ...
+    # Subtest: gitlab: maps iid not id; constructs canonical /-/issues/; parseIssueUrl round-trip; does not copy work_items web_url
+    ok 7 - gitlab: maps iid not id; constructs canonical /-/issues/; parseIssueUrl round-trip; does not copy work_items web_url
+      ---
+      duration_ms: 0.354114
+      ...
+    # Subtest: gitlab: a nested-group namespace is encodeURIComponent-ed as a single :id segment
+    ok 8 - gitlab: a nested-group namespace is encodeURIComponent-ed as a single :id segment
+      ---
+      duration_ms: 0.338702
+      ...
+    # Subtest: gitea: API origin is constructor baseUrl, never repo.base_url
+    ok 9 - gitea: API origin is constructor baseUrl, never repo.base_url
+      ---
+      duration_ms: 0.326699
+      ...
+    # Subtest: gitea: maps number not id; does not copy html_url; query uses type=issues and limit not per_page
+    ok 10 - gitea: maps number not id; does not copy html_url; query uses type=issues and limit not per_page
+      ---
+      duration_ms: 0.379898
+      ...
+    1..10
+ok 51 - listIssues shared spec
+  ---
+  duration_ms: 27.427687
+  type: 'suite'
+  ...
+# (node:12979) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: validateToken shared spec
+    # Subtest: github
+        # Subtest: all ok: GET user + push-capable repo → missing [] (same-repo, no /forks)
+        ok 1 - all ok: GET user + push-capable repo → missing [] (same-repo, no /forks)
+          ---
+          duration_ms: 15.47859
+          ...
+        # Subtest: cannot read: repo/project GET 404 → missing includes 读
+        ok 2 - cannot read: repo/project GET 404 → missing includes 读
+          ---
+          duration_ms: 0.56894
+          ...
+        # Subtest: dead token: user GET 401 → missing includes 读, 推, and PR
+        ok 3 - dead token: user GET 401 → missing includes 读, 推, and PR
+          ---
+          duration_ms: 0.284212
+          ...
+        # Subtest: read but cannot push (Reporter / push:false / access_level 20) → missing 推, not 读
+        ok 4 - read but cannot push (Reporter / push:false / access_level 20) → missing 推, not 读
+          ---
+          duration_ms: 0.657383
+          ...
+        # Subtest: cannot open PR/MR while readable → missing includes PR
+        ok 5 - cannot open PR/MR while readable → missing includes PR
+          ---
+          duration_ms: 0.790974
+          ...
+        # Subtest: custom baseUrl: GitLab/Gitea keep subpath; GitHub always api.github.com
+        ok 6 - custom baseUrl: GitLab/Gitea keep subpath; GitHub always api.github.com
+          ---
+          duration_ms: 0.645712
+          ...
+        1..6
+    ok 1 - github
+      ---
+      duration_ms: 19.138624
+      type: 'suite'
+      ...
+    # Subtest: gitlab
+        # Subtest: all ok: GET user + push-capable repo → missing [] (same-repo, no /forks)
+        ok 1 - all ok: GET user + push-capable repo → missing [] (same-repo, no /forks)
+          ---
+          duration_ms: 0.777667
+          ...
+        # Subtest: cannot read: repo/project GET 404 → missing includes 读
+        ok 2 - cannot read: repo/project GET 404 → missing includes 读
+          ---
+          duration_ms: 0.491963
+          ...
+        # Subtest: dead token: user GET 401 → missing includes 读, 推, and PR
+        ok 3 - dead token: user GET 401 → missing includes 读, 推, and PR
+          ---
+          duration_ms: 0.273936
+          ...
+        # Subtest: read but cannot push (Reporter / push:false / access_level 20) → missing 推, not 读
+        ok 4 - read but cannot push (Reporter / push:false / access_level 20) → missing 推, not 读
+          ---
+          duration_ms: 0.512949
+          ...
+        # Subtest: cannot open PR/MR while readable → missing includes PR
+        ok 5 - cannot open PR/MR while readable → missing includes PR
+          ---
+          duration_ms: 0.335906
+          ...
+        # Subtest: custom baseUrl: GitLab/Gitea keep subpath; GitHub always api.github.com
+        ok 6 - custom baseUrl: GitLab/Gitea keep subpath; GitHub always api.github.com
+          ---
+          duration_ms: 0.289211
+          ...
+        1..6
+    ok 2 - gitlab
+      ---
+      duration_ms: 3.124817
+      type: 'suite'
+      ...
+    # Subtest: gitea
+        # Subtest: all ok: GET user + push-capable repo → missing [] (same-repo, no /forks)
+        ok 1 - all ok: GET user + push-capable repo → missing [] (same-repo, no /forks)
+          ---
+          duration_ms: 0.804764
+          ...
+        # Subtest: cannot read: repo/project GET 404 → missing includes 读
+        ok 2 - cannot read: repo/project GET 404 → missing includes 读
+          ---
+          duration_ms: 0.210457
+          ...
+        # Subtest: dead token: user GET 401 → missing includes 读, 推, and PR
+        ok 3 - dead token: user GET 401 → missing includes 读, 推, and PR
+          ---
+          duration_ms: 0.132845
+          ...
+        # Subtest: read but cannot push (Reporter / push:false / access_level 20) → missing 推, not 读
+        ok 4 - read but cannot push (Reporter / push:false / access_level 20) → missing 推, not 读
+          ---
+          duration_ms: 0.362827
+          ...
+        # Subtest: cannot open PR/MR while readable → missing includes PR
+        ok 5 - cannot open PR/MR while readable → missing includes PR
+          ---
+          duration_ms: 1.483731
+          ...
+        # Subtest: custom baseUrl: GitLab/Gitea keep subpath; GitHub always api.github.com
+        ok 6 - custom baseUrl: GitLab/Gitea keep subpath; GitHub always api.github.com
+          ---
+          duration_ms: 0.31977
+          ...
+        1..6
+    ok 3 - gitea
+      ---
+      duration_ms: 3.499859
+      type: 'suite'
+      ...
+    # Subtest: github classic PAT without repo scope cannot push or open PR
+    ok 4 - github classic PAT without repo scope cannot push or open PR
+      ---
+      duration_ms: 0.498244
+      ...
+    1..4
+ok 52 - validateToken shared spec
+  ---
+  duration_ms: 26.720592
+  type: 'suite'
+  ...
+# (node:12990) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: parseWebhook shared spec
+    # Subtest: github
+        # Subtest: valid signature + merged terminal event → concrete ForgeEvent with state "merged"
+        ok 1 - valid signature + merged terminal event → concrete ForgeEvent with state "merged"
+          ---
+          duration_ms: 16.022164
+          ...
+        # Subtest: valid signature + closed-unmerged terminal event → concrete ForgeEvent with state "closed"
+        ok 2 - valid signature + closed-unmerged terminal event → concrete ForgeEvent with state "closed"
+          ---
+          duration_ms: 0.266113
+          ...
+        # Subtest: valid signature + non-terminal action/state (still open) → null, not throw
+        ok 3 - valid signature + non-terminal action/state (still open) → null, not throw
+          ---
+          duration_ms: 0.262861
+          ...
+        # Subtest: valid signature + irrelevant event type (push) → null, not throw
+        ok 4 - valid signature + irrelevant event type (push) → null, not throw
+          ---
+          duration_ms: 0.224085
+          ...
+        # Subtest: wrong-secret signature → throws WebhookSignatureError (not the notImplemented placeholder)
+        ok 5 - wrong-secret signature → throws WebhookSignatureError (not the notImplemented placeholder)
+          ---
+          duration_ms: 0.565377
+          ...
+        # Subtest: missing signature header entirely → throws WebhookSignatureError
+        ok 6 - missing signature header entirely → throws WebhookSignatureError
+          ---
+          duration_ms: 0.180512
+          ...
+        # Subtest: adapter created without a webhookSecret (undefined or empty) → parse fails the same as a bad signature
+        ok 7 - adapter created without a webhookSecret (undefined or empty) → parse fails the same as a bad signature
+          ---
+          duration_ms: 0.360424
+          ...
+        1..7
+    ok 1 - github
+      ---
+      duration_ms: 18.639454
+      type: 'suite'
+      ...
+    # Subtest: gitlab
+        # Subtest: valid signature + merged terminal event → concrete ForgeEvent with state "merged"
+        ok 1 - valid signature + merged terminal event → concrete ForgeEvent with state "merged"
+          ---
+          duration_ms: 0.472276
+          ...
+        # Subtest: valid signature + closed-unmerged terminal event → concrete ForgeEvent with state "closed"
+        ok 2 - valid signature + closed-unmerged terminal event → concrete ForgeEvent with state "closed"
+          ---
+          duration_ms: 0.238768
+          ...
+        # Subtest: valid signature + non-terminal action/state (still open) → null, not throw
+        ok 3 - valid signature + non-terminal action/state (still open) → null, not throw
+          ---
+          duration_ms: 0.238977
+          ...
+        # Subtest: valid signature + irrelevant event type (push) → null, not throw
+        ok 4 - valid signature + irrelevant event type (push) → null, not throw
+          ---
+          duration_ms: 0.081754
+          ...
+        # Subtest: wrong-secret signature → throws WebhookSignatureError (not the notImplemented placeholder)
+        ok 5 - wrong-secret signature → throws WebhookSignatureError (not the notImplemented placeholder)
+          ---
+          duration_ms: 0.099971
+          ...
+        # Subtest: missing signature header entirely → throws WebhookSignatureError
+        ok 6 - missing signature header entirely → throws WebhookSignatureError
+          ---
+          duration_ms: 0.088242
+          ...
+        # Subtest: adapter created without a webhookSecret (undefined or empty) → parse fails the same as a bad signature
+        ok 7 - adapter created without a webhookSecret (undefined or empty) → parse fails the same as a bad signature
+          ---
+          duration_ms: 0.099526
+          ...
+        1..7
+    ok 2 - gitlab
+      ---
+      duration_ms: 1.637778
+      type: 'suite'
+      ...
+    # Subtest: gitea
+        # Subtest: valid signature + merged terminal event → concrete ForgeEvent with state "merged"
+        ok 1 - valid signature + merged terminal event → concrete ForgeEvent with state "merged"
+          ---
+          duration_ms: 0.473249
+          ...
+        # Subtest: valid signature + closed-unmerged terminal event → concrete ForgeEvent with state "closed"
+        ok 2 - valid signature + closed-unmerged terminal event → concrete ForgeEvent with state "closed"
+          ---
+          duration_ms: 0.163671
+          ...
+        # Subtest: valid signature + non-terminal action/state (still open) → null, not throw
+        ok 3 - valid signature + non-terminal action/state (still open) → null, not throw
+          ---
+          duration_ms: 0.100336
+          ...
+        # Subtest: valid signature + irrelevant event type (push) → null, not throw
+        ok 4 - valid signature + irrelevant event type (push) → null, not throw
+          ---
+          duration_ms: 0.09867
+          ...
+        # Subtest: wrong-secret signature → throws WebhookSignatureError (not the notImplemented placeholder)
+        ok 5 - wrong-secret signature → throws WebhookSignatureError (not the notImplemented placeholder)
+          ---
+          duration_ms: 0.216893
+          ...
+        # Subtest: missing signature header entirely → throws WebhookSignatureError
+        ok 6 - missing signature header entirely → throws WebhookSignatureError
+          ---
+          duration_ms: 0.08699
+          ...
+        # Subtest: adapter created without a webhookSecret (undefined or empty) → parse fails the same as a bad signature
+        ok 7 - adapter created without a webhookSecret (undefined or empty) → parse fails the same as a bad signature
+          ---
+          duration_ms: 0.115018
+          ...
+        1..7
+    ok 3 - gitea
+      ---
+      duration_ms: 1.450847
+      type: 'suite'
+      ...
+    # Subtest: body may be passed as a Buffer (raw bytes), not only a string, for every kind
+    ok 4 - body may be passed as a Buffer (raw bytes), not only a string, for every kind
+      ---
+      duration_ms: 0.373435
+      ...
+    # Subtest: github: ping event with a valid signature → null, must not throw (hook setup must not fail)
+    ok 5 - github: ping event with a valid signature → null, must not throw (hook setup must not fail)
+      ---
+      duration_ms: 0.164488
+      ...
+    # Subtest: gitea: a tampered body (bytes differ from what was signed) → throws WebhookSignatureError
+    ok 6 - gitea: a tampered body (bytes differ from what was signed) → throws WebhookSignatureError
+      ---
+      duration_ms: 0.166294
+      ...
+    # Subtest: gitlab: irrelevant event type with a correct token is still null, not an error (token alone is not "terminal")
+    ok 7 - gitlab: irrelevant event type with a correct token is still null, not an error (token alone is not "terminal")
+      ---
+      duration_ms: 0.104366
+      ...
+    1..7
+ok 53 - parseWebhook shared spec
+  ---
+  duration_ms: 23.218432
+  type: 'suite'
+  ...
+# Subtest: registerWebhook shared spec
+    # Subtest: github
+        # Subtest: non-OK HTTP response rejects with a message containing "<kind> responded <status>", after exactly one fetch
+        ok 1 - non-OK HTTP response rejects with a message containing "<kind> responded <status>", after exactly one fetch
+          ---
+          duration_ms: 3.652707
+          ...
+        1..1
+    ok 1 - github
+      ---
+      duration_ms: 3.796339
+      type: 'suite'
+      ...
+    # Subtest: gitlab
+        # Subtest: non-OK HTTP response rejects with a message containing "<kind> responded <status>", after exactly one fetch
+        ok 1 - non-OK HTTP response rejects with a message containing "<kind> responded <status>", after exactly one fetch
+          ---
+          duration_ms: 0.369626
+          ...
+        1..1
+    ok 2 - gitlab
+      ---
+      duration_ms: 0.452837
+      type: 'suite'
+      ...
+    # Subtest: gitea
+        # Subtest: non-OK HTTP response rejects with a message containing "<kind> responded <status>", after exactly one fetch
+        ok 1 - non-OK HTTP response rejects with a message containing "<kind> responded <status>", after exactly one fetch
+          ---
+          duration_ms: 1.677678
+          ...
+        1..1
+    ok 3 - gitea
+      ---
+      duration_ms: 1.761365
+      type: 'suite'
+      ...
+    # Subtest: github: POST https://api.github.com/repos/{owner}/{repo}/hooks with pull_request events + secret, GitHub auth
+    ok 4 - github: POST https://api.github.com/repos/{owner}/{repo}/hooks with pull_request events + secret, GitHub auth
+      ---
+      duration_ms: 0.355525
+      ...
+    # Subtest: github: registerWebhook always targets api.github.com regardless of a custom baseUrl option
+    ok 5 - github: registerWebhook always targets api.github.com regardless of a custom baseUrl option
+      ---
+      duration_ms: 0.289131
+      ...
+    # Subtest: gitlab: POST {baseUrl}/api/v4/projects/{id}/hooks with merge_requests_events + token, PRIVATE-TOKEN auth
+    ok 6 - gitlab: POST {baseUrl}/api/v4/projects/{id}/hooks with merge_requests_events + token, PRIVATE-TOKEN auth
+      ---
+      duration_ms: 0.257214
+      ...
+    # Subtest: gitlab: registerWebhook uses the constructor baseUrl, not repo.base_url, and encodes nested-group namespaces
+    ok 7 - gitlab: registerWebhook uses the constructor baseUrl, not repo.base_url, and encodes nested-group namespaces
+      ---
+      duration_ms: 0.186953
+      ...
+    # Subtest: gitea: POST {baseUrl}/api/v1/repos/{owner}/{repo}/hooks with type gitea + pull_request events + config, token auth
+    ok 8 - gitea: POST {baseUrl}/api/v1/repos/{owner}/{repo}/hooks with type gitea + pull_request events + config, token auth
+      ---
+      duration_ms: 0.280807
+      ...
+    # Subtest: gitea: registerWebhook uses the constructor baseUrl, not repo.base_url
+    ok 9 - gitea: registerWebhook uses the constructor baseUrl, not repo.base_url
+      ---
+      duration_ms: 0.510372
+      ...
+    1..9
+ok 54 - registerWebhook shared spec
+  ---
+  duration_ms: 8.224292
+  type: 'suite'
+  ...
+# (node:13001) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: getSharedHealth returns the pinned non-empty shared package health string
+ok 55 - getSharedHealth returns the pinned non-empty shared package health string
+  ---
+  duration_ms: 2.978093
+  ...
+# Subtest: parseTaskBrief
+    # Subtest: parseTaskBrief accepts the DESIGN.md §6 Task Brief example including Chinese ellipsis description
+    ok 1 - parseTaskBrief accepts the DESIGN.md §6 Task Brief example including Chinese ellipsis description
+      ---
+      duration_ms: 3.53626
+      ...
+    # Subtest: parseTaskBrief accepts a valid brief whose source is native with no issue_url
+    ok 2 - parseTaskBrief accepts a valid brief whose source is native with no issue_url
+      ---
+      duration_ms: 0.524552
+      ...
+    # Subtest: parseTaskBrief accepts status 待认领
+    ok 3 - parseTaskBrief accepts status 待认领
+      ---
+      duration_ms: 0.340951
+      ...
+    # Subtest: parseTaskBrief accepts status 进行中
+    ok 4 - parseTaskBrief accepts status 进行中
+      ---
+      duration_ms: 0.151317
+      ...
+    # Subtest: parseTaskBrief accepts status 待验收
+    ok 5 - parseTaskBrief accepts status 待验收
+      ---
+      duration_ms: 0.195764
+      ...
+    # Subtest: parseTaskBrief accepts status 已完成
+    ok 6 - parseTaskBrief accepts status 已完成
+      ---
+      duration_ms: 0.136618
+      ...
+    # Subtest: parseTaskBrief accepts status 已退回
+    ok 7 - parseTaskBrief accepts status 已退回
+      ---
+      duration_ms: 0.249483
+      ...
+    # Subtest: parseTaskBrief accepts status 已取消
+    ok 8 - parseTaskBrief accepts status 已取消
+      ---
+      duration_ms: 0.311623
+      ...
+    # Subtest: parseTaskBrief accepts repo.forge github
+    ok 9 - parseTaskBrief accepts repo.forge github
+      ---
+      duration_ms: 0.679016
+      ...
+    # Subtest: parseTaskBrief accepts repo.forge gitlab
+    ok 10 - parseTaskBrief accepts repo.forge gitlab
+      ---
+      duration_ms: 0.250872
+      ...
+    # Subtest: parseTaskBrief accepts repo.forge gitea
+    ok 11 - parseTaskBrief accepts repo.forge gitea
+      ---
+      duration_ms: 0.113019
+      ...
+    # Subtest: parseTaskBrief accepts priority P0
+    ok 12 - parseTaskBrief accepts priority P0
+      ---
+      duration_ms: 0.128537
+      ...
+    # Subtest: parseTaskBrief accepts priority P1
+    ok 13 - parseTaskBrief accepts priority P1
+      ---
+      duration_ms: 0.077973
+      ...
+    # Subtest: parseTaskBrief accepts priority P2
+    ok 14 - parseTaskBrief accepts priority P2
+      ---
+      duration_ms: 0.072172
+      ...
+    # Subtest: parseTaskBrief accepts priority P3
+    ok 15 - parseTaskBrief accepts priority P3
+      ---
+      duration_ms: 0.072931
+      ...
+    # Subtest: parseTaskBrief rejects a brief missing required field id
+    ok 16 - parseTaskBrief rejects a brief missing required field id
+      ---
+      duration_ms: 0.612413
+      ...
+    # Subtest: parseTaskBrief rejects a brief missing required field title
+    ok 17 - parseTaskBrief rejects a brief missing required field title
+      ---
+      duration_ms: 0.247913
+      ...
+    # Subtest: parseTaskBrief rejects a brief missing required field description_md
+    ok 18 - parseTaskBrief rejects a brief missing required field description_md
+      ---
+      duration_ms: 0.243362
+      ...
+    # Subtest: parseTaskBrief rejects a brief missing required field source
+    ok 19 - parseTaskBrief rejects a brief missing required field source
+      ---
+      duration_ms: 0.196694
+      ...
+    # Subtest: parseTaskBrief rejects a brief missing required field repo
+    ok 20 - parseTaskBrief rejects a brief missing required field repo
+      ---
+      duration_ms: 0.214189
+      ...
+    # Subtest: parseTaskBrief rejects a brief missing required field acceptance_criteria
+    ok 21 - parseTaskBrief rejects a brief missing required field acceptance_criteria
+      ---
+      duration_ms: 0.260691
+      ...
+    # Subtest: parseTaskBrief rejects a brief missing required field test_command
+    ok 22 - parseTaskBrief rejects a brief missing required field test_command
+      ---
+      duration_ms: 0.219173
+      ...
+    # Subtest: parseTaskBrief rejects a brief missing required field constraints
+    ok 23 - parseTaskBrief rejects a brief missing required field constraints
+      ---
+      duration_ms: 0.184755
+      ...
+    # Subtest: parseTaskBrief rejects a brief missing required field pr_convention
+    ok 24 - parseTaskBrief rejects a brief missing required field pr_convention
+      ---
+      duration_ms: 0.215129
+      ...
+    # Subtest: parseTaskBrief rejects a brief missing required field credential
+    ok 25 - parseTaskBrief rejects a brief missing required field credential
+      ---
+      duration_ms: 0.463409
+      ...
+    # Subtest: parseTaskBrief rejects a brief missing required field priority
+    ok 26 - parseTaskBrief rejects a brief missing required field priority
+      ---
+      duration_ms: 0.279253
+      ...
+    # Subtest: parseTaskBrief rejects a brief missing required field tags
+    ok 27 - parseTaskBrief rejects a brief missing required field tags
+      ---
+      duration_ms: 0.213713
+      ...
+    # Subtest: parseTaskBrief rejects a brief missing required field poster
+    ok 28 - parseTaskBrief rejects a brief missing required field poster
+      ---
+      duration_ms: 0.188643
+      ...
+    # Subtest: parseTaskBrief rejects a brief missing required field status
+    ok 29 - parseTaskBrief rejects a brief missing required field status
+      ---
+      duration_ms: 0.232198
+      ...
+    # Subtest: parseTaskBrief rejects a brief missing required field created_at
+    ok 30 - parseTaskBrief rejects a brief missing required field created_at
+      ---
+      duration_ms: 0.233599
+      ...
+    # Subtest: parseTaskBrief rejects a brief missing repo.forge
+    ok 31 - parseTaskBrief rejects a brief missing repo.forge
+      ---
+      duration_ms: 0.30706
+      ...
+    # Subtest: parseTaskBrief rejects a brief missing repo.base_url
+    ok 32 - parseTaskBrief rejects a brief missing repo.base_url
+      ---
+      duration_ms: 0.176755
+      ...
+    # Subtest: parseTaskBrief rejects a brief missing repo.full_name
+    ok 33 - parseTaskBrief rejects a brief missing repo.full_name
+      ---
+      duration_ms: 0.168575
+      ...
+    # Subtest: parseTaskBrief rejects a brief missing repo.base_branch
+    ok 34 - parseTaskBrief rejects a brief missing repo.base_branch
+      ---
+      duration_ms: 0.136458
+      ...
+    # Subtest: parseTaskBrief rejects a brief missing repo.suggested_dir
+    ok 35 - parseTaskBrief rejects a brief missing repo.suggested_dir
+      ---
+      duration_ms: 0.160243
+      ...
+    # Subtest: parseTaskBrief rejects a brief missing constraints.allowed_paths
+    ok 36 - parseTaskBrief rejects a brief missing constraints.allowed_paths
+      ---
+      duration_ms: 0.169685
+      ...
+    # Subtest: parseTaskBrief rejects a brief missing constraints.forbidden_paths
+    ok 37 - parseTaskBrief rejects a brief missing constraints.forbidden_paths
+      ---
+      duration_ms: 0.129971
+      ...
+    # Subtest: parseTaskBrief rejects a brief missing pr_convention.branch_prefix
+    ok 38 - parseTaskBrief rejects a brief missing pr_convention.branch_prefix
+      ---
+      duration_ms: 0.176721
+      ...
+    # Subtest: parseTaskBrief rejects a brief missing pr_convention.title_prefix
+    ok 39 - parseTaskBrief rejects a brief missing pr_convention.title_prefix
+      ---
+      duration_ms: 0.17713
+      ...
+    # Subtest: parseTaskBrief rejects status that is not one of the six Chinese labels
+    ok 40 - parseTaskBrief rejects status that is not one of the six Chinese labels
+      ---
+      duration_ms: 0.189224
+      ...
+    # Subtest: parseTaskBrief rejects repo.forge outside github | gitlab | gitea
+    ok 41 - parseTaskBrief rejects repo.forge outside github | gitlab | gitea
+      ---
+      duration_ms: 0.165956
+      ...
+    # Subtest: parseTaskBrief rejects imported source without issue_url
+    ok 42 - parseTaskBrief rejects imported source without issue_url
+      ---
+      duration_ms: 0.170832
+      ...
+    # Subtest: parseTaskBrief rejects native source that includes issue_url
+    ok 43 - parseTaskBrief rejects native source that includes issue_url
+      ---
+      duration_ms: 0.248442
+      ...
+    # Subtest: parseTaskBrief rejects priority outside P0|P1|P2|P3
+    ok 44 - parseTaskBrief rejects priority outside P0|P1|P2|P3
+      ---
+      duration_ms: 0.193843
+      ...
+    # Subtest: parseTaskBrief rejects a raw token field on the brief
+    ok 45 - parseTaskBrief rejects a raw token field on the brief
+      ---
+      duration_ms: 0.254454
+      ...
+    # Subtest: parseTaskBrief rejects credential that has no profile_id
+    ok 46 - parseTaskBrief rejects credential that has no profile_id
+      ---
+      duration_ms: 0.361851
+      ...
+    # Subtest: parseTaskBrief rejects a raw token field inside credential
+    ok 47 - parseTaskBrief rejects a raw token field inside credential
+      ---
+      duration_ms: 0.303691
+      ...
+    # Subtest: parseTaskBrief rejects credential that includes both profile_id and a raw token
+    ok 48 - parseTaskBrief rejects credential that includes both profile_id and a raw token
+      ---
+      duration_ms: 0.234601
+      ...
+    1..48
+ok 56 - parseTaskBrief
+  ---
+  duration_ms: 15.686376
+  type: 'suite'
+  ...
+# Subtest: parseTaskBrief credential union
+    # Subtest: parseTaskBrief accepts credential { profile_id } — the shared credential profile form
+    ok 1 - parseTaskBrief accepts credential { profile_id } — the shared credential profile form
+      ---
+      duration_ms: 0.492441
+      ...
+    # Subtest: parseTaskBrief accepts credential { inline: true } — the single-task temporary token form
+    ok 2 - parseTaskBrief accepts credential { inline: true } — the single-task temporary token form
+      ---
+      duration_ms: 0.197334
+      ...
+    # Subtest: parseTaskBrief round-trips credential { inline: true } without adding or dropping keys
+    ok 3 - parseTaskBrief round-trips credential { inline: true } without adding or dropping keys
+      ---
+      duration_ms: 0.22468
+      ...
+    # Subtest: parseTaskBrief accepts the DESIGN.md §6 example when its credential row is the inline form
+    ok 4 - parseTaskBrief accepts the DESIGN.md §6 example when its credential row is the inline form
+      ---
+      duration_ms: 0.171082
+      ...
+    # Subtest: parseTaskBrief rejects credential { inline: false } — inline is a marker, only true is legal
+    ok 5 - parseTaskBrief rejects credential { inline: false } — inline is a marker, only true is legal
+      ---
+      duration_ms: 0.23389
+      ...
+    # Subtest: parseTaskBrief rejects credential carrying both profile_id and inline (二选一, exactly one form)
+    ok 6 - parseTaskBrief rejects credential carrying both profile_id and inline (二选一, exactly one form)
+      ---
+      duration_ms: 0.283384
+      ...
+    # Subtest: parseTaskBrief rejects credential inline of non-boolean type "yes"
+    ok 7 - parseTaskBrief rejects credential inline of non-boolean type "yes"
+      ---
+      duration_ms: 0.283723
+      ...
+    # Subtest: parseTaskBrief rejects credential inline of non-boolean type "true"
+    ok 8 - parseTaskBrief rejects credential inline of non-boolean type "true"
+      ---
+      duration_ms: 0.163455
+      ...
+    # Subtest: parseTaskBrief rejects credential inline of non-boolean type 1
+    ok 9 - parseTaskBrief rejects credential inline of non-boolean type 1
+      ---
+      duration_ms: 0.277733
+      ...
+    # Subtest: parseTaskBrief rejects credential inline of non-boolean type 0
+    ok 10 - parseTaskBrief rejects credential inline of non-boolean type 0
+      ---
+      duration_ms: 0.134793
+      ...
+    # Subtest: parseTaskBrief rejects credential inline of non-boolean type null
+    ok 11 - parseTaskBrief rejects credential inline of non-boolean type null
+      ---
+      duration_ms: 0.281433
+      ...
+    # Subtest: parseTaskBrief rejects credential inline of non-boolean type []
+    ok 12 - parseTaskBrief rejects credential inline of non-boolean type []
+      ---
+      duration_ms: 0.147343
+      ...
+    # Subtest: parseTaskBrief rejects credential inline of non-boolean type {}
+    ok 13 - parseTaskBrief rejects credential inline of non-boolean type {}
+      ---
+      duration_ms: 0.092737
+      ...
+    # Subtest: parseTaskBrief rejects credential {} — neither form is present
+    ok 14 - parseTaskBrief rejects credential {} — neither form is present
+      ---
+      duration_ms: 0.155891
+      ...
+    # Subtest: parseTaskBrief rejects a credential shape that is neither profile_id nor inline
+    ok 15 - parseTaskBrief rejects a credential shape that is neither profile_id nor inline
+      ---
+      duration_ms: 0.14268
+      ...
+    # Subtest: parseTaskBrief rejects an unknown extra key alongside profile_id
+    ok 16 - parseTaskBrief rejects an unknown extra key alongside profile_id
+      ---
+      duration_ms: 0.131308
+      ...
+    # Subtest: parseTaskBrief rejects an unknown extra key alongside inline: true
+    ok 17 - parseTaskBrief rejects an unknown extra key alongside inline: true
+      ---
+      duration_ms: 0.153519
+      ...
+    # Subtest: parseTaskBrief rejects a raw token alongside inline: true
+    ok 18 - parseTaskBrief rejects a raw token alongside inline: true
+      ---
+      duration_ms: 0.114045
+      ...
+    # Subtest: parseTaskBrief rejects a ciphertext-bearing credential even in the inline form
+    ok 19 - parseTaskBrief rejects a ciphertext-bearing credential even in the inline form
+      ---
+      duration_ms: 0.101211
+      ...
+    # Subtest: parseTaskBrief rejects profile_id that is not a string
+    ok 20 - parseTaskBrief rejects profile_id that is not a string
+      ---
+      duration_ms: 0.104714
+      ...
+    # Subtest: parseTaskBrief rejects credential that is not an object: "cp-gitea-orders"
+    ok 21 - parseTaskBrief rejects credential that is not an object: "cp-gitea-orders"
+      ---
+      duration_ms: 0.165867
+      ...
+    # Subtest: parseTaskBrief rejects credential that is not an object: 42
+    ok 22 - parseTaskBrief rejects credential that is not an object: 42
+      ---
+      duration_ms: 0.085945
+      ...
+    # Subtest: parseTaskBrief rejects credential that is not an object: true
+    ok 23 - parseTaskBrief rejects credential that is not an object: true
+      ---
+      duration_ms: 0.067375
+      ...
+    # Subtest: parseTaskBrief rejects credential that is not an object: null
+    ok 24 - parseTaskBrief rejects credential that is not an object: null
+      ---
+      duration_ms: 0.131343
+      ...
+    # Subtest: parseTaskBrief rejects credential that is not an object: []
+    ok 25 - parseTaskBrief rejects credential that is not an object: []
+      ---
+      duration_ms: 0.112176
+      ...
+    1..25
+ok 57 - parseTaskBrief credential union
+  ---
+  duration_ms: 6.35653
+  type: 'suite'
+  ...
+# Subtest: transitionTaskStatus
+    # Subtest: transitionTaskStatus rejects 待认领 → 待认领
+    ok 1 - transitionTaskStatus rejects 待认领 → 待认领
+      ---
+      duration_ms: 0.279791
+      ...
+    # Subtest: transitionTaskStatus allows 待认领 → 进行中
+    ok 2 - transitionTaskStatus allows 待认领 → 进行中
+      ---
+      duration_ms: 0.066774
+      ...
+    # Subtest: transitionTaskStatus rejects 待认领 → 待验收
+    ok 3 - transitionTaskStatus rejects 待认领 → 待验收
+      ---
+      duration_ms: 0.042414
+      ...
+    # Subtest: transitionTaskStatus rejects 待认领 → 已完成
+    ok 4 - transitionTaskStatus rejects 待认领 → 已完成
+      ---
+      duration_ms: 0.035821
+      ...
+    # Subtest: transitionTaskStatus rejects 待认领 → 已退回
+    ok 5 - transitionTaskStatus rejects 待认领 → 已退回
+      ---
+      duration_ms: 0.036064
+      ...
+    # Subtest: transitionTaskStatus allows 待认领 → 已取消
+    ok 6 - transitionTaskStatus allows 待认领 → 已取消
+      ---
+      duration_ms: 0.033028
+      ...
+    # Subtest: transitionTaskStatus allows 进行中 → 待认领
+    ok 7 - transitionTaskStatus allows 进行中 → 待认领
+      ---
+      duration_ms: 0.036106
+      ...
+    # Subtest: transitionTaskStatus rejects 进行中 → 进行中
+    ok 8 - transitionTaskStatus rejects 进行中 → 进行中
+      ---
+      duration_ms: 0.036653
+      ...
+    # Subtest: transitionTaskStatus allows 进行中 → 待验收
+    ok 9 - transitionTaskStatus allows 进行中 → 待验收
+      ---
+      duration_ms: 0.0331
+      ...
+    # Subtest: transitionTaskStatus rejects 进行中 → 已完成
+    ok 10 - transitionTaskStatus rejects 进行中 → 已完成
+      ---
+      duration_ms: 0.03432
+      ...
+    # Subtest: transitionTaskStatus rejects 进行中 → 已退回
+    ok 11 - transitionTaskStatus rejects 进行中 → 已退回
+      ---
+      duration_ms: 0.03486
+      ...
+    # Subtest: transitionTaskStatus rejects 进行中 → 已取消
+    ok 12 - transitionTaskStatus rejects 进行中 → 已取消
+      ---
+      duration_ms: 0.03657
+      ...
+    # Subtest: transitionTaskStatus rejects 待验收 → 待认领
+    ok 13 - transitionTaskStatus rejects 待验收 → 待认领
+      ---
+      duration_ms: 0.03693
+      ...
+    # Subtest: transitionTaskStatus rejects 待验收 → 进行中
+    ok 14 - transitionTaskStatus rejects 待验收 → 进行中
+      ---
+      duration_ms: 0.040627
+      ...
+    # Subtest: transitionTaskStatus rejects 待验收 → 待验收
+    ok 15 - transitionTaskStatus rejects 待验收 → 待验收
+      ---
+      duration_ms: 0.040035
+      ...
+    # Subtest: transitionTaskStatus allows 待验收 → 已完成
+    ok 16 - transitionTaskStatus allows 待验收 → 已完成
+      ---
+      duration_ms: 0.061991
+      ...
+    # Subtest: transitionTaskStatus allows 待验收 → 已退回
+    ok 17 - transitionTaskStatus allows 待验收 → 已退回
+      ---
+      duration_ms: 0.038929
+      ...
+    # Subtest: transitionTaskStatus rejects 待验收 → 已取消
+    ok 18 - transitionTaskStatus rejects 待验收 → 已取消
+      ---
+      duration_ms: 0.037759
+      ...
+    # Subtest: transitionTaskStatus rejects 已完成 → 待认领
+    ok 19 - transitionTaskStatus rejects 已完成 → 待认领
+      ---
+      duration_ms: 0.034308
+      ...
+    # Subtest: transitionTaskStatus rejects 已完成 → 进行中
+    ok 20 - transitionTaskStatus rejects 已完成 → 进行中
+      ---
+      duration_ms: 0.0349
+      ...
+    # Subtest: transitionTaskStatus rejects 已完成 → 待验收
+    ok 21 - transitionTaskStatus rejects 已完成 → 待验收
+      ---
+      duration_ms: 0.051616
+      ...
+    # Subtest: transitionTaskStatus rejects 已完成 → 已完成
+    ok 22 - transitionTaskStatus rejects 已完成 → 已完成
+      ---
+      duration_ms: 0.038629
+      ...
+    # Subtest: transitionTaskStatus rejects 已完成 → 已退回
+    ok 23 - transitionTaskStatus rejects 已完成 → 已退回
+      ---
+      duration_ms: 0.035557
+      ...
+    # Subtest: transitionTaskStatus rejects 已完成 → 已取消
+    ok 24 - transitionTaskStatus rejects 已完成 → 已取消
+      ---
+      duration_ms: 0.11839
+      ...
+    # Subtest: transitionTaskStatus allows 已退回 → 待认领
+    ok 25 - transitionTaskStatus allows 已退回 → 待认领
+      ---
+      duration_ms: 0.059525
+      ...
+    # Subtest: transitionTaskStatus rejects 已退回 → 进行中
+    ok 26 - transitionTaskStatus rejects 已退回 → 进行中
+      ---
+      duration_ms: 0.075245
+      ...
+    # Subtest: transitionTaskStatus rejects 已退回 → 待验收
+    ok 27 - transitionTaskStatus rejects 已退回 → 待验收
+      ---
+      duration_ms: 0.060421
+      ...
+    # Subtest: transitionTaskStatus rejects 已退回 → 已完成
+    ok 28 - transitionTaskStatus rejects 已退回 → 已完成
+      ---
+      duration_ms: 0.079717
+      ...
+    # Subtest: transitionTaskStatus rejects 已退回 → 已退回
+    ok 29 - transitionTaskStatus rejects 已退回 → 已退回
+      ---
+      duration_ms: 0.065824
+      ...
+    # Subtest: transitionTaskStatus allows 已退回 → 已取消
+    ok 30 - transitionTaskStatus allows 已退回 → 已取消
+      ---
+      duration_ms: 0.052696
+      ...
+    # Subtest: transitionTaskStatus rejects 已取消 → 待认领
+    ok 31 - transitionTaskStatus rejects 已取消 → 待认领
+      ---
+      duration_ms: 0.061377
+      ...
+    # Subtest: transitionTaskStatus rejects 已取消 → 进行中
+    ok 32 - transitionTaskStatus rejects 已取消 → 进行中
+      ---
+      duration_ms: 0.072683
+      ...
+    # Subtest: transitionTaskStatus rejects 已取消 → 待验收
+    ok 33 - transitionTaskStatus rejects 已取消 → 待验收
+      ---
+      duration_ms: 0.072443
+      ...
+    # Subtest: transitionTaskStatus rejects 已取消 → 已完成
+    ok 34 - transitionTaskStatus rejects 已取消 → 已完成
+      ---
+      duration_ms: 0.092199
+      ...
+    # Subtest: transitionTaskStatus rejects 已取消 → 已退回
+    ok 35 - transitionTaskStatus rejects 已取消 → 已退回
+      ---
+      duration_ms: 0.055684
+      ...
+    # Subtest: transitionTaskStatus rejects 已取消 → 已取消
+    ok 36 - transitionTaskStatus rejects 已取消 → 已取消
+      ---
+      duration_ms: 0.072452
+      ...
+    # Subtest: transitionTaskStatus rejects an unknown from status
+    ok 37 - transitionTaskStatus rejects an unknown from status
+      ---
+      duration_ms: 0.119909
+      ...
+    # Subtest: transitionTaskStatus rejects an unknown to status
+    ok 38 - transitionTaskStatus rejects an unknown to status
+      ---
+      duration_ms: 0.115093
+      ...
+    1..38
+ok 58 - transitionTaskStatus
+  ---
+  duration_ms: 2.846275
+  type: 'suite'
+  ...
+1..58
+# tests 604
+# suites 141
+# pass 604
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 12278.722761
+
+ RUN  v4.1.11 /workspace/.kw/worktrees/bundle-27-28/apps/web
+
+
+ Test Files  6 passed (6)
+      Tests  114 passed (114)
+   Start at  17:13:09
+   Duration  15.06s (transform 716ms, setup 0ms, import 10.52s, tests 26.13s, environment 1.66s)
+
+TEST_EXIT:0
+=== pnpm typecheck ===
+Scope: 5 of 6 workspace projects
+apps/web typecheck$ vue-tsc --noEmit -p tsconfig.json
+packages/forge-adapters typecheck$ tsc --noEmit -p tsconfig.json
+packages/shared typecheck$ tsc --noEmit -p tsconfig.json
+packages/forge-adapters typecheck: Done
+packages/shared typecheck: Done
+apps/web typecheck: Done
+apps/mcp typecheck$ tsc --noEmit -p tsconfig.json
+apps/server typecheck$ tsc --noEmit -p tsconfig.json
+apps/mcp typecheck: Done
+apps/server typecheck: Done
+TYPECHECK_EXIT:0
+=== pnpm lint ===
+LINT_EXIT:0

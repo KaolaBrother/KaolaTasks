@@ -1,0 +1,76 @@
+baseline: 86354f16cb4e9f83d5f8591ed2af014b83f9829e
+git: 86354f1 docs: lock DESIGN D6/D8/§3/§11 to admin vs publisher identity
+worktree: /workspace/.kw/worktrees/bundle-27-28
+command: node --experimental-strip-types --test apps/server/src/password.test.ts apps/server/src/identity.test.ts apps/server/src/auth.test.ts apps/server/src/hosting.test.ts apps/server/src/devices.test.ts
+and: pnpm --filter @kaola/web test
+
+RED is success. Production was not implemented.
+
+--- representative failure signatures ---
+
+password.test.ts (file load)
+  ERR_MODULE_NOT_FOUND: Cannot find module '.../apps/server/src/password.ts'
+  imported from password.test.ts
+
+identity.test.ts / GET /api/v1/setup
+  unauthenticated probe is 200 { setup_complete: boolean }; empty DB is false
+  AssertionError: 404 !== 200
+  GET /api/v1/setup: 404 {"message":"Route GET:/api/v1/setup not found"...}
+
+identity.test.ts / POST /api/v1/setup (via ensureSetup)
+  creates local admin session; me has no hash fields; display_name defaults to trimmed username
+  AssertionError: POST /api/v1/setup: 404 ...  404 !== 201
+
+identity.test.ts / schema
+  new sqlite has nullable password_hash, local provider, and admin permission_level
+  AssertionError: users columns: id,provider,remote_id,... (no password_hash)
+
+identity.test.ts / OAuth empty DB
+  empty DB GitLab callback does not insert a user or set a session
+  AssertionError: GET /api/v1/me after callback expected 401, got 200
+  (baseline still first-OAuth-wins full)
+
+auth.test.ts
+  GET /login/github is 404
+  AssertionError: 302 !== 404
+
+hosting.test.ts
+  webDist SPA-fallbacks unmatched GET ... does not swallow /api or /login
+  AssertionError: GET /login/github: 302 !== 404
+
+devices.test.ts (issue #23 admin bind)
+  signed unknown device ... GET pending
+  AssertionError: POST /api/v1/setup: 404 !== 201
+  (fixtures now require setup admin; publisher/full no longer lists pending)
+
+App.shell.test.ts
+  setup_complete: false 展示用户名密码向导，没有三家 OAuth 可用入口
+  AssertionError: expected calls.some(url === '/api/v1/setup') to be true
+  setup_complete: true ... 没有 GitHub 登录按钮
+  AssertionError: expected a[href="/login/github"] exists false, received true
+  admin 显示管理员；full 显示发布者
+  (baseline permissionLabel still 正式成员; admin does not load profiles)
+
+App.settings.test.ts / App.devices.test.ts
+  admin-only 受信自动化 / 待授权电脑 vs publisher 403-equivalent absence
+  fail on baseline canApprove === full and canManageKeys === any active
+
+--- tests that already pass on baseline (kept, not new oracles) ---
+
+auth.test.ts
+  GET /login is allowed without a session
+  browser-like GET /api/v1/me redirects to /login
+  JSON GET /api/v1/me without a session returns 401
+These pin unchanged unauthenticated behavior, not #28.
+
+devices.test.ts: 5 unauthenticated device-proof tests still pass (no session/setup).
+
+--- claims not extra-pinned ---
+
+Hasher encoding string (Argon2id vs scrypt) is intentionally unpinned.
+Login rate-limit / helmet / demote / password reset are out of scope.
+Publisher POST /api/v1/tasks only asserts not 401/403 (forge stub not required for the gate).
+Concurrent two-setup race is asserted at most one 201; timing-dependent.
+
+SHA confirmed: git -C /workspace/.kw/worktrees/bundle-27-28 rev-parse HEAD
+= 86354f16cb4e9f83d5f8591ed2af014b83f9829e
