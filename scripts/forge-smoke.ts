@@ -464,7 +464,7 @@ function cloneAndPush(opts: {
 }
 
 function parseKind(argv: string[]): ForgeKind {
-  const raw = argv[2]
+  const raw = argv.slice(2).find((arg) => arg !== '--')
   if (raw === 'github') {
     fail('publish smoke is GitLab + Gitea only; GitHub is not a poster surface')
   }
