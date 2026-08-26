@@ -5,20 +5,27 @@
  * Team publish surface is GitLab + Gitea only (not GitHub). Claim identity is
  * still device proof + remote bind — the claimant never needs their own PAT.
  *
- * Boots an isolated Fastify app (inject + stub GitLab OAuth, not the browser),
- * then: setup local admin → GitLab publisher OAuth → credential profile → import Issue →
- * publish → pair device (admin bind) → claim_task → git clone via the claim envelope →
- * claim_task → git clone via the claim envelope → push branch → open PR →
- * submit_pr → merge → pollPendingReviews → 已完成 + 回写.
+ * Real: GITLAB_TOKEN / GITEA_TOKEN (forge HTTP + git). The script never invents
+ * those. Simulated: the Kaola process itself — isolated sqlite, Fastify inject
+ * (no listen, no `pnpm dev`), ensureSetup, stub GitLab OAuth publisher, device
+ * pair, MCP. Missing SESSION_SECRET / VAULT_MASTER_KEY / OAUTH_* / PUBLIC_URL
+ * are filled in-process (random session/vault, unused OAuth placeholders).
+ * Already-set values are left alone. Never print tokens. Never write them into
+ * git remotes, mcp.json, or .env.
+ *
+ * Then: setup local admin → GitLab publisher OAuth stub → credential profile →
+ * import Issue → publish → pair device (admin bind) → claim_task → git clone
+ * via the claim envelope → push branch → open PR → submit_pr → merge →
+ * pollPendingReviews → 已完成 + 回写.
  *
  * Usage:
  *   node --experimental-strip-types scripts/forge-smoke.ts gitlab
  *   node --experimental-strip-types scripts/forge-smoke.ts gitea
- *
- * Tokens come from GITLAB_TOKEN / GITEA_TOKEN. Never print them. Never write
- * them into git remotes or mcp.json.
+ *   pnpm smoke:forge -- gitlab
+ *   pnpm smoke:forge -- gitea
  */
 import { spawnSync } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -91,6 +98,26 @@ function requiredEnv(name: string): string {
   const value = process.env[name]
   if (value == null || value === '') fail(`missing env ${name}`)
   return value
+}
+
+function fillEnvIfEmpty(name: string, value: string): void {
+  const current = process.env[name]
+  if (current == null || current === '') process.env[name] = value
+}
+
+/** Process-local Kaola boot env. Does not invent GITLAB_TOKEN / GITEA_TOKEN. */
+export function ensureSimulatedAuthEnv(): void {
+  fillEnvIfEmpty('SESSION_SECRET', randomBytes(32).toString('hex'))
+  fillEnvIfEmpty('VAULT_MASTER_KEY', randomBytes(32).toString('hex'))
+  fillEnvIfEmpty('PUBLIC_URL', 'http://localhost:31415')
+  fillEnvIfEmpty('OAUTH_GITHUB_CLIENT_ID', 'unused')
+  fillEnvIfEmpty('OAUTH_GITHUB_CLIENT_SECRET', 'unused')
+  fillEnvIfEmpty('OAUTH_GITLAB_CLIENT_ID', 'unused')
+  fillEnvIfEmpty('OAUTH_GITLAB_CLIENT_SECRET', 'unused')
+  fillEnvIfEmpty('OAUTH_GITLAB_BASE_URL', 'https://gitlab.com')
+  fillEnvIfEmpty('OAUTH_GITEA_CLIENT_ID', 'unused')
+  fillEnvIfEmpty('OAUTH_GITEA_CLIENT_SECRET', 'unused')
+  fillEnvIfEmpty('OAUTH_GITEA_BASE_URL', 'https://gitea.com')
 }
 
 function cookieJar(response: { cookies: Array<{ name: string; value: string }> }): Record<string, string> {
@@ -475,12 +502,8 @@ function parseKind(argv: string[]): ForgeKind {
 async function run(): Promise<void> {
   const kind = parseKind(process.argv)
   const spec = FORGES[kind]
+  ensureSimulatedAuthEnv()
   const token = requiredEnv(spec.tokenEnv)
-  requiredEnv('SESSION_SECRET')
-  requiredEnv('VAULT_MASTER_KEY')
-  if (process.env.PUBLIC_URL == null || process.env.PUBLIC_URL === '') {
-    process.env.PUBLIC_URL = 'http://localhost:31415'
-  }
 
   const secrets = [token, STUB_OAUTH_ACCESS]
   const stamp = new Date().toISOString().replace(/[:.]/g, '-')

@@ -29,14 +29,30 @@
 
 ### B. 注入会话脚本（Cloud Agent / 无人值守）
 
-浏览器 Authorize 过不了（Cloudflare 人机、无交互）时，不要假装走了网页登录。用隔离 SQLite + Fastify `inject`：先 `ensureSetup`（本地管理员），再 stub GitLab OAuth userinfo（考拉用户记成 `gitlab` / `KaolaBrother` / `full` 发布者，不是空库抢权），forge 调用走真实 API：
+浏览器 Authorize 过不了（Cloudflare 人机、无交互）时，不要假装走了网页登录。用 `scripts/forge-smoke.ts`（`pnpm smoke:forge -- gitlab|gitea`）。脚本自己 `buildApp`，**不**碰正在跑的 `pnpm dev`。不打印 token，不把 token 写入 remote URL / `.env` / mcp.json。传入 `github` 会明确失败（发布面不含 GitHub）。`parseKind` 会跳过 argv 里的 `--`，所以 `pnpm smoke:forge -- gitlab` 与直接传 `gitlab` 一样。
+
+#### B 模拟什么（进程假、forge 真）
+
+路径 B **只模拟考拉进程**，不模拟 GitLab / Gitea。缺 PAT 就失败，脚本**不会**编一个。Cloud Agent 环境只需两家仓库 PAT；session / vault / OAuth 占位由 `ensureSimulatedAuthEnv()` 在进程内补齐，**不要问人要这些值**。生产 `pnpm dev` 仍须操作者自己 `export` 那一套，脚本不会改生产 boot。
+
+| 东西 | 真假 | 谁提供 |
+|------|------|--------|
+| `GITLAB_TOKEN` / `GITEA_TOKEN` | **真** PAT，调真实 forge HTTP 和 git | 环境必须已有；缺则 `missing env GITLAB_TOKEN` / `GITEA_TOKEN` |
+| `SESSION_SECRET` | 假 | 缺或空 → `randomBytes(32).toString('hex')`；已有则不覆盖 |
+| `VAULT_MASTER_KEY` | 假（仍须 64 hex，vault 才能加解密档案） | 缺或空 → 同上 64 hex；已有则不覆盖 |
+| 九个 `OAUTH_*` | 假占位（`registerAuth` boot 仍 `requireEnv`） | 缺或空 → id/secret `unused`，`OAUTH_GITLAB_BASE_URL=https://gitlab.com`，`OAUTH_GITEA_BASE_URL=https://gitea.com` |
+| `PUBLIC_URL` | 假 | 缺或空 → `http://localhost:31415` |
+| sqlite | 假 | 临时目录隔离文件库，跑完丢掉 |
+| HTTP | 假 | Fastify `inject`，不 listen |
+| 登录 | 假 | `ensureSetup` 本地管理员，再 stub GitLab OAuth userinfo（用户记成 `gitlab` / `KaolaBrother` / `full` 发布者，不是空库抢权） |
+| 电脑绑定 | 假 | `pairDeviceToSelf`（绑到 setup 管理员） |
+| MCP | 假 | 同一 `inject` 走 `/api/mcp` |
+| 建 Issue、clone、开 PR、合并、回写评论 | **真** | 用 PAT 打 `KaolaBrother/kaola-tasks-smoke` |
 
 ```bash
 pnpm smoke:forge -- gitlab
 pnpm smoke:forge -- gitea
 ```
-
-需要 `SESSION_SECRET`、`VAULT_MASTER_KEY`，以及对应的 `GITLAB_TOKEN` / `GITEA_TOKEN`。脚本自己 `buildApp`，**不**碰正在跑的 `pnpm dev`。不打印 token，不把 token 写入 remote URL。传入 `github` 会明确失败（发布面不含 GitHub）。
 
 ## 目标仓与令牌
 
@@ -69,7 +85,7 @@ POST /api/v1/setup → local active+admin（空库 OAuth 不得插用户）
 | # | 步骤 | A 浏览器 | B 脚本 |
 |---|------|----------|--------|
 | 1 | 考拉有可登录管理员，再有发布者 | **配合** 初始向导，再 GitLab 登录（发布者） | **自动** `ensureSetup` 再 stub GitLab OAuth userinfo（`full`） |
-| 2 | 令牌在 `.env` | **配合** | 环境里已有则 **自动** |
+| 2 | 仓库 PAT | **配合** 写入 `.env` | 环境已有 `GITLAB_TOKEN` / `GITEA_TOKEN` 则 **自动**；session / vault / OAuth 由脚本自填 |
 | 3 | 冒烟仓有一条 open Issue | **自动**（有 token 后用 API 建） | **自动** |
 | 4 | 工作台添加该 forge 的凭证档案 | **配合** | **自动** `POST /api/v1/credential-profiles` |
 | 5 | 从 Issue 导入并发布 | **配合** 来源「从 Issue 导入」、凭证「共享档案」、下拉选 Issue，点导入再发布 | **自动** `POST /import` 再 `POST /tasks` |
@@ -112,11 +128,13 @@ POST /api/v1/setup → local active+admin（空库 OAuth 不得插用户）
 | 手册脚本 | 2026-08-25 | B `scripts/forge-smoke.ts` | [Issue #6](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/issues/6) → [MR !4](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/merge_requests/4)，`clone_auth=gitlab-basic-oauth2`，`已完成` | [Issue #7](https://gitea.com/KaolaBrother/kaola-tasks-smoke/issues/7) → [PR #8](https://gitea.com/KaolaBrother/kaola-tasks-smoke/pulls/8)，`clone_auth=envelope`，`已完成` |
 | 手册脚本（GitLab stub / 无 GitHub 发布） | 2026-08-25 | B `pnpm smoke:forge -- gitlab` / `gitea` | [Issue #8](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/issues/8) → [MR !6](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/merge_requests/6)，`clone_auth=gitlab-basic-oauth2`，`已完成` | [Issue #10](https://gitea.com/KaolaBrother/kaola-tasks-smoke/issues/10) → [PR #11](https://gitea.com/KaolaBrother/kaola-tasks-smoke/pulls/11)，`clone_auth=envelope`，`已完成` |
 | 手册脚本（#28 后 ensureSetup） | 2026-08-26 | B `pnpm smoke:forge -- gitlab` / `gitea` | [Issue #9](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/issues/9) → [MR !7](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/merge_requests/7)，任务 `kt-2026-0001`，`clone_auth=gitlab-basic-oauth2`，`已完成` | [Issue #12](https://gitea.com/KaolaBrother/kaola-tasks-smoke/issues/12) → [PR #13](https://gitea.com/KaolaBrother/kaola-tasks-smoke/pulls/13)，任务 `kt-2026-0001`，`clone_auth=envelope`，`已完成` |
+| 手册脚本（B 自填进程 env） | 2026-08-26 | B `ensureSimulatedAuthEnv`（未再开真实 Issue） | 空 PAT → `missing env GITLAB_TOKEN`（不是缺 `SESSION_SECRET`）；无 session/vault/OAuth 时 `buildApp`+`ensureSetup` 成功 | 同左 |
 
 GitHub 发布冒烟已停（此前仓 [Issue #1](https://github.com/KaolaBrother/kaola-tasks-smoke/issues/1) 开过、未走认领，已标 `not_planned` 关闭）。stdio 桥回放 `mcp-session-id` 已进 `main`；另窗 UAT 曾用短提示词走完认领到 `submit_pr`。
 
 ## 坑（续测别踩）
 
+- 路径 B 不要再向人要 `SESSION_SECRET` / `VAULT_MASTER_KEY` / `OAUTH_*`；缺了由 `ensureSimulatedAuthEnv` 进程内生成。生产 `pnpm dev` 仍须操作者自己 `export`。
 - GitLab Issues API 的 `web_url` 是 `/-/work_items/N`，考拉 `parseIssueUrl` 不认。导入必须用拼出来的 `/-/issues/N`（脚本已这么做）。
 - GitLab 回调 `400`：常为未走 PKCE，或 secret 用 HTTP Basic 编码失败。从首页重新点登录。回调必须是 `http://localhost:31415/login/gitlab/callback`。
 - Gitea 选中档案后 base_url 不会自动从 gitlab.com 改掉，须手填 `https://gitea.com`。

@@ -172,7 +172,7 @@ pnpm build
 ## 文档
 
 - [设计文档](docs/DESIGN.md) — 产品与架构源头
-- [GitLab / Gitea 冒烟手册](docs/smoke-test.md)
+- [GitLab / Gitea 冒烟手册](docs/smoke-test.md) — 浏览器 **配合** vs 脚本 B（B 只模拟考拉进程；`GITLAB_TOKEN` / `GITEA_TOKEN` 仍须真实 PAT）
 - [文档索引](docs/README.md)
 - [变更日志](CHANGELOG.md)
 

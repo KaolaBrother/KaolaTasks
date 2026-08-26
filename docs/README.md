@@ -8,4 +8,4 @@
 - [Conventions](conventions.md)
 - [Decisions](decisions/)
 - [Changelog](../CHANGELOG.md)
-- [Forge smoke playbook](smoke-test.md) — GitLab / Gitea publish loop (not GitHub); **配合** steps wait for the human; Agent 注入跑 `pnpm smoke:forge -- gitlab|gitea`
+- [Forge smoke playbook](smoke-test.md) — GitLab / Gitea publish loop (not GitHub); **配合** steps wait for the human; Agent 注入跑 `pnpm smoke:forge -- gitlab|gitea`（PAT 真、考拉进程假：脚本自己补 session/vault/OAuth 占位）
