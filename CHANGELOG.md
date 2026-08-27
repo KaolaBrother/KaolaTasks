@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Kaola-Workflow 10.0 lineup：通用合同迁到 `AGENTS.md`（项目 Snapshot / Commands / Conventions 原样保留）；`CLAUDE.md` 只作 Claude 运行时桥（`@AGENTS.md`）。`workflow-init` helper `check` 为 `converged`。
 - `#28` 登录与权限：空库只许设置向导（`GET/POST /api/v1/setup`，`provider: 'local'`、`permission_level: 'admin'`，密码 `node:crypto` scrypt）。`POST /api/v1/login` 本地会话；`setup`/`login` 与 OAuth 同走 `persistSession` 的 `skipUntrusted`。GitLab / Gitea OAuth 在已有可登录管理员之后建 `active`+`full` 发布者（空库回调不插用户）。`GET /login/github` 与 callback 为 404。`KAOLA_ADMINS` 忽略、不炸 boot。退役 `POST /api/v1/users/:id/approve`（404）。管理员 `GET /api/v1/users`、`POST /api/v1/users/:id/promote`。发任务/档案：`admin` 或 `full`。电脑绑定、认领确认、`PUT /api/v1/me/settings`：仅 `admin`。`registerAuth` 仍要求 `OAUTH_GITHUB_CLIENT_*` 非空（登录不用）。Web：向导 vs 登录卡，无 GitHub 按钮；电脑 pane 有管理员升级入口。冒烟：`ensureSetup` 再 stub GitLab 发布者。测试 `apps/server/src/identity.test.ts`、`password.test.ts`。
 - `#27` 同跑 schema：`users.password_hash`（可空）、`provider` 含 `local`、`permission_level` 含 `admin`、唯一索引 `users_local_username`、开库 `promoteEarliestLoginableAdmin`（最早 gitlab/gitea/local `full` → `admin`；GitHub 行不算）。`claim_confirmations.device_id` 与既有 #16 表并存于同一次 `createDb`。
 
