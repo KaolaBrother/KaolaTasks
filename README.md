@@ -167,7 +167,7 @@ pnpm test
 pnpm build
 ```
 
-产品契约在 [docs/DESIGN.md](docs/DESIGN.md)。HTTP / MCP 细节在 [docs/api.md](docs/api.md)。实现记录在 [CHANGELOG.md](CHANGELOG.md)。贡献约定见仓库根目录 `CLAUDE.md`。
+产品契约在 [docs/DESIGN.md](docs/DESIGN.md)。HTTP / MCP 细节在 [docs/api.md](docs/api.md)。实现记录在 [CHANGELOG.md](CHANGELOG.md)。贡献约定见仓库根目录 `AGENTS.md`（Claude 入口仍是 `CLAUDE.md`，只桥接到该合同）。
 
 ## 文档
 
