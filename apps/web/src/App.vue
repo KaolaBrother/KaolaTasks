@@ -1884,7 +1884,8 @@ async function deleteProfile(id: number) {
     const body = await readJson(res)
     if (!res.ok) {
       profileOk.value = false
-      profileMessage.value = `删除失败（${res.status}）`
+      profileMessage.value =
+        typeof body?.message === 'string' ? body.message : `删除失败（${res.status}）`
       return
     }
     profileOk.value = true

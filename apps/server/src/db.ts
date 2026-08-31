@@ -97,6 +97,40 @@ function tryAddColumn(sqlite: InstanceType<typeof Database>, ddl: string): void 
   }
 }
 
+function tableExists(sqlite: InstanceType<typeof Database>, name: string): boolean {
+  return (
+    sqlite.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`).get(name) !==
+    undefined
+  )
+}
+
+function rowCount(sqlite: InstanceType<typeof Database>, table: string): number {
+  return (sqlite.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n
+}
+
+// Issue #44: a database orphaned by a pre-#37/#38/#39-fix crash can leave a `<table>__rebuild`
+// table on disk as the ONLY surviving copy of its rows, while the live `<table>` comes up empty
+// (either freshly created by this file's own `CREATE TABLE IF NOT EXISTS` DDL, or because the
+// guarded rebuild above short-circuited since the live table no longer needs rebuilding). createDb
+// must not treat that as fatal (the live table is empty, not corrupt) and must not guess whether
+// the orphan's rows are safe to replay (a crash mid-INSERT can leave it incomplete) - so this only
+// reports the fact via console.error, once per stranded orphan, and never mutates either table.
+function reportStrandedRebuildOrphan(
+  sqlite: InstanceType<typeof Database>,
+  liveTable: string,
+  orphanTable: string,
+): void {
+  if (!tableExists(sqlite, orphanTable)) return
+  const orphanRows = rowCount(sqlite, orphanTable)
+  if (orphanRows === 0) return
+  if (rowCount(sqlite, liveTable) !== 0) return
+  console.error(
+    `[kaola-server] found orphaned rebuild table "${orphanTable}" holding ${orphanRows} row(s) ` +
+      `while live table "${liveTable}" is empty; data was left in place untouched - ` +
+      `manual review required before recovering or discarding it.`,
+  )
+}
+
 type SqliteTableColumn = { name: string; notnull: number }
 
 function tableColumns(
@@ -387,6 +421,7 @@ export function createDb(path = ':memory:') {
   tryAddColumn(sqlite, LEASES_ADD_CLAIMER_CLAIMANT_ID_DDL)
   tryAddColumn(sqlite, LEASES_ADD_REQUEST_ID_DDL)
   rebuildLeasesIfAgentKeyStillRequired(sqlite)
+  reportStrandedRebuildOrphan(sqlite, 'leases', 'leases__rebuild')
   sqlite.exec(LEASES_ONE_ACTIVE_INDEX_DDL)
   sqlite.exec(LEASES_DEVICE_REQUEST_IDENTITY_INDEX_DDL)
   sqlite.exec(SUBMISSIONS_DDL)
@@ -394,6 +429,7 @@ export function createDb(path = ':memory:') {
   sqlite.exec(CLAIM_CONFIRMATIONS_DDL)
   tryAddColumn(sqlite, CLAIM_CONFIRMATIONS_ADD_DEVICE_ID_DDL)
   rebuildClaimConfirmationsIfAgentKeyStillRequired(sqlite)
+  reportStrandedRebuildOrphan(sqlite, 'claim_confirmations', 'claim_confirmations__rebuild')
   sqlite.exec(CLAIMANTS_DDL)
   sqlite.exec(DEVICES_DDL)
   return drizzle(sqlite, {

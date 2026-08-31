@@ -1,5 +1,6 @@
 import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
+import util from 'node:util'
 import { createHmac } from 'node:crypto'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -133,6 +134,42 @@ function stubbedToken(input, init) {
   const auth = readHeader(input, init, 'authorization')
   const match = typeof auth === 'string' ? auth.match(/^(?:Bearer|token)\s+(\S+)/i) : null
   return match?.[1]
+}
+
+// Issue #43: compares a recorded forge-credential header against the expected value without ever
+// letting the real credential reach an assertion failure's diagnostic. `assert.equal`/`strictEqual`
+// attach both raw compared values to the thrown AssertionError's `actual`/`expected` fields, and
+// node's built-in test reporter prints them verbatim on failure regardless of any custom message —
+// so comparing a real token with `assert.equal` leaks it into CI/terminal output the moment the
+// comparison ever fails for real. `assert.ok` on a pre-computed boolean carries no such fields.
+function assertCredentialHeaderEquals(actual, expected, message) {
+  assert.ok(actual === expected, message)
+}
+
+const REDACTED_HEADER_VALUE = '[redacted]'
+const SENSITIVE_HEADER_NAMES = new Set(['authorization', 'private-token'])
+
+// Issue #43: safe projection of a recorded write-back request's headers for embedding in a failure
+// message. `commentRequests[].headers` is currently a `Headers` instance (which `JSON.stringify`
+// already renders as `{}`, since `Headers` has no own enumerable properties), but that safety is an
+// accident of `Headers`'s serialization, not a guarantee this file makes anywhere — a plausible
+// refactor (e.g. recording a plain header dictionary instead, for convenience) would silently start
+// leaking the forge credential the moment one of these failure messages actually renders. This
+// projection is safe under either shape, and keeps every other header name/value visible.
+function redactedHeaders(headers) {
+  const out = {}
+  const entries = typeof headers?.entries === 'function' ? headers.entries() : Object.entries(headers ?? {})
+  for (const [key, value] of entries) {
+    out[key] = SENSITIVE_HEADER_NAMES.has(String(key).toLowerCase()) ? REDACTED_HEADER_VALUE : value
+  }
+  return out
+}
+
+// Safe projection of `commentRequests` for `JSON.stringify(...)` inside a failure message: keeps
+// `url`, `method`, and `body` (none of which ever carry the forge credential) so a failure still
+// identifies exactly which request(s) were recorded, while redacting credential-bearing headers.
+function redactedRequests(requests) {
+  return requests.map((r) => ({ url: r.url, method: r.method, headers: redactedHeaders(r.headers), body: r.body }))
 }
 
 function jsonResponse(status, body) {
@@ -586,6 +623,109 @@ function giteaPrPayload({ merged, prUrl, fullName }) {
   }
 }
 
+// Issue #43 (RED baseline). Deliberately narrow, prefix-anchored shapes for the well-known
+// forge/agent-key token families this codebase actually issues — copied from
+// workflow-default.test.ts's TOKEN_SHAPE_PATTERNS / assertNoTokenShapedText idiom rather than
+// invented fresh, so a real credential leaking into this file's own failure diagnostics is caught
+// the same way a leak into product surfaces is caught there.
+const TOKEN_SHAPE_PATTERNS = [
+  /gh[pousr]_[A-Za-z0-9]{20,}/, // GitHub PAT-shaped
+  /glpat-[A-Za-z0-9_-]{20,}/, // GitLab PAT-shaped
+  /ktk_[0-9a-f]{20,}/i, // Kaola agent-key-shaped
+  /\bBearer\s+[A-Za-z0-9._~+/=-]{20,}\b/, // an embedded bearer credential
+]
+
+function assertNoTokenShapedText(text, label) {
+  for (const pattern of TOKEN_SHAPE_PATTERNS) {
+    assert.equal(
+      pattern.test(text),
+      false,
+      `${label} contains token-shaped text matching ${pattern}: a failure diagnostic must never carry credential-shaped material`,
+    )
+  }
+}
+
+describe('issue #43: writeback.test.ts failure diagnostics must never carry forge-credential-shaped text', () => {
+  // Deliberately distinct from every *_INLINE_TOKEN fixture above, so this genuinely exercises the
+  // comparison path rather than a value some other test already proved inert.
+  const TOKEN_SHAPED_CREDENTIAL = 'glpat-DEADBEEFCAFEDEADBEEFCAFE'
+
+  test('a mismatched forge-credential header comparison must never embed the real token in its failure diagnostic', async (t) => {
+    const sqlitePath = sqliteFile(t)
+    const { app, stub } = await boot(t, sqlitePath)
+    const poster = await loginGitea(app, stub, 'issue-43-redaction')
+    const key = await mintAgentKey(app, poster.cookies, 'agent')
+    allowForgeToken(stub, TOKEN_SHAPED_CREDENTIAL, { repo: GITLAB_FULL_ACCESS })
+    const brief = await createTaskOk(app, poster.cookies, {
+      ...taskPayload({ title: '导入任务-gitlab-脱敏校验', kind: 'gitlab', sourceType: 'imported', issueNumber: 561 }),
+      credential: { token: TOKEN_SHAPED_CREDENTIAL },
+    })
+
+    const claimed = await claimTaskHttp(app, { token: key.identity, publicId: brief.id })
+    assert.equal(claimed.statusCode, 201, `setup claim: ${claimed.statusCode} ${claimed.body}`)
+    await settleWritebacks()
+
+    const commentPosts = stub.commentRequests.filter((r) => r.url === gitlabCommentUrl(561))
+    assert.equal(
+      commentPosts.length,
+      1,
+      `setup: expected exactly one write-back POST, got ${JSON.stringify(redactedRequests(stub.commentRequests))}`,
+    )
+    const [req] = commentPosts
+    const realHeaderValue = req.headers.get('private-token')
+    assert.equal(
+      realHeaderValue,
+      TOKEN_SHAPED_CREDENTIAL,
+      'setup: the write-back must actually carry the token-shaped credential for this test to be meaningful',
+    )
+
+    // Exercises the exact comparison helper the 认领 header assertions below now use
+    // (gitea/github/gitlab), deliberately forced to mismatch. Before issue #43's fix, those
+    // assertions called `assert.equal(realValue, expectedValue)` directly: `assert.equal` attaches
+    // both compared values to the thrown AssertionError's `actual`/`expected` fields, and the
+    // built-in test reporter renders them in full on failure — regardless of any custom message —
+    // so the instant this kind of comparison ever mismatched for real, the genuine forge token was
+    // printed into CI/terminal output. `assertCredentialHeaderEquals` (assert.ok on a pre-computed
+    // boolean) must never do that.
+    let caught
+    try {
+      assertCredentialHeaderEquals(
+        realHeaderValue,
+        'deliberately-wrong-expected-value',
+        'the write-back comment must authenticate with the task forge credential',
+      )
+    } catch (err) {
+      caught = err
+    }
+    assert.ok(caught, 'setup: the deliberately-mismatched comparison must fail so this test actually exercises the failure path')
+    assertNoTokenShapedText(util.inspect(caught), 'AssertionError diagnostic for a forge-credential header comparison')
+  })
+
+  test('redactedRequests redacts a credential header for the failure-message projection, whether headers is a Headers instance or a plain object', () => {
+    const url = gitlabCommentUrl(561)
+    const asHeadersInstance = {
+      url,
+      method: 'POST',
+      headers: new Headers({ 'private-token': TOKEN_SHAPED_CREDENTIAL }),
+      body: { body: 'hi' },
+    }
+    // A plausible near-miss regression: someone "simplifies" beginFetch to record a plain header
+    // dictionary instead of a `Headers` instance. `redactedRequests` must stay safe either way.
+    const asPlainObject = {
+      url,
+      method: 'POST',
+      headers: { 'private-token': TOKEN_SHAPED_CREDENTIAL },
+      body: { body: 'hi' },
+    }
+    for (const request of [asHeadersInstance, asPlainObject]) {
+      const rendered = JSON.stringify(redactedRequests([request]))
+      assertNoTokenShapedText(rendered, 'redactedRequests(...) rendered into a failure message')
+      assert.ok(rendered.includes(url), 'redactedRequests must still identify which request failed (url)')
+      assert.ok(rendered.includes('POST'), 'redactedRequests must still identify which request failed (method)')
+    }
+  })
+})
+
 describe('issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成)', { concurrency: false }, () => {
   describe('认领 (claim) write-back', () => {
     test('imported gitea task: REST claim posts a write-back comment with the task credential, not the agent key', async (t) => {
@@ -604,10 +744,10 @@ describe('issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成)', 
       assert.equal(
         commentPosts.length,
         1,
-        `expected exactly one write-back comment POST, got ${JSON.stringify(stub.commentRequests)}`,
+        `expected exactly one write-back comment POST, got ${JSON.stringify(redactedRequests(stub.commentRequests))}`,
       )
       const [req] = commentPosts
-      assert.equal(
+      assertCredentialHeaderEquals(
         req.headers.get('authorization'),
         `token ${GITEA_INLINE_TOKEN}`,
         'the write-back comment must authenticate with the task forge credential',
@@ -640,7 +780,7 @@ describe('issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成)', 
       assert.equal(
         stub.commentRequests.length,
         0,
-        `a native task must never trigger a comment POST, got ${JSON.stringify(stub.commentRequests)}`,
+        `a native task must never trigger a comment POST, got ${JSON.stringify(redactedRequests(stub.commentRequests))}`,
       )
       const db = openDb(t, sqlitePath)
       assert.equal(writebackEventsFor(db, brief.id).length, 0, 'a native task must never write a 回写 event')
@@ -661,10 +801,10 @@ describe('issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成)', 
       assert.equal(
         commentPosts.length,
         1,
-        `expected exactly one github write-back comment POST, got ${JSON.stringify(stub.commentRequests)}`,
+        `expected exactly one github write-back comment POST, got ${JSON.stringify(redactedRequests(stub.commentRequests))}`,
       )
       const [req] = commentPosts
-      assert.equal(req.headers.get('authorization'), `Bearer ${GITHUB_INLINE_TOKEN}`)
+      assertCredentialHeaderEquals(req.headers.get('authorization'), `Bearer ${GITHUB_INLINE_TOKEN}`, 'the write-back comment must authenticate with the task forge credential')
       assert.ok(req.body.body.includes(brief.id))
       assert.ok(req.body.body.includes(PUBLIC_URL))
     })
@@ -684,10 +824,10 @@ describe('issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成)', 
       assert.equal(
         commentPosts.length,
         1,
-        `expected exactly one gitlab write-back note POST, got ${JSON.stringify(stub.commentRequests)}`,
+        `expected exactly one gitlab write-back note POST, got ${JSON.stringify(redactedRequests(stub.commentRequests))}`,
       )
       const [req] = commentPosts
-      assert.equal(req.headers.get('private-token'), GITLAB_INLINE_TOKEN)
+      assertCredentialHeaderEquals(req.headers.get('private-token'), GITLAB_INLINE_TOKEN, 'the write-back note must authenticate with the task forge credential')
       assert.ok(req.body.body.includes(brief.id))
       assert.ok(req.body.body.includes(PUBLIC_URL))
     })
@@ -741,7 +881,7 @@ describe('issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成)', 
       assert.equal(
         commentPosts.length,
         2,
-        `expected the claim comment plus the submit_pr comment, got ${JSON.stringify(stub.commentRequests)}`,
+        `expected the claim comment plus the submit_pr comment, got ${JSON.stringify(redactedRequests(stub.commentRequests))}`,
       )
       const submitComment = commentPosts[1]
       assert.ok(submitComment.body.body.includes(brief.id))
@@ -805,7 +945,7 @@ describe('issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成)', 
 
       const commentPosts = stub.commentRequests.filter((r) => r.url === giteaCommentUrl(521))
       const completeComment = commentPosts[commentPosts.length - 1]
-      assert.ok(completeComment, `expected a write-back comment after completion, got ${JSON.stringify(stub.commentRequests)}`)
+      assert.ok(completeComment, `expected a write-back comment after completion, got ${JSON.stringify(redactedRequests(stub.commentRequests))}`)
       assert.ok(completeComment.body.body.includes(brief.id))
       assert.ok(completeComment.body.body.includes(PUBLIC_URL))
       assert.ok(completeComment.body.body.includes(prUrl))
@@ -854,7 +994,7 @@ describe('issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成)', 
 
       const commentPosts = stub.commentRequests.filter((r) => r.url === giteaCommentUrl(522))
       const completeComment = commentPosts[commentPosts.length - 1]
-      assert.ok(completeComment, `expected a write-back comment after the webhook-driven completion, got ${JSON.stringify(stub.commentRequests)}`)
+      assert.ok(completeComment, `expected a write-back comment after the webhook-driven completion, got ${JSON.stringify(redactedRequests(stub.commentRequests))}`)
       assert.ok(completeComment.body.body.includes(brief.id))
       assert.ok(completeComment.body.body.includes(PUBLIC_URL))
       assert.ok(completeComment.body.body.includes(prUrl))
@@ -953,7 +1093,7 @@ describe('issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成)', 
       assert.equal(
         stub.commentRequests.length,
         0,
-        `a native task must never post a write-back comment at any hook, got ${JSON.stringify(stub.commentRequests)}`,
+        `a native task must never post a write-back comment at any hook, got ${JSON.stringify(redactedRequests(stub.commentRequests))}`,
       )
       assert.equal(writebackEventsFor(db, brief.id).length, 0, 'a native task must never write any 回写 event')
     })
@@ -993,7 +1133,7 @@ describe('issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成)', 
       assert.equal(
         successfulAttempts,
         2,
-        `retryPendingWritebacks must re-attempt the failed 认领 comment, got ${JSON.stringify(stub.commentRequests)}`,
+        `retryPendingWritebacks must re-attempt the failed 认领 comment, got ${JSON.stringify(redactedRequests(stub.commentRequests))}`,
       )
 
       const events = successfulWritebackEventsFor(db, brief.id, '认领')
