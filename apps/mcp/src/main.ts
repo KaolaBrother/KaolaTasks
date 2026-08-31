@@ -25,6 +25,7 @@ import { createInterface } from 'node:readline'
 import type { Readable, Writable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import { deviceProofCanonical } from '@kaola/shared'
+import { resolveCarrierIntent, runnerSessionLocator, type CarrierIntent } from './runner-carrier.ts'
 
 const DEFAULT_ORIGIN = 'http://localhost:31415'
 const MCP_PATH = '/api/mcp'
@@ -405,6 +406,31 @@ function repoIdentityFromResult(result: unknown): string | null {
   return `${forge}/${fullName}`
 }
 
+/**
+ * Issue #34 point C: maps the locally-resolved carrier intent onto the receipt's
+ * carrier/runner/runner_session fields. The default ('direct') and well-formed explicit Runner
+ * selection cases are pinned by the acceptance suite (runner-carrier.test.ts). The advisory case
+ * is deliberately NOT pinned there (see that suite's "Resolved ambiguities" note C) -- this
+ * bridge records carrier: 'advisory' with runner/runner_session left null: honest that something
+ * other than the silent default was requested, without inventing a runner id or a session
+ * locator for a selection that never resolved into anything a Runner start could actually use.
+ */
+function receiptCarrierFields(
+  intent: CarrierIntent,
+): { carrier: string; runner: string | null; runnerSession: string | null } {
+  if (intent.carrier === 'runner') {
+    return {
+      carrier: 'runner',
+      runner: intent.runner,
+      runnerSession: runnerSessionLocator(intent.repo, intent.session),
+    }
+  }
+  if (intent.carrier === 'advisory') {
+    return { carrier: 'advisory', runner: null, runnerSession: null }
+  }
+  return { carrier: DEFAULT_CARRIER, runner: null, runnerSession: null }
+}
+
 function claimIdForTask(kaolaHome: string, url: string, taskId: string): string | null {
   const receipt = readReceiptSafely(receiptFilePath(kaolaHome, url, taskId), originDigest(url), taskId)
   return receipt?.claim_id ?? null
@@ -508,6 +534,7 @@ type BridgeCtx = {
   stderr: Writable
   sessionId?: string
   lastInitializeBody?: unknown
+  carrierIntent: CarrierIntent
 }
 
 const KNOWN_TOOLS = new Set([
@@ -613,6 +640,7 @@ async function handleClaimTask(
   const out = await dispatch(ctx, rewrittenBody)
 
   if (isPlainObject(out) && out.result !== undefined) {
+    const { carrier, runner, runnerSession } = receiptCarrierFields(ctx.carrierIntent)
     writeReceiptAtomic(path, {
       v: 1,
       server: originDigest(ctx.url),
@@ -620,9 +648,9 @@ async function handleClaimTask(
       request_id: requestId,
       claim_id: claimIdFromResult(out.result),
       repo_identity: repoIdentityFromResult(out.result),
-      carrier: DEFAULT_CARRIER,
-      runner: null,
-      runner_session: null,
+      carrier,
+      runner,
+      runner_session: runnerSession,
     })
   }
 
@@ -684,7 +712,11 @@ export async function runStdioBridge(
     writeStderr(stderr, 'KAOLA url is http (not localhost); prefer https')
   }
 
-  const ctx: BridgeCtx = { kaolaHome, url, stdout, stderr }
+  // Issue #34 -- explicit Runner carrier intent arrives ONLY through the bridge's own local
+  // environment (never an MCP tool parameter, never server/DB state). Resolved once per process
+  // and carried on ctx for the claim path to record into the receipt.
+  const carrierIntent = resolveCarrierIntent(env as Record<string, string | undefined>)
+  const ctx: BridgeCtx = { kaolaHome, url, stdout, stderr, carrierIntent }
   const rl = createInterface({ input: stdin, crlfDelay: Infinity })
   for await (const line of rl) {
     const trimmed = line.trim()

@@ -36,3 +36,4 @@
 - `docs/conventions.md`：工程约定
 - `docs/smoke-test.md`：真实联调步骤与记录
 - `docs/workflow-default.md`：Claim 后默认直连 Kaola Workflow 的客户端指引
+- `docs/runner-carrier.md`：显式选用 Kaola Project Runner 承载的兼容性指引
