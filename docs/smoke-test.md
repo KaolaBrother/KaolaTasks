@@ -80,6 +80,8 @@ POST /api/v1/setup → local active+admin（空库 OAuth 不得插用户）
 
 口头让 Agent 去领时不要带 `autonomous`。网页没有「认领」按钮。
 
+**Claim identity（#36/#31，尚未在本手册的任一轮里实测覆盖）：** `claim_task` 现在可选带 `request_id`，成功信封的 `lease` 里新增 `claim_id`（从 lease 行派生，不新建表）；`report_progress` / `release_task` / MCP `submit_pr` 可选带 `claim_id`。`scripts/forge-smoke.ts` 目前不传 `request_id`，走的是遗留（legacy）Claim 路径——`claim_id` 因此在提交 `submit_pr` 时可省，脚本行为不受影响。#31 把设备锁定收紧到「必须是持有该 lease 的**那一台**设备」，也覆盖遗留 Claim；本手册全程只用同一把 `~/.kaola/device.json`，同样不受影响。
+
 ## 标准闭环（每家重复一遍）
 
 | # | 步骤 | A 浏览器 | B 脚本 |
@@ -146,4 +148,4 @@ GitHub 发布冒烟已停（此前仓 [Issue #1](https://github.com/KaolaBrother
 ## 测完可收
 
 - 两家：撤销冒烟 PAT；项目 `kaola-tasks-smoke` 可删。
-- 工作台：删掉对应凭证档案；**解除这台电脑的授权**（不要再走「吊销 Agent Key」当收尾）。
+- 工作台：删掉对应凭证档案；**解除这台电脑的授权**（不要再走「吊销 Agent Key」当收尾）。若某一轮中途停下、任务还停在 `待认领`/`进行中`/`待验收`/`已退回` 任一非终态，删档案会先被 `409 credential_profile_in_use` 挡住（#36）——先把那条任务取消或走完到 `已完成`/`已取消`，再删档案。

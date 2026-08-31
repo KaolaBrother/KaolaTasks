@@ -96,7 +96,7 @@ stateDiagram-v2
 规则：
 
 - **发布即校验**：任务发布/导入时，适配层用所附 token 实测权限（能否读仓库、能否推分支、能否创建 PR）。token 失效或权限不足的任务不会出现在看板上。
-- **认领即租约**：默认 TTL 建议 24h（可按任务配置）。Agent 通过 `report_progress` 心跳续约；租约过期自动回到"待认领"，并撤销该次 token 揭示的有效性记录。
+- **认领即租约**：默认 TTL 建议 24h（可按任务配置）。Agent 通过 `report_progress` 心跳续约；租约过期自动回到"待认领"，只撤销 Kaola Tasks 自身的生命周期权威与 Claim 锁定——揭示的 forge 凭证是可复用的仓库凭证，不因租约过期或释放而被吊销（措辞修正与 per-Claim 铸造/吊销的非目标见 §15「凭证语义」）。
 - **验收在 forge 上完成**：发布者在 forge 上按正常流程 review PR，考拉只反映状态（PR 开了 → 待验收；合并 → 已完成）。导入型任务同时把状态以评论形式回写到源 Issue。
 
 ## 6. 任务卡（Task Brief）Schema
@@ -200,6 +200,7 @@ Web「发布」页的收集规则（HTTP 仍是现有 `POST /api/v1/tasks` / `PO
   | gitea | Authorization | token ${token} |
 
 - **全量审计**：每次揭示记录哪台电脑、何时、拿走了哪个档案的 token（认领者为 `claimant` 时无 `users` 行）；档案页提供一键吊销（删除档案 + 提示去 forge 侧撤销）。
+- **在用凭证不可删**：被 `待认领`/`进行中`/`待验收`/`已退回` 任一非终态任务引用的凭证档案不能删除（`DELETE` 返回 `409` `credential_profile_in_use`）；只有任务已终态（已完成/已取消）或无引用时才能删——这样一个仍在进行的 Claim 永远能重新解密出它认领时拿到的同一份凭证（#36）。
 - **无账号认领者（token 即访问权）**：认领者**不需要**在目标 forge 上有账号。Agent 用揭示的顶层 `token` 按 `clone` 四键克隆：目录 `clone.suggested_dir`，远端 `clone.remote_url`（无凭证的 HTTPS git URL），请求头按 `clone.extra_header`（见上表）把 token 代入 `value_pattern` 后走 `git -c http.extraHeader`，再向**同一仓库**推分支（不走 fork——fork 才需要账号）、再用同一 token 调 API 开 PR/MR。因此发布校验必须包含"能否推分支"。身份归属：PR 显示的是 token 所属身份（发布者或项目 bot），但 commit author 可自由设置为认领者姓名/邮箱（无需账号），PR 描述底部附"claimed by @认领者 via Kaola Tasks"，考拉侧审计日志保存真实认领记录。推荐用 GitLab Project Access Token（Developer 角色，`api` + `write_repository`）/ Gitea 仓库 token / GitHub fine-grained PAT 实现此模式。
 
   见上表。
@@ -252,16 +253,16 @@ type ListedIssue = { number: number; title: string; issue_url: string }
 
 ## 9. MCP 工具面
 
-服务端 MCP 仍是 Streamable HTTP `POST /api/mcp`。鉴权是本机设备证明（stdio 桥 `kaola-mcp` 签名转发），**不是** Web 自助生成的 Agent Key Bearer。待授权设备在钩子层即 `202` `authorization_required`，不能列出或认领任务。`claim_task` 成功信封不变（任务卡 + 顶层 **揭示 token** + 租约 + `clone` 四键）。
+服务端 MCP 仍是 Streamable HTTP `POST /api/mcp`。鉴权是本机设备证明（stdio 桥 `kaola-mcp` 签名转发），**不是** Web 自助生成的 Agent Key Bearer。待授权设备在钩子层即 `202` `authorization_required`，不能列出或认领任务。`claim_task` 成功顶层信封仍是任务卡 + 顶层 **揭示 token** + 租约 + `clone` 四键；租约新增 `claim_id`（#36，从该 lease 行不可变字段派生的公开编码，不新建表、不落库）。`report_progress` / `release_task` / MCP-only `submit_pr` 随附 `claim_id`，与设备一起做双重锁定（#31）。
 
 | 工具 | 参数 | 行为 |
 |------|------|------|
 | `list_tasks` | `status?` `tags?` `forge?` | 列出任务（不含 token）；待授权设备不可用 |
 | `get_task_brief` | `task_id` | 返回 §6 的完整 JSON（不含 token） |
-| `claim_task` | `task_id` `autonomous?` | 建立租约；返回任务卡 + **揭示 token** + 租约 TTL + `clone` 四键（`suggested_dir`、`token_usage`、`remote_url`、`extra_header`）。已绑定设备即授权，无需二次确认（自主轮询场景见 M3；#16 仅绑到 Web 用户的路径） |
-| `report_progress` | `task_id` `note` | 心跳续约 + 进度记录（展示在任务详情时间线） |
-| `submit_pr` | `task_id` `pr_url` `summary` | 提交交付物，任务转"待验收" |
-| `release_task` | `task_id` `reason` | 主动放弃，任务回"待认领" |
+| `claim_task` | `task_id` `autonomous?` `request_id?` | 建立租约；返回任务卡 + **揭示 token** + 租约（含 `claim_id`、TTL）+ `clone` 四键（`suggested_dir`、`token_usage`、`remote_url`、`extra_header`）。已绑定设备即授权，无需二次确认（自主轮询场景见 M3；#16 仅绑到 Web 用户的路径）。同一 `(device, request_id)` 重放幂等返回同一 Claim，摘要（任务、`autonomous`）不一致时是 `claim_request_conflict`（#36） |
+| `report_progress` | `task_id` `note` `claim_id?` | 心跳续约 + 进度记录（展示在任务详情时间线）；曾带 `request_id` 的新式 Claim 必须附 `claim_id`，遗留 Claim 可省（#31） |
+| `submit_pr` | `task_id` `pr_url` `summary` `claim_id?` | 提交交付物，任务转"待验收"；`pr_url` 须能解析且属于该任务仓库，同一 Claim + 同一 URL 重复提交幂等（#31） |
+| `release_task` | `task_id` `reason` `claim_id?` | 主动放弃，任务回"待认领"；同一 Claim 重复释放幂等（#31） |
 
 REST 认领/进度/释放与 MCP 同一套设备证明。另加 Web 端专用的档案管理、审计查询、OAuth 回调等接口。
 
@@ -275,9 +276,9 @@ REST 认领/进度/释放与 MCP 同一套设备证明。另加 Web 端专用的
 | `agent_keys` | 遗留：user_id、key_hash、label、last_used_at。MCP / 认领 / whoami 不再用 Agent Key Bearer |
 | `credential_profiles` | forge、base_url、repo_full_name、token_encrypted、scopes_checked、created_by |
 | `tasks` | §6 各字段 + status、credential_profile_id / inline_token_encrypted（二选一） |
-| `leases` | task_id、claimer 为 `claimer_user_id` 或 `claimer_claimant_id`、**`device_id`**、claimed_at、expires_at、last_heartbeat、state |
+| `leases` | task_id、claimer 为 `claimer_user_id` 或 `claimer_claimant_id`、**`device_id`**、claimed_at、expires_at、last_heartbeat、state、**`request_id`**（可空，`(device_id, request_id)` 部分唯一索引，#36 幂等 Claim 身份键）。`claim_id` 不落库，是该行不可变字段（`id`/`task_id`/`device_id`/`claimed_at`/`request_id`/claimer）派生的公开编码（见 §9、§15） |
 | `claim_confirmations` | #16：task_id、user_id（仅绑到 Web 用户）、**`device_id`**、state、created_at |
-| `submissions` | task_id、lease_id、pr_url、summary、pr_state |
+| `submissions` | task_id、**`lease_id`**（唯一索引，一 Claim 一次提交，#31）、**`pr_url`**（规范化后的绝对 URL，同一 URL 不得被另一任务的进行中提交占用）、summary、pr_state |
 | `events` | 审计与时间线：类型（状态迁移 / token 揭示 / 心跳 / 回写 / 管理员创建 / 权限变更）、主体、时间、详情 JSON。向导成功 `管理员创建`，`details` 恰好 `{ user_id }`；升级 `权限变更`，`details` `{ target_user_id, from, to }`。两者不得有密码、哈希、token |
 
 SQLite 足够内部团队规模；Drizzle 之上留好升级 Postgres 的余地（不用 SQLite 特有特性）。

@@ -27,7 +27,7 @@ sequenceDiagram
 1. 空库先走**初始向导**（用户名/密码）创建本地管理员。之后用本地密码登录，或用 GitLab / Gitea 登录成为发布者。没有 GitHub 登录按钮。
 2. 保存一份仓库凭证，填好任务后点「发布」。发布时会校验令牌能否读、推、开 PR。
 3. 认领者本机跑 `kaola-mcp --url http://localhost:31415`（或 `KAOLA_URL`）。不要把 token 写进 mcp.json。
-4. 管理员在工作台 **电脑** 页把 **待授权电脑** 绑到自己或 **认领者**。已绑定后 `claim_task` 才拿到一次性仓库令牌（默认 24 小时）。
+4. 管理员在工作台 **电脑** 页把 **待授权电脑** 绑到自己或 **认领者**。已绑定后 `claim_task` 才拿到该任务的可复用仓库凭证（并非按次铸造的一次性令牌）；Claim 租约默认 TTL 24 小时，到期只收回考拉侧的认领锁定，不吊销 forge 侧凭证本身。
 5. Agent 实现、推分支、开 PR，再 `submit_pr`。任务变为「待验收」。
 6. 你在 forge 上 review、合并。考拉默认每分钟看一次 PR；也可以配 webhook。
 7. 任务变为「已完成」。从 Issue 导入的会在源 Issue 上留一条状态评论。
@@ -86,10 +86,10 @@ sequenceDiagram
 |------|--------|
 | `list_tasks` | 列出可接单的 `待认领` 任务（无 token） |
 | `get_task_brief` | 看一条任务的完整说明（无 token） |
-| `claim_task` | 认领。人指定任务时不要带 `autonomous`。成功才拿到**该任务**的仓库令牌。自主轮询才设 `autonomous: true` |
-| `report_progress` | 心跳，可选备注 |
-| `release_task` | 放弃，任务回到待认领 |
-| `submit_pr` | forge 上已有 PR/MR 后再交 URL |
+| `claim_task` | 认领。人指定任务时不要带 `autonomous`；可选 `request_id` 让重试幂等（同一 `(设备, request_id)` 重放拿回同一个 Claim）。成功才拿到**该任务**的仓库令牌，租约里的 `claim_id` 之后心跳/释放/提交都要带上。自主轮询才设 `autonomous: true` |
+| `report_progress` | 心跳，可选备注；带过 `request_id` 的新式 Claim 必须带 `claim_id` |
+| `release_task` | 放弃，任务回到待认领；同上 `claim_id` 规则，重复释放同一 Claim 是幂等的 |
+| `submit_pr` | forge 上已有 PR/MR 后再交 URL；同上 `claim_id` 规则，重复提交同一 Claim + 同一 URL 是幂等的 |
 
 用返回的 `clone` 去克隆：按 `extra_header` 带令牌，不要把 token 写进 remote URL。提交 PR 只有 MCP 的 `submit_pr`。协议细节见 [docs/api.md](docs/api.md)。
 
