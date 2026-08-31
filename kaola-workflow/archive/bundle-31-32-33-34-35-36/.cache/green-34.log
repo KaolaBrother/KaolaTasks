@@ -1,0 +1,132 @@
+# Issue #34 — green run log
+Date: 2026-08-31T11:19:36Z
+Worktree: /Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36
+HEAD: 56422fc6b403fecf31eb6bd032225ad66d406008 (branch workflow/bundle-31-32-33-34-35-36)
+
+## 1. Focused acceptance suite: apps/mcp/src/runner-carrier.test.ts
+$ node --experimental-strip-types --test apps/mcp/src/runner-carrier.test.ts
+  ✔ default path (KAOLA_CARRIER unset): receipt keeps carrier direct / runner null / runner_session null, unchanged from Issue #32 (25.364916ms)
+  ✔ default path stays direct even with stray KAOLA_RUNNER_* vars present but KAOLA_CARRIER unset (gating is on KAOLA_CARRIER only) (7.752291ms)
+  ✔ explicit well-formed Runner selection: receipt records carrier "runner", the exact runner id, and a runner_session that parses back to the exact (repo, session) (4.43275ms)
+  ✔ re-attach: a FRESH bridge process reading the receipt recovers the same (repo, session) locator and the same claim_id, without creating a second Claim (9.074042ms)
+✔ Claim receipt carrier fields (Issue #34 point C, against the existing Issue #32 receipt shape) (46.786958ms)
+▶ Controller retains custody (Issue #34 point E): selecting the Runner carrier changes none of the six tools' behavior
+  ✔ report_progress / release_task / submit_pr receive identical arguments (plus the existing claim_id auto-attach) whether or not the Runner carrier is selected (9.032666ms)
+  ✔ an advisory (unrecognized) Runner selection still lets the claim succeed and mutation args stay unaffected (no fabricated success, no mutation path through the Runner) (5.104375ms)
+✔ Controller retains custody (Issue #34 point E): selecting the Runner carrier changes none of the six tools' behavior (14.228833ms)
+▶ Secret scan under the Runner carrier (Issue #34 point H)
+  ✔ a full claim cycle under an explicit Runner selection never leaks the forge token, an Authorization-shaped value, or the device private key into KAOLA_HOME, stderr, or the forwarded-env projection (7.100666ms)
+✔ Secret scan under the Runner carrier (Issue #34 point H) (7.162042ms)
+ℹ tests 41
+ℹ suites 8
+ℹ pass 41
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 222.814166
+
+## 2. Other mcp suites: claim-receipt.test.ts + main.test.ts
+$ node --experimental-strip-types --test apps/mcp/src/claim-receipt.test.ts apps/mcp/src/main.test.ts
+▶ stdio bridge Streamable HTTP session
+  ✔ captures MCP-Session-Id from initialize without putting it on the JSON-RPC body (5.765583ms)
+  ▶ runStdioBridge session replay
+    ✔ replays captured mcp-session-id on the next stdin tools/list (11.696416ms)
+    ✔ omits mcp-session-id on later stdin when initialize response had no such header (8.996417ms)
+  ✔ runStdioBridge session replay (20.887167ms)
+✔ stdio bridge Streamable HTTP session (26.736792ms)
+ℹ tests 36
+ℹ suites 19
+ℹ pass 36
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 683.242917
+
+## 3. Full pnpm test (node 720 + web 117, unchanged registration)
+$ pnpm test
+  ✔ transitionTaskStatus rejects 已取消 → 待验收 (0.023833ms)
+  ✔ transitionTaskStatus rejects 已取消 → 已完成 (0.022542ms)
+  ✔ transitionTaskStatus rejects 已取消 → 已退回 (0.021333ms)
+  ✔ transitionTaskStatus rejects 已取消 → 已取消 (0.821292ms)
+  ✔ transitionTaskStatus rejects an unknown from status (0.048625ms)
+  ✔ transitionTaskStatus rejects an unknown to status (0.034625ms)
+✔ transitionTaskStatus (2.102875ms)
+ℹ tests 720
+ℹ suites 188
+ℹ pass 720
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 7730.723625
+$ vitest run
+
+ RUN  v4.1.11 /Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/web
+
+
+ Test Files  6 passed (6)
+      Tests  117 passed (117)
+   Start at  19:19:46
+   Duration  6.64s (transform 574ms, setup 0ms, import 4.02s, tests 18.93s, environment 1.13s)
+
+
+## 4. pnpm lint
+$ pnpm lint
+$ eslint .
+exit code: 0
+
+## 5. pnpm typecheck
+$ pnpm typecheck
+$ pnpm -r --if-present typecheck
+Scope: 5 of 6 workspace projects
+apps/web typecheck$ vue-tsc --noEmit -p tsconfig.json
+packages/forge-adapters typecheck$ tsc --noEmit -p tsconfig.json
+packages/shared typecheck$ tsc --noEmit -p tsconfig.json
+packages/forge-adapters typecheck: Done
+packages/shared typecheck: Done
+apps/web typecheck: Done
+apps/mcp typecheck$ tsc --noEmit -p tsconfig.json
+apps/server typecheck$ tsc --noEmit -p tsconfig.json
+apps/mcp typecheck: Done
+apps/server typecheck: Done
+exit code: 0
+
+## 6. pnpm build
+$ pnpm build
+packages/forge-adapters build$ tsc --noEmit -p tsconfig.json
+packages/shared build$ tsc --noEmit -p tsconfig.json
+apps/web build: vite v7.3.6 building client environment for production...
+apps/web build: transforming...
+packages/forge-adapters build: Done
+packages/shared build: Done
+apps/web build: ✓ 2568 modules transformed.
+apps/web build: rendering chunks...
+apps/web build: computing gzip size...
+apps/web build: dist/index.html                     0.75 kB │ gzip:   0.43 kB
+apps/web build: dist/assets/index-BNddLdPW.css      9.32 kB │ gzip:   2.70 kB
+apps/web build: dist/assets/index-CWmjcWNy.js   1,491.15 kB │ gzip: 410.22 kB
+apps/web build: (!) Some chunks are larger than 500 kB after minification. Consider:
+apps/web build: - Using dynamic import() to code-split the application
+apps/web build: - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+apps/web build: - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+apps/web build: ✓ built in 2.02s
+apps/web build: Done
+apps/server build$ tsc --noEmit -p tsconfig.json
+apps/server build: Done
+exit code: 0
+
+## 7. git status --short (worktree)
+ M AGENTS.md
+ M apps/mcp/src/main.ts
+ M docs/README.md
+?? apps/mcp/src/runner-carrier.test.ts
+?? apps/mcp/src/runner-carrier.ts
+?? docs/runner-carrier.md
+
+## 8. External repos unmodified
+$ git -C /Volumes/WorkspaceA/ylminiserver/workspace/kaola-workflow status --porcelain
+(empty = clean)
+$ git -C /Volumes/WorkspaceA/ylminiserver/workspace/kaola-project-runner status --porcelain
+(empty = clean)

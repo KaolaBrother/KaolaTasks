@@ -1,0 +1,197 @@
+=== Issue #35 repair -- CallToolResult unwrap + terminal-replay-conflict retry ===
+Date: 2026-08-31
+Worktree: /Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36 (branch workflow/bundle-31-32-33-34-35-36)
+Files changed by me: apps/mcp/src/main.ts (only)
+Not touched by me (owned by others, confirmed via git status): apps/mcp/src/claim-receipt.test.ts (test author's fake-server correction), apps/server/src/lifecycle-matrix.test.ts (new, Issue #35 test author)
+
+--- git status --short ---
+ M apps/mcp/src/claim-receipt.test.ts
+ M apps/mcp/src/main.ts
+?? apps/server/src/lifecycle-matrix.test.ts
+
+--- git diff --stat (mine: apps/mcp/src/main.ts only) ---
+ apps/mcp/src/main.ts | 109 ++++++++++++++++++++++++++++++++++++++++++++++-----
+ 1 file changed, 100 insertions(+), 9 deletions(-)
+
+--- node --experimental-strip-types --test apps/mcp/src/claim-receipt.test.ts apps/mcp/src/main.test.ts apps/mcp/src/runner-carrier.test.ts ---
+▶ Controller retains custody (Issue #34 point E): selecting the Runner carrier changes none of the six tools' behavior
+  ✔ report_progress / release_task / submit_pr receive identical arguments (plus the existing claim_id auto-attach) whether or not the Runner carrier is selected (8.028625ms)
+  ✔ an advisory (unrecognized) Runner selection still lets the claim succeed and mutation args stay unaffected (no fabricated success, no mutation path through the Runner) (5.194375ms)
+✔ Controller retains custody (Issue #34 point E): selecting the Runner carrier changes none of the six tools' behavior (13.313167ms)
+▶ Secret scan under the Runner carrier (Issue #34 point H)
+  ✔ a full claim cycle under an explicit Runner selection never leaks the forge token, an Authorization-shaped value, or the device private key into KAOLA_HOME, stderr, or the forwarded-env projection (7.057416ms)
+✔ Secret scan under the Runner carrier (Issue #34 point H) (7.122625ms)
+ℹ tests 77
+ℹ suites 27
+ℹ pass 77
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 685.269125
+
+--- node --experimental-strip-types --test apps/server/src/lifecycle-matrix.test.ts ---
+▶ Issue #35 — Claim lifecycle parity and recovery (real server + real bridge)
+  ▶ response loss and restart convergence
+    ✖ a lost claim response, a bridge crash, and a server restart converge to exactly one active Claim (888.05975ms)
+    ✖ a lost submit_pr response and a bridge crash converge to exactly one terminal Claim, one submission, no release (756.37825ms)
+    ✔ a process kill precisely mid-flight (after server commit, before the response arrives) still converges to one Claim (731.95075ms)
+  ✖ response loss and restart convergence (2376.870292ms)
+  ▶ lease expiry mid-flight and recovery
+    ✔ an expired lease releases the task back to 待认领 and a fresh claim recovers with a new Claim identity (586.955542ms)
+  ✔ lease expiry mid-flight and recovery (587.064875ms)
+  ▶ direct vs Runner carrier parity
+    ✖ claim_task/report_progress/submit_pr under KAOLA_CARRIER=runner reach the same Task/Claim/submission outcome as the default direct carrier, with no Runner ever started (868.081541ms)
+  ✖ direct vs Runner carrier parity (868.248958ms)
+  ▶ zero Project Runner calls on the default direct path
+    ✔ a full claim → report_progress → submit_pr cycle never invokes kaola-tmux.sh (449.438791ms)
+  ✔ zero Project Runner calls on the default direct path (449.556042ms)
+  ▶ direct-path bridge restart recovers the Claim receipt
+    ✔ a killed-and-respawned bridge recovers the exact claim_id from its own persisted receipt (637.7385ms)
+  ✔ direct-path bridge restart recovers the Claim receipt (637.850416ms)
+  ▶ heartbeat / receipt / submit ordering, proven from real artifacts
+    ✔ events table, receipt file, and submissions row agree on claim < heartbeat < submit (475.546833ms)
+  ✔ heartbeat / receipt / submit ordering, proven from real artifacts (475.645125ms)
+  ▶ three-forge shared fixtures (GitHub, GitLab with a subgroup, Gitea)
+    ✔ github: claim → submit_pr reaches 待验收 with one submission, and a retry submit_pr is idempotent (499.131875ms)
+    ✔ gitlab: claim → submit_pr reaches 待验收 with one submission, and a retry submit_pr is idempotent (447.635416ms)
+    ✔ gitea: claim → submit_pr reaches 待验收 with one submission, and a retry submit_pr is idempotent (447.608042ms)
+  ✔ three-forge shared fixtures (GitHub, GitLab with a subgroup, Gitea) (1394.524ms)
+  ▶ token scan across every reachable evidence surface
+    ✔ receipts, events.details, bridge stdout/stderr, and admin task views carry zero forge-token hits (outside the two AGENTS.md-allowed responses) (476.656ms)
+  ✔ token scan across every reachable evidence surface (476.740042ms)
+✖ Issue #35 — Claim lifecycle parity and recovery (real server + real bridge) (7267.0265ms)
+ℹ tests 12
+ℹ suites 9
+ℹ pass 9
+ℹ fail 3
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 7749.612833
+
+✖ failing tests:
+
+test at apps/server/src/lifecycle-matrix.test.ts:610:5
+✖ a lost claim response, a bridge crash, and a server restart converge to exactly one active Claim (888.05975ms)
+  AssertionError [ERR_ASSERTION]: heartbeat after server restart must succeed: {"result":{"content":[{"type":"text","text":"{\"error\":\"claim_id_required\",\"message\":\"该认领要求提供 claim_id。\"}"}],"structuredContent":{"error":"claim_id_required","message":"该认领要求提供 claim_id。"},"isError":true},"jsonrpc":"2.0","id":"progress-7"}: tool call failed {"result":{"content":[{"type":"text","text":"{\"error\":\"claim_id_required\",\"message\":\"该认领要求提供 claim_id。\"}"}],"structuredContent":{"error":"claim_id_required","message":"该认领要求提供 claim_id。"},"isError":true},"jsonrpc":"2.0","id":"progress-7"}
+      at assertToolOk (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/lifecycle-matrix.test.ts:424:10)
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/lifecycle-matrix.test.ts:658:9)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:385:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: true,
+    operator: 'notStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/lifecycle-matrix.test.ts:669:5
+✖ a lost submit_pr response and a bridge crash converge to exactly one terminal Claim, one submission, no release (756.37825ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + undefined
+  - 'open'
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/lifecycle-matrix.test.ts:723:16)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: 'open',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/lifecycle-matrix.test.ts:845:5
+✖ claim_task/report_progress/submit_pr under KAOLA_CARRIER=runner reach the same Task/Claim/submission outcome as the default direct carrier, with no Runner ever started (868.081541ms)
+  AssertionError [ERR_ASSERTION]: the Runner carrier selection must never change the observable Task/Claim/submission outcome
+  + actual - expected
+  
+    {
+      leaseCount: 1,
+      leaseState: 'released',
+      submissionCount: 1,
+  +   submissionPrUrl: 'https://gitea.forge.test/kaola/carrier-runner/pulls/1',
+  -   submissionPrUrl: 'https://gitea.forge.test/kaola/carrier-direct/pulls/1',
+      submissionState: 'open',
+      taskStatus: '待验收'
+    }
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/lifecycle-matrix.test.ts:899:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: { taskStatus: '待验收', leaseCount: 1, leaseState: 'released', submissionCount: 1, submissionPrUrl: 'https://gitea.forge.test/kaola/carrier-runner/pulls/1', submissionState: 'open' },
+    expected: { taskStatus: '待验收', leaseCount: 1, leaseState: 'released', submissionCount: 1, submissionPrUrl: 'https://gitea.forge.test/kaola/carrier-direct/pulls/1', submissionState: 'open' },
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+--- npx eslint apps/mcp/src/main.ts ---
+eslint: clean (exit 0)
+
+--- pnpm typecheck (workspace-wide) ---
+$ pnpm -r --if-present typecheck
+Scope: 5 of 6 workspace projects
+apps/web typecheck$ vue-tsc --noEmit -p tsconfig.json
+packages/forge-adapters typecheck$ tsc --noEmit -p tsconfig.json
+packages/shared typecheck$ tsc --noEmit -p tsconfig.json
+packages/forge-adapters typecheck: Done
+packages/shared typecheck: Done
+apps/web typecheck: Done
+apps/server typecheck$ tsc --noEmit -p tsconfig.json
+apps/mcp typecheck$ tsc --noEmit -p tsconfig.json
+apps/mcp typecheck: Done
+apps/server typecheck: Done
+
+--- Analysis of the 3 remaining lifecycle-matrix.test.ts failures (not fixed; out of my file boundary and not production defects) ---
+1) "a lost claim response, a bridge crash, and a server restart converge to exactly one active
+   Claim" (line 610): fails with claim_id_required on the post-restart heartbeat. Root cause:
+   the test spawns `first`/`second` bridges with `origin: proxyOrigin` (the response-loss test
+   double) for the claim, but then spawns `third` with `origin: restarted.origin` (the REAL
+   server's own origin, a different literal URL/port than the proxy) for the report_progress
+   call. apps/mcp/src/main.ts's receipt addressing (originDigest/receiptFilePath) is a pure,
+   deterministic hash of the literal --url origin by design -- an explicit, heavily-pinned
+   Issue #32 contract (see claim-receipt.test.ts's "different tasks and different server
+   origins coexist without interference", which asserts two different origins must NOT share a
+   receipt). The third bridge process therefore legitimately looks up a receipt file under a
+   different origin digest than the one `first`/`second` wrote under, finds none, and correctly
+   omits claim_id -- which the real server correctly refuses with claim_id_required. The proxy
+   was still running at that point (never closed until test teardown) and forwards to the same
+   backend, so pointing `third` at `proxyOrigin` (matching `first`/`second`) instead of
+   `restarted.origin` would very likely make this scenario pass. This looks like a test
+   authoring inconsistency, not a bridge defect; I have not edited the test file.
+
+2) "a lost submit_pr response and a bridge crash converge to exactly one terminal Claim..."
+   (line 669): fails at line 723 on `submissionsAfterRetry[0].prState` (camelCase) being
+   `undefined`. `submissionRowsForTask` runs a raw better-sqlite3 `SELECT submissions.*` query,
+   which returns actual SQL column names (snake_case: `pr_state`, per schema.ts:126
+   `prState: text('pr_state')`), never the Drizzle TS property name `prState`. Lines 885 and
+   1046 of this exact same test file correctly read `.pr_state` off the same helper's rows; line
+   723 is the one outlier using `.prState`. A plain naming-mismatch bug in the test, unrelated
+   to apps/mcp/src/main.ts.
+
+3) "claim_task/report_progress/submit_pr under KAOLA_CARRIER=runner reach the same
+   Task/Claim/submission outcome..." (line 845): fails because `assert.deepEqual(runnerOutcome,
+   directOutcome, ...)` includes `submissionPrUrl` in the comparison, but the two fixtures use
+   genuinely different repo full names (`kaola/carrier-direct` vs `kaola/carrier-runner`), so
+   their real PR URLs (which embed the full name) can never be equal by construction. The
+   deepEqual appears to need to exclude the fixture-specific `submissionPrUrl` field (or compare
+   only its *shape*, not its exact value) from the carrier-parity check. Unrelated to
+   apps/mcp/src/main.ts.
+
+All three are reported here per the "STOP and report, do not edit a test I don't hold custody
+of" protocol; apps/server/ was also explicitly off-limits for this task.

@@ -1,0 +1,261 @@
+▶ Issue #35 — Claim lifecycle parity and recovery (real server + real bridge)
+  ▶ response loss and restart convergence
+    ✖ a lost claim response, a bridge crash, and a server restart converge to exactly one active Claim (845.106583ms)
+    ✖ a lost submit_pr response and a bridge crash converge to exactly one terminal Claim, one submission, no release (591.057167ms)
+    ✔ a process kill precisely mid-flight (after server commit, before the response arrives) still converges to one Claim (707.116875ms)
+  ✖ response loss and restart convergence (2143.764584ms)
+  ▶ lease expiry mid-flight and recovery
+    ✖ an expired lease releases the task back to 待认领 and a fresh claim recovers with a new Claim identity (582.515459ms)
+  ✖ lease expiry mid-flight and recovery (582.706833ms)
+  ▶ direct vs Runner carrier parity
+    ✖ claim_task/report_progress/submit_pr under KAOLA_CARRIER=runner reach the same Task/Claim/submission outcome as the default direct carrier, with no Runner ever started (466.1805ms)
+  ✖ direct vs Runner carrier parity (466.356125ms)
+  ▶ zero Project Runner calls on the default direct path
+    ✖ a full claim → report_progress → submit_pr cycle never invokes kaola-tmux.sh (415.614458ms)
+  ✖ zero Project Runner calls on the default direct path (415.813667ms)
+  ▶ direct-path bridge restart recovers the Claim receipt
+    ✖ a killed-and-respawned bridge recovers the exact claim_id from its own persisted receipt (397.384083ms)
+  ✖ direct-path bridge restart recovers the Claim receipt (397.5395ms)
+  ▶ heartbeat / receipt / submit ordering, proven from real artifacts
+    ✖ events table, receipt file, and submissions row agree on claim < heartbeat < submit (473.234917ms)
+  ✖ heartbeat / receipt / submit ordering, proven from real artifacts (473.392833ms)
+  ▶ three-forge shared fixtures (GitHub, GitLab with a subgroup, Gitea)
+    ✖ github: claim → submit_pr reaches 待验收 with one submission, and a retry submit_pr is idempotent (421.0035ms)
+    ✖ gitlab: claim → submit_pr reaches 待验收 with one submission, and a retry submit_pr is idempotent (417.357333ms)
+    ✖ gitea: claim → submit_pr reaches 待验收 with one submission, and a retry submit_pr is idempotent (438.338917ms)
+  ✖ three-forge shared fixtures (GitHub, GitLab with a subgroup, Gitea) (1276.930583ms)
+  ▶ token scan across every reachable evidence surface
+    ✔ receipts, events.details, bridge stdout/stderr, and admin task views carry zero forge-token hits (outside the two AGENTS.md-allowed responses) (498.072292ms)
+  ✔ token scan across every reachable evidence surface (498.154917ms)
+✖ Issue #35 — Claim lifecycle parity and recovery (real server + real bridge) (6255.260583ms)
+ℹ tests 12
+ℹ suites 9
+ℹ pass 2
+ℹ fail 10
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 6801.148166
+
+✖ failing tests:
+
+test at apps/server/src/lifecycle-matrix.test.ts:610:5
+✖ a lost claim response, a bridge crash, and a server restart converge to exactly one active Claim (845.106583ms)
+  AssertionError [ERR_ASSERTION]: heartbeat after server restart must succeed: {"result":{"content":[{"type":"text","text":"{\"error\":\"claim_id_required\",\"message\":\"该认领要求提供 claim_id。\"}"}],"structuredContent":{"error":"claim_id_required","message":"该认领要求提供 claim_id。"},"isError":true},"jsonrpc":"2.0","id":"progress-7"}: tool call failed {"result":{"content":[{"type":"text","text":"{\"error\":\"claim_id_required\",\"message\":\"该认领要求提供 claim_id。\"}"}],"structuredContent":{"error":"claim_id_required","message":"该认领要求提供 claim_id。"},"isError":true},"jsonrpc":"2.0","id":"progress-7"}
+      at assertToolOk (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/lifecycle-matrix.test.ts:424:10)
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/lifecycle-matrix.test.ts:658:9)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:385:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: true,
+    operator: 'notStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/lifecycle-matrix.test.ts:669:5
+✖ a lost submit_pr response and a bridge crash converge to exactly one terminal Claim, one submission, no release (591.057167ms)
+  AssertionError [ERR_ASSERTION]: server must have committed exactly one submission despite the lost response
+  
+  0 !== 1
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/lifecycle-matrix.test.ts:706:16)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/lifecycle-matrix.test.ts:802:5
+✖ an expired lease releases the task back to 待认领 and a fresh claim recovers with a new Claim identity (582.515459ms)
+  AssertionError [ERR_ASSERTION]: claim after expiry must succeed (task must be reclaimable): {"result":{"content":[{"type":"text","text":"{\"error\":\"claim_request_conflict\",\"message\":\"该 request_id 对应的认领已结束，请使用新的 request_id 重新认领。\"}"}],"structuredContent":{"error":"claim_request_conflict","message":"该 request_id 对应的认领已结束，请使用新的 request_id 重新认领。"},"isError":true},"jsonrpc":"2.0","id":"claim-22"}
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/lifecycle-matrix.test.ts:833:14)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at apps/server/src/lifecycle-matrix.test.ts:845:5
+✖ claim_task/report_progress/submit_pr under KAOLA_CARRIER=runner reach the same Task/Claim/submission outcome as the default direct carrier, with no Runner ever started (466.1805ms)
+  AssertionError [ERR_ASSERTION]: submit ({}): {"result":{"content":[{"type":"text","text":"{\"error\":\"claim_id_required\",\"message\":\"该认领要求提供 claim_id。\"}"}],"structuredContent":{"error":"claim_id_required","message":"该认领要求提供 claim_id。"},"isError":true},"jsonrpc":"2.0","id":"submit-27"}: tool call failed {"result":{"content":[{"type":"text","text":"{\"error\":\"claim_id_required\",\"message\":\"该认领要求提供 claim_id。\"}"}],"structuredContent":{"error":"claim_id_required","message":"该认领要求提供 claim_id。"},"isError":true},"jsonrpc":"2.0","id":"submit-27"}
+      at assertToolOk (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/lifecycle-matrix.test.ts:424:10)
+      at runLifecycle (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/lifecycle-matrix.test.ts:872:9)
+      at async TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/lifecycle-matrix.test.ts:889:29)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: true,
+    operator: 'notStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/lifecycle-matrix.test.ts:907:5
+✖ a full claim → report_progress → submit_pr cycle never invokes kaola-tmux.sh (415.614458ms)
+  AssertionError [ERR_ASSERTION]: zero-runner-calls report_progress: tool call failed {"result":{"content":[{"type":"text","text":"{\"error\":\"claim_id_required\",\"message\":\"该认领要求提供 claim_id。\"}"}],"structuredContent":{"error":"claim_id_required","message":"该认领要求提供 claim_id。"},"isError":true},"jsonrpc":"2.0","id":"progress-31"}
+      at assertToolOk (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/lifecycle-matrix.test.ts:424:10)
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/lifecycle-matrix.test.ts:928:7)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: true,
+    operator: 'notStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/lifecycle-matrix.test.ts:941:5
+✖ a killed-and-respawned bridge recovers the exact claim_id from its own persisted receipt (397.384083ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + null
+  - 'clm_RdXkiIWLhG_-2niOlbGyIZ3cD7SKYiCe'
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/lifecycle-matrix.test.ts:964:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: null,
+    expected: 'clm_RdXkiIWLhG_-2niOlbGyIZ3cD7SKYiCe',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/lifecycle-matrix.test.ts:993:5
+✖ events table, receipt file, and submissions row agree on claim < heartbeat < submit (473.234917ms)
+  AssertionError [ERR_ASSERTION]: a 心跳 event must exist
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/lifecycle-matrix.test.ts:1034:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at apps/server/src/lifecycle-matrix.test.ts:1058:7
+✖ github: claim → submit_pr reaches 待验收 with one submission, and a retry submit_pr is idempotent (421.0035ms)
+  AssertionError [ERR_ASSERTION]: github submit: {"result":{"content":[{"type":"text","text":"{\"error\":\"claim_id_required\",\"message\":\"该认领要求提供 claim_id。\"}"}],"structuredContent":{"error":"claim_id_required","message":"该认领要求提供 claim_id。"},"isError":true},"jsonrpc":"2.0","id":"submit-43"}: tool call failed {"result":{"content":[{"type":"text","text":"{\"error\":\"claim_id_required\",\"message\":\"该认领要求提供 claim_id。\"}"}],"structuredContent":{"error":"claim_id_required","message":"该认领要求提供 claim_id。"},"isError":true},"jsonrpc":"2.0","id":"submit-43"}
+      at assertToolOk (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/lifecycle-matrix.test.ts:424:10)
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/lifecycle-matrix.test.ts:1078:9)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: true,
+    operator: 'notStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/lifecycle-matrix.test.ts:1058:7
+✖ gitlab: claim → submit_pr reaches 待验收 with one submission, and a retry submit_pr is idempotent (417.357333ms)
+  AssertionError [ERR_ASSERTION]: gitlab submit: {"result":{"content":[{"type":"text","text":"{\"error\":\"claim_id_required\",\"message\":\"该认领要求提供 claim_id。\"}"}],"structuredContent":{"error":"claim_id_required","message":"该认领要求提供 claim_id。"},"isError":true},"jsonrpc":"2.0","id":"submit-47"}: tool call failed {"result":{"content":[{"type":"text","text":"{\"error\":\"claim_id_required\",\"message\":\"该认领要求提供 claim_id。\"}"}],"structuredContent":{"error":"claim_id_required","message":"该认领要求提供 claim_id。"},"isError":true},"jsonrpc":"2.0","id":"submit-47"}
+      at assertToolOk (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/lifecycle-matrix.test.ts:424:10)
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/lifecycle-matrix.test.ts:1078:9)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: true,
+    operator: 'notStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/lifecycle-matrix.test.ts:1058:7
+✖ gitea: claim → submit_pr reaches 待验收 with one submission, and a retry submit_pr is idempotent (438.338917ms)
+  AssertionError [ERR_ASSERTION]: gitea submit: {"result":{"content":[{"type":"text","text":"{\"error\":\"claim_id_required\",\"message\":\"该认领要求提供 claim_id。\"}"}],"structuredContent":{"error":"claim_id_required","message":"该认领要求提供 claim_id。"},"isError":true},"jsonrpc":"2.0","id":"submit-51"}: tool call failed {"result":{"content":[{"type":"text","text":"{\"error\":\"claim_id_required\",\"message\":\"该认领要求提供 claim_id。\"}"}],"structuredContent":{"error":"claim_id_required","message":"该认领要求提供 claim_id。"},"isError":true},"jsonrpc":"2.0","id":"submit-51"}
+      at assertToolOk (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/lifecycle-matrix.test.ts:424:10)
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/lifecycle-matrix.test.ts:1078:9)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: true,
+    operator: 'notStrictEqual',
+    diff: 'simple'
+  }
+
+======================================================================
+Re-run after coordinator-reported production fixes to apps/mcp/src/main.ts
+and harness fixes to apps/server/src/lifecycle-matrix.test.ts (test-file
+custody, mechanical: origin consistency, pr_state column-name typo,
+carrier-parity comparison normalized to exclude the per-fixture PR URL).
+Run at: 2026-08-31T11:47:35Z
+Worktree HEAD: 1ec170acb3998fc5db20cc87cb2f9019686079a3
+======================================================================
+▶ Issue #35 — Claim lifecycle parity and recovery (real server + real bridge)
+  ▶ response loss and restart convergence
+    ✔ a lost claim response, a bridge crash, and a server restart converge to exactly one active Claim (933.513333ms)
+    ✔ a lost submit_pr response and a bridge crash converge to exactly one terminal Claim, one submission, no release (953.557167ms)
+    ✔ a process kill precisely mid-flight (after server commit, before the response arrives) still converges to one Claim (710.383958ms)
+  ✔ response loss and restart convergence (2597.91275ms)
+  ▶ lease expiry mid-flight and recovery
+    ✔ an expired lease releases the task back to 待认领 and a fresh claim recovers with a new Claim identity (583.3985ms)
+  ✔ lease expiry mid-flight and recovery (583.504833ms)
+  ▶ direct vs Runner carrier parity
+    ✔ claim_task/report_progress/submit_pr under KAOLA_CARRIER=runner reach the same Task/Claim/submission outcome as the default direct carrier, with no Runner ever started (861.879167ms)
+  ✔ direct vs Runner carrier parity (861.979959ms)
+  ▶ zero Project Runner calls on the default direct path
+    ✔ a full claim → report_progress → submit_pr cycle never invokes kaola-tmux.sh (446.087125ms)
+  ✔ zero Project Runner calls on the default direct path (446.204666ms)
+  ▶ direct-path bridge restart recovers the Claim receipt
+    ✔ a killed-and-respawned bridge recovers the exact claim_id from its own persisted receipt (586.71475ms)
+  ✔ direct-path bridge restart recovers the Claim receipt (586.821167ms)
+  ▶ heartbeat / receipt / submit ordering, proven from real artifacts
+    ✔ events table, receipt file, and submissions row agree on claim < heartbeat < submit (472.850625ms)
+  ✔ heartbeat / receipt / submit ordering, proven from real artifacts (472.951834ms)
+  ▶ three-forge shared fixtures (GitHub, GitLab with a subgroup, Gitea)
+    ✔ github: claim → submit_pr reaches 待验收 with one submission, and a retry submit_pr is idempotent (449.889959ms)
+    ✔ gitlab: claim → submit_pr reaches 待验收 with one submission, and a retry submit_pr is idempotent (446.630792ms)
+    ✔ gitea: claim → submit_pr reaches 待验收 with one submission, and a retry submit_pr is idempotent (499.370166ms)
+  ✔ three-forge shared fixtures (GitHub, GitLab with a subgroup, Gitea) (1396.0775ms)
+  ▶ token scan across every reachable evidence surface
+    ✔ receipts, events.details, bridge stdout/stderr, and admin task views carry zero forge-token hits (outside the two AGENTS.md-allowed responses) (481.39325ms)
+  ✔ token scan across every reachable evidence surface (481.483542ms)
+✔ Issue #35 — Claim lifecycle parity and recovery (real server + real bridge) (7427.455917ms)
+ℹ tests 12
+ℹ suites 9
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 7937.407542

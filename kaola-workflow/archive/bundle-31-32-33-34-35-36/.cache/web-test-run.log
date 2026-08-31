@@ -1,0 +1,10 @@
+$ vitest run
+
+ RUN  v4.1.11 /Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/web
+
+
+ Test Files  6 passed (6)
+      Tests  117 passed (117)
+   Start at  17:24:30
+   Duration  6.94s (transform 569ms, setup 0ms, import 4.41s, tests 20.08s, environment 1.23s)
+

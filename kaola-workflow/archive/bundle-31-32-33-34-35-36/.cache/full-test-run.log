@@ -1,0 +1,1241 @@
+$ node --experimental-strip-types --test packages/shared/src/index.test.ts packages/forge-adapters/src/index.test.ts packages/forge-adapters/src/validate-token.shared.test.ts packages/forge-adapters/src/get-pull-request.shared.test.ts packages/forge-adapters/src/import-issue.shared.test.ts packages/forge-adapters/src/list-issues.shared.test.ts packages/forge-adapters/src/webhook.shared.test.ts packages/forge-adapters/src/comment-on-issue.shared.test.ts apps/server/src/import.test.ts apps/server/src/placeholder.test.ts apps/server/src/password.test.ts apps/server/src/auth.test.ts apps/server/src/auth-cookie.test.ts apps/server/src/identity.test.ts apps/server/src/agent-keys.test.ts apps/server/src/vault.test.ts apps/server/src/credential-profile-issues.test.ts apps/server/src/tasks.test.ts apps/server/src/hosting.test.ts apps/server/src/claim.test.ts apps/server/src/claim-identity.test.ts apps/server/src/mcp.test.ts apps/server/src/poller.test.ts apps/server/src/webhook.test.ts apps/server/src/writeback.test.ts apps/server/src/events.test.ts apps/server/src/claim-confirm.test.ts apps/server/src/devices.test.ts apps/mcp/src/main.test.ts && pnpm --filter @kaola/web test
+▶ @kaola/mcp package
+  ✔ package.json is @kaola/mcp ESM, Node >=22, bin kaola-mcp (4.156083ms)
+  ✔ committed mcp.json example is command plus url and contains no secrets (0.984583ms)
+✔ @kaola/mcp package (7.57375ms)
+▶ resolveKaolaUrl
+  ✔ --url wins, then KAOLA_URL, then localhost:31415; trailing slash is stripped (89.587583ms)
+✔ resolveKaolaUrl (89.755459ms)
+▶ ensureDeviceIdentity
+  ✔ creates ~/.kaola-shaped dir 0700 and device.json 0600 Ed25519 PKCS8+SPKI when missing (9.003958ms)
+✔ ensureDeviceIdentity (9.121458ms)
+▶ forwardMcpRequest
+  ✔ POSTs to {url}/api/mcp with canonical device proof headers (73.986625ms)
+  ✔ HTTP 202 authorization_required becomes a JSON-RPC error, never a successful token result (16.371417ms)
+  ✔ successful claim JSON-RPC may contain token but KAOLA_HOME never stores it (9.339667ms)
+✔ forwardMcpRequest (100.172083ms)
+▶ stdio bridge Streamable HTTP session
+  ✔ captures MCP-Session-Id from initialize without putting it on the JSON-RPC body (6.987917ms)
+  ▶ runStdioBridge session replay
+    ✔ replays captured mcp-session-id on the next stdin tools/list (34.087125ms)
+    ✔ omits mcp-session-id on later stdin when initialize response had no such header (13.964ms)
+  ✔ runStdioBridge session replay (48.291958ms)
+✔ stdio bridge Streamable HTTP session (55.427125ms)
+▶ unauthenticated session agent-key routes
+  ✔ JSON Accept is 401 unauthorized without WWW-Authenticate; browser-like requests redirect to /login (154.277583ms)
+✔ unauthenticated session agent-key routes (155.175042ms)
+▶ GET /api/v1/agent/whoami device-proof failures
+  ✔ missing, leftover ktk_, and non-device credentials are 401 with WWW-Authenticate Kaola-Device (36.065292ms)
+  ✔ a session cookie does not authorize whoami; GET /api/v1/me does not accept Bearer (87.052ms)
+✔ GET /api/v1/agent/whoami device-proof failures (123.323875ms)
+▶ leftover 待批准 GitHub cannot generate Agent Keys
+  ✔ leftover 待批准 GitHub POST /api/v1/agent-keys returns 403 with the generate-gate message (48.849042ms)
+✔ leftover 待批准 GitHub cannot generate Agent Keys (48.957042ms)
+▶ leftover GitHub claim_only session CRUD (unused-compat)
+  ✔ leftover active claim_only can generate, list without plaintext, and revoke; leftover ktk_ is not whoami (53.135041ms)
+✔ leftover GitHub claim_only session CRUD (unused-compat) (53.237458ms)
+▶ GitLab and Gitea full+active self-service
+  ✔ GitLab full+active can generate keys without VAULT_MASTER_KEY; GET / stays 考拉任务服务占位 (52.800625ms)
+  ✔ Gitea full+active can generate, list, and use device-proof whoami (132.024792ms)
+✔ GitLab and Gitea full+active self-service (185.468125ms)
+▶ list and revoke are own keys only
+  ✔ a full member cannot list or revoke another user's key; missing and not-owned DELETE are 404 not_found (81.034917ms)
+✔ list and revoke are own keys only (81.643375ms)
+▶ agent_keys hashed storage
+  ✔ SQLite stores sha256 hex of plaintext utf8, never the token, unique key_hash; failed Bearer does not set last_used_at (58.172334ms)
+✔ agent_keys hashed storage (58.339333ms)
+▶ HTTPS PUBLIC_URL cookie Secure
+  ✔ POST /api/v1/setup session Set-Cookie includes Secure when PUBLIC_URL is https (188.440292ms)
+  ✔ GET /login/gitlab OAuth state Set-Cookie includes Secure when PUBLIC_URL is https (49.774708ms)
+  ✔ login callback session Set-Cookie includes Secure behind X-Forwarded-Proto https (loopback peer) (94.406792ms)
+  ✔ login callback session Set-Cookie includes Secure behind X-Forwarded-Proto https (docker-bridge peer) (59.369875ms)
+  ✔ untrusted public peer cannot mint a Secure session cookie via spoofed X-Forwarded-Proto (121.609875ms)
+  ✔ setup from untrusted public peer does not Set-Cookie sessionId (101.041875ms)
+  ✔ login from untrusted public peer does not Set-Cookie sessionId (97.923542ms)
+✔ HTTPS PUBLIC_URL cookie Secure (714.024041ms)
+▶ login start paths
+  ✔ GET /login is allowed without a session (106.713167ms)
+  ✔ GET /login/github is 404 (5.912791ms)
+  ✔ GET /login/gitlab redirects to the configured GitLab authorize URL after setup (68.6145ms)
+  ✔ GET /login/gitea redirects to the configured Gitea authorize URL after setup (63.151292ms)
+✔ login start paths (245.65075ms)
+▶ unauthenticated GET /api/v1/me
+  ✔ browser-like GET /api/v1/me redirects to /login and does not return a user (11.042708ms)
+  ✔ JSON GET /api/v1/me without a session returns 401 and does not return a user (14.070833ms)
+✔ unauthenticated GET /api/v1/me (26.033541ms)
+▶ OAuth publishers after setup
+  ✔ session Set-Cookie does not include Secure when PUBLIC_URL is http://localhost (81.1765ms)
+  ✔ GitLab after setup persists active full publisher (54.063875ms)
+  ✔ Gitea after setup persists active full publisher; display_name falls back to login (109.44525ms)
+  ✔ second GitLab callback with the same remote_id reuses the same user id (76.117375ms)
+✔ OAuth publishers after setup (321.15875ms)
+▶ leftover 待批准 via GitLab reuse; approve retired
+  ✔ seeded leftover 待批准 GitLab user cannot call retired approve (404) (81.848459ms)
+✔ leftover 待批准 via GitLab reuse; approve retired (81.945792ms)
+▶ KAOLA_ADMINS
+  ✔ empty KAOLA_ADMINS still buildApp() and GitHub login stays 404 (3.553417ms)
+  ✔ KAOLA_ADMINS github:octo-admin is ignored and does not insert github login (55.267083ms)
+✔ KAOLA_ADMINS (58.921917ms)
+▶ revoked re-login
+  ✔ revoked GitLab user re-login does not become active and does not set a session (59.880458ms)
+✔ revoked re-login (59.963166ms)
+▶ issue #16 claim-confirmation for autonomous polling agents
+  ▶ instructed claims stay MVP 认领即授权 (comment overrides the issue body)
+    ✔ no body and explicit autonomous:false both still return 201 with a token (assertClaim201 shape unchanged) (248.393875ms)
+    ✔ MCP claim_task without autonomous still returns the token envelope (156.142583ms)
+    ✔ instructed claim ignores a leftover rejected confirmation row for the same (task, user, key) (78.445959ms)
+  ✔ instructed claims stay MVP 认领即授权 (comment overrides the issue body) (483.695958ms)
+  ▶ autonomous claim gate — 待批准 first
+    ✔ 待批准 users are still 403 before the autonomous gate, even with autonomous:true (51.985042ms)
+  ✔ autonomous claim gate — 待批准 first (52.08775ms)
+  ▶ autonomous claim gate — automation off (default)
+    ✔ autonomous + off + unconfirmed → 202 confirmation_required; no token; no token 揭示; task stays 待认领; writes 认领待确认 (55.096ms)
+    ✔ MCP claim_task autonomous:true pending is isError false, structuredContent { pending:true, error:confirmation_required }, no token (125.787458ms)
+    ✔ idempotent re-request while pending returns 202 again and reuses one pending row (90.100416ms)
+  ✔ autonomous claim gate — automation off (default) (271.182917ms)
+  ▶ settings — trusted_automation
+    ✔ GET /api/v1/me defaults trusted_automation false; PUT settings true unlocks 直通 201; PUT false again reinstates 202 (85.738583ms)
+    ✔ trusted_automation persists across a new buildApp on the same sqlite file path (129.304833ms)
+  ✔ settings — trusted_automation (215.379041ms)
+  ▶ approve / reject a pending claim confirmation (session, not Bearer)
+    ✔ approve consumes the pending row: agent retry succeeds; approve itself reveals no token, inserts no lease, flips no status (72.83825ms)
+    ✔ MCP: approve a pending confirmation then retry claim_task succeeds with a token (69.980167ms)
+    ✔ reject sets state rejected; retry of autonomous claim starts a fresh pending, still no token (68.413667ms)
+    ✔ approve/reject on another user's confirmation id is 404; GET list only shows the current user's rows (56.948083ms)
+  ✔ approve / reject a pending claim confirmation (session, not Bearer) (268.410083ms)
+  ▶ authentication sanity around the new surfaces
+    ✔ an unauthenticated session cannot read or act on claim-confirmations, and Bearer alone does not authorize them (51.523959ms)
+    ✔ claimant-owned device skips #16: autonomous claim is 201 with token, no confirmation row (57.949292ms)
+  ✔ authentication sanity around the new surfaces (109.623333ms)
+✔ issue #16 claim-confirmation for autonomous polling agents (1401.226583ms)
+▶ issue #36 claim identity (request_id / claim_id)
+  ▶ claimIdForLease (apps/server/src/leases.ts) — direct unit contract
+    ✖ claimIdForLease is exported and returns a clm_-prefixed opaque string (1.922583ms)
+    ✖ claimIdForLease is stable across a heartbeat and across release (only immutable fields matter) (0.337625ms)
+    ✖ claimIdForLease differs between two different lease rows (0.14625ms)
+  ✖ claimIdForLease (apps/server/src/leases.ts) — direct unit contract (2.972958ms)
+  ▶ legacy compatibility — no request_id sent
+    ✖ REST claim without request_id stays 201 and the lease envelope is exactly { claim_id, expires_at, ttl_seconds } (241.913333ms)
+    ✖ MCP claim_task without request_id stays a success result and the lease envelope carries claim_id (92.76175ms)
+  ✖ legacy compatibility — no request_id sent (335.052125ms)
+  ▶ replay identity — same (device, request_id)
+    ✖ replaying the same request_id 100 times yields exactly one lease, one 状态迁移 to 进行中, and one claim_id (75.284542ms)
+    ✖ a single replay reuses the same claim_id and token, and audits the re-reveal as a replay without leaking the token (60.246125ms)
+    ✖ replaying a request_id after the lease is released never creates a new lease (101.688917ms)
+    ✔ a different device presenting the holder's request_id cannot replay and never sees the active token (91.92425ms)
+  ✖ replay identity — same (device, request_id) (329.428708ms)
+  ▶ replay identity — typed conflicts on a mismatched digest
+    ✖ same request_id against a different task publicId is a typed conflict and changes nothing (70.558709ms)
+    ✖ same request_id but a different autonomous flag is a typed conflict and reveals no token (88.334125ms)
+  ✖ replay identity — typed conflicts on a mismatched digest (159.080542ms)
+  ▶ autonomous 202 stability, then a single 201 after approval
+    ✖ 202 is stable while pending under the same request_id, and exactly one 201/lease follows approval even under repeated replay (74.481666ms)
+  ✖ autonomous 202 stability, then a single 201 after approval (75.102666ms)
+  ▶ credential-profile deletion is refused while referenced by a non-terminal task
+    ✖ DELETE is refused (typed error, profile retained) when referenced by a task in each of the four non-terminal statuses (64.307333ms)
+    ✔ DELETE succeeds as today when referenced only by a terminal-status task, or by no task at all (76.35525ms)
+  ✖ credential-profile deletion is refused while referenced by a non-terminal task (140.802ms)
+  ▶ claim-transaction atomicity — no reachable 进行中 task without an active lease
+    ✖ failure injection: a failing lease insert leaves the claim exactly as it was before the attempt (74.269375ms)
+    ✖ failure injection: a failing token 揭示 audit write leaves the claim exactly as it was before the attempt (83.648833ms)
+    ✖ failure injection: a failing 状态迁移 audit write rolls back the task update and the lease insert that preceded it (87.189875ms)
+  ✖ claim-transaction atomicity — no reachable 进行中 task without an active lease (245.365542ms)
+  ▶ write-back off the response path
+    ✖ a slow forge write-back comment cannot delay the committed claim response (1568.807584ms)
+    ✖ settleWritebacks lets a test observe a failed background write-back deterministically, and retryPendingWritebacks still recovers it (79.796125ms)
+  ✖ write-back off the response path (1648.786084ms)
+✖ issue #36 claim identity (request_id / claim_id) (2937.400041ms)
+▶ issue #9 lease-based claiming
+  ▶ authentication — device proof
+    ✔ unauthenticated claim, progress, and release are 401 unauthorized with WWW-Authenticate Kaola-Device (272.244167ms)
+    ✔ signed unpaired device proof on claim is 202 authorization_required with no token and no lease (100.198541ms)
+    ✔ wrong and non-device credentials are 401 with WWW-Authenticate Kaola-Device (52.683625ms)
+    ✔ a session cookie without Bearer does not authorize claim, progress, or release (52.551666ms)
+    ✔ unknown publicId with a valid Bearer key is 404 not_found (92.841458ms)
+    ✔ numeric PK in the path with a valid Bearer key is 404 not_found (94.758667ms)
+  ✔ authentication — device proof (666.230875ms)
+  ▶ POST /api/v1/tasks/:publicId/claim — 201 envelope
+    ✔ claiming an inline task returns 201 with task, forge token, lease TTL, and clone guidance (115.409084ms)
+    ✔ claiming a profile task returns 201; credential stays { profile_id }; token is the profile forge plaintext (68.997916ms)
+    ✔ claiming a second publicId returns that task's token, not the first task's (78.747459ms)
+    ✔ claiming a github task returns Bearer extra_header and a web-origin remote_url, not api.github.com (57.117ms)
+    ✔ claiming a gitlab subgroup task keeps slashes in remote_url and uses Bearer extra_header (70.052291ms)
+    ✔ claim remote_url strips trailing slashes from stored repo.base_url (66.439ms)
+    ✔ session GET list and GET one after a successful claim still omit forge token and secret keys (49.212875ms)
+  ✔ POST /api/v1/tasks/:publicId/claim — 201 envelope (507.100542ms)
+  ▶ AuthZ
+    ✔ leftover ktk_ Bearer is 401 unauthorized, not a claim identity, and writes no token 揭示 (61.008625ms)
+    ✔ leftover claim_only session cannot bind a device, and leftover ktk_ cannot claim (52.783042ms)
+    ✔ active admin can claim via bind_to_self (49.439792ms)
+  ✔ AuthZ (163.401625ms)
+  ▶ conflicts / illegal states
+    ✔ second claim while 进行中 is 409 conflict, no token, and no second reveal (114.166417ms)
+    ✔ claiming a 已取消 task is 409 illegal_transition (83.207625ms)
+    ✔ claiming a 待验收 task is 409 illegal_transition (62.645458ms)
+    ✔ progress and release by a non-holder are 403 forbidden (70.060917ms)
+    ✔ progress and release with no live lease are 409 conflict 任务未被认领 (55.360583ms)
+    ✔ progress and release after the holder released are 409 任务未被认领 (71.98525ms)
+  ✔ conflicts / illegal states (457.815083ms)
+  ▶ heartbeat
+    ✔ omitted note still renews expires_at from heartbeat time and writes 心跳 with note empty string (59.872792ms)
+    ✔ a progress note is persisted on the 心跳 event; empty note still renews (77.717917ms)
+  ✔ heartbeat (137.713625ms)
+  ▶ release
+    ✔ holder release returns 200 { task } 待认领, marks the lease released, and writes 状态迁移 without reason (66.969625ms)
+    ✔ release with reason stores reason on the 状态迁移 event (72.958625ms)
+  ✔ release (140.053ms)
+  ▶ expiry
+    ✔ check-on-read: after TTL, session GET list and GET one show 待认领, lease expired, actor_user_id null, reveal rows unchanged (66.086333ms)
+    ✔ check-on-write: after TTL, progress sweeps then returns 409 任务未被认领 (47.818667ms)
+    ✔ after expiry a different Agent Key can claim again and writes a second token 揭示 (70.657666ms)
+  ✔ expiry (184.69875ms)
+  ▶ reveal audit
+    ✔ inline claim writes token 揭示 { task_id, device_id, credential: inline } and 状态迁移 待认领→进行中 (52.671ms)
+    ✔ profile claim writes token 揭示 with credential profile and integer profile_id; no plaintext or ciphertext (55.015875ms)
+  ✔ reveal audit (107.805875ms)
+  ▶ leases table
+    ✔ successful claim inserts one active lease keyed by tasks.id PK; at most one active row per task (60.495917ms)
+  ✔ leases table (60.584958ms)
+✔ issue #9 lease-based claiming (2426.071084ms)
+▶ issue #19 GET /api/v1/credential-profiles/:id/issues
+  ▶ authentication and permission gate (same as credential-profile CRUD)
+    ✔ unauthenticated JSON GET returns 401 unauthorized (same oracle as GET /api/v1/me) (113.742625ms)
+    ✔ browser-like GET without a session redirects to /login (14.060291ms)
+    ✔ leftover 待批准 GitHub user gets 403 forbidden with no message (20.846333ms)
+    ✔ leftover active GitHub claim_only still gets 403 forbidden with no message (74.507959ms)
+  ✔ authentication and permission gate (same as credential-profile CRUD) (223.673916ms)
+  ▶ missing profile or bad :id
+    ✔ missing row is 404 not_found (74.922791ms)
+    ✔ non-positive / non-integer :id (abc, 0, -1) is 404 not_found (67.546458ms)
+  ✔ missing profile or bad :id (142.770167ms)
+  ▶ success lists open issues from the profile row
+    ✔ Gitea 200 maps number/title, constructs issue_url, pins list URL, omits secrets, does not write token 揭示 (53.061ms)
+    ✔ GitLab 200 maps iid not id and constructs /-/issues/{iid} on the profile base_url (56.004667ms)
+  ✔ success lists open issues from the profile row (109.313375ms)
+  ▶ error mapping
+    ✔ unset or invalid VAULT_MASTER_KEY after profile exists is 500 vault_unconfigured (80.626292ms)
+    ✔ forge HTTP 401 is 422 token_check_failed with missing 读 (102.060542ms)
+    ✔ forge HTTP 500 is 502 forge_unreachable with 列出 Issue copy (75.992ms)
+    ✔ fetch/network throw is 502 forge_unreachable with 列出 Issue copy (67.343209ms)
+    ✔ forge HTTP 404 (and 410) is 502 列出, not issue_not_found (53.91025ms)
+  ✔ error mapping (380.51225ms)
+✔ issue #19 GET /api/v1/credential-profiles/:id/issues (857.001791ms)
+▶ device proof canonical string
+  ✔ canonical payload is five newline-separated lines with no trailing newline after the hash (0.572208ms)
+✔ device proof canonical string (1.095417ms)
+▶ issue #23 device proof + admin bind
+  ✔ signed unknown device on MCP initialize is 202 authorization_required, no token, creates pending (219.034083ms)
+  ✔ signed unknown device on REST claim is 202 authorization_required, no token, no lease (52.062666ms)
+  ✔ retry of the same pending device does not extend pending expires_at (59.394083ms)
+  ✔ missing device headers on MCP is 401 unauthorized, not 202 (8.672375ms)
+  ✔ bad signature on an otherwise complete proof is 401 unauthorized, not 202 (11.086375ms)
+  ✔ leftover ktk_ Bearer is not MCP identity: 401, not 202 (55.26575ms)
+  ✔ full session lists pending; bind { claimant_display_name } does not claim and does not return a forge token (53.46925ms)
+  ✔ after bind, the same keypair claim is 201 with a forge token (70.295167ms)
+  ✔ bind { bind_to_self: true } works (59.053709ms)
+  ✔ bind to existing claimant_id (113.908167ms)
+  ✔ non-full leftover claim_only session cannot bind (403) (64.648208ms)
+  ✔ revoke claimant → next proof is 403, no token (59.637166ms)
+  ✔ revoke device → next proof is 403 (82.042583ms)
+  ✔ max_devices 409; PATCH max age does not rewrite existing expires_at (81.777583ms)
+  ✔ GET /api/v1/agent/whoami after bind_to_self returns the device owner, never a forge token (81.656334ms)
+  ✔ pending whoami is the same 202 authorization_required as MCP (7.223083ms)
+  ✔ pending device MCP list_tasks is HTTP 202 authorization_required, not a successful tool result (67.610667ms)
+✔ issue #23 device proof + admin bind (1147.748584ms)
+▶ issue #15 audit log HTTP + team stats
+  ▶ authentication — session cookie, same mechanism as GET /api/v1/tasks
+    ✔ unauthenticated GET /api/v1/events and GET /api/v1/stats are 401 unauthorized (85.810208ms)
+    ✔ 待批准 GitHub user is 401 on events and stats (never sees the member workbench) (81.41375ms)
+    ✔ approved claim_only user can read events and stats, same as the board (45.481208ms)
+  ✔ authentication — session cookie, same mechanism as GET /api/v1/tasks (213.181459ms)
+  ▶ GET /api/v1/events
+    ✔ envelope is { events: [] } with newest-first EventRow shape; no query string needed (70.070209ms)
+    ✔ list carries real writers rows with parsed details and actor_username resolved via left-join (72.5285ms)
+    ✔ system-driven rows (actor_user_id null) still appear, with actor_username null (53.652041ms)
+  ✔ GET /api/v1/events (196.515291ms)
+  ▶ GET /api/v1/stats
+    ✔ empty DB returns { completed_count: 0, completed_by_username: {} } (47.190625ms)
+    ✔ completed_count counts 状态迁移 rows with details.to === 已完成; null actor groups under 系统 (44.367417ms)
+    ✔ a 已完成 task row with no matching event does not inflate stats (near-miss vs COUNT(*) FROM tasks) (45.103916ms)
+  ✔ GET /api/v1/stats (136.8495ms)
+✔ issue #15 audit log HTTP + team stats (546.976708ms)
+▶ issue #17 single-port 31415 hosting
+  ✔ omitted hosting options keep GET / as 考拉任务服务占位 with text/plain; webDist serves index.html at / (212.108958ms)
+  ✔ webDist SPA-fallbacks unmatched GET, serves assets, and does not swallow /api or /login (27.9955ms)
+  ✔ when webDist and viteDevTarget are both set, webDist wins (8.167583ms)
+  ✔ index.ts PORT default is 31415 (source pin; does not import index.ts) (1.595ms)
+  ✔ auth.ts PUBLIC_URL default is http://localhost:31415 (source pin) (0.434958ms)
+  ✔ vite.config.ts proxies /api and /login to http://127.0.0.1:31415 (0.46ms)
+  ✔ docker-compose binds 127.0.0.1:31415:31415, sets PORT 31415, and injects SQLITE_PATH plus secrets (0.459875ms)
+  ✔ Dockerfile EXPOSE 31415, ENV PORT=31415, and image build includes web dist (0.26025ms)
+  ✔ root package.json has a non-empty dev script (0.111125ms)
+✔ issue #17 single-port 31415 hosting (253.124959ms)
+▶ users schema after createDb
+  ✔ new sqlite has nullable password_hash, local provider, and admin permission_level (11.192625ms)
+  ✔ two local rows with the same trimmed username fail; OAuth usernames may collide across providers (4.901875ms)
+✔ users schema after createDb (16.671292ms)
+▶ legacy sqlite migration
+  ✔ createDb promotes only the earliest gitlab/gitea/local full to admin; github full stays full (97.024875ms)
+  ✔ old file with only github active+full still has zero loginable admins (12.689292ms)
+✔ legacy sqlite migration (109.888875ms)
+▶ GET /api/v1/setup
+  ✔ unauthenticated probe is 200 { setup_complete: boolean }; empty DB is false (4.902875ms)
+✔ GET /api/v1/setup (4.98225ms)
+▶ POST /api/v1/setup
+  ✔ creates local admin session; me has no hash fields; display_name defaults to trimmed username (51.307833ms)
+  ✔ second setup is 409 setup_complete; concurrent setups leave at most one admin (83.796875ms)
+  ✔ missing/empty username or empty password is 400 (5.601541ms)
+✔ POST /api/v1/setup (141.005458ms)
+▶ POST /api/v1/login
+  ✔ correct password is 200; wrong, unknown, and empty are all 401 with the same shape (183.666792ms)
+✔ POST /api/v1/login (183.906958ms)
+▶ GET /login HTML
+  ✔ before setup the page is a username/password wizard, not OAuth as the way in (11.865083ms)
+  ✔ after setup: GitLab + Gitea links, local login affordance, no GitHub (51.885667ms)
+✔ GET /login HTML (63.881667ms)
+▶ OAuth after identity split
+  ✔ empty DB GitLab callback does not insert a user or set a session (11.731625ms)
+  ✔ empty DB Gitea callback does not insert a user or set a session (8.201958ms)
+  ✔ GET /login/github and callback are 404 (2.968041ms)
+  ✔ after setup, GitLab and Gitea OAuth insert active+full publishers and set a session (49.64575ms)
+✔ OAuth after identity split (72.816834ms)
+▶ KAOLA_ADMINS is ignored
+  ✔ malformed KAOLA_ADMINS still buildApp and does not grant GitHub login or extra admin (17.757583ms)
+✔ KAOLA_ADMINS is ignored (17.8615ms)
+▶ users list, promote, retired approve
+  ✔ GET /api/v1/users: unauth 401, publisher 403, admin 200 without hash fields (38.927375ms)
+  ✔ admin promotes gitlab/gitea full; already admin is 200; local/github/missing are 404 or 400; publisher 403 (64.92575ms)
+  ✔ POST /api/v1/users/:id/approve is retired 404 (69.208375ms)
+✔ users list, promote, retired approve (173.225375ms)
+▶ admin vs publisher HTTP gates
+  ✔ publisher can post tasks; cannot list devices, users, promote, settings, or claim-confirmations (71.583334ms)
+  ✔ leftover claim_only via GitLab reuse cannot publish or manage devices (67.714084ms)
+✔ admin vs publisher HTTP gates (139.415959ms)
+▶ issue #12 POST /api/v1/tasks/import
+  ▶ authentication (same gate as POST /api/v1/tasks)
+    ✔ unauthenticated JSON POST returns 401 unauthorized (89.92275ms)
+    ✔ leftover 待批准 GitHub user gets 403 forbidden (21.073458ms)
+    ✔ leftover active claim_only GitHub user gets 403 forbidden (59.591375ms)
+  ✔ authentication (same gate as POST /api/v1/tasks) (171.457ms)
+  ▶ success is a pre-publish draft (200, no tasks row, no token)
+    ✔ inline credential returns 200 mapped fields and does not insert a tasks row (65.476458ms)
+    ✔ optional repo.full_name matching the parsed name still 200 (41.616875ms)
+    ✔ trailing slash on issue_url is stripped in source.issue_url (43.404542ms)
+    ✔ gitea constructor baseUrl is used, not the pasted issue host (SSRF) (57.273042ms)
+  ✔ success is a pre-publish draft (200, no tasks row, no token) (208.386958ms)
+  ▶ error mapping
+    ✔ generic parse / missing issue_url / missing forge is 400 invalid_body with no message (63.163041ms)
+    ✔ unparseable issue_url is 400 with 无法解析 Issue 地址 and does not fetch (56.42425ms)
+    ✔ repo.full_name that does not equal the parsed name is 400 Issue 地址与仓库不匹配 (48.174916ms)
+    ✔ repo.base_url that is not http(s)+host uses the publish Chinese message (59.572583ms)
+    ✔ forge 404 is 404 issue_not_found (56.312541ms)
+    ✔ forge 410 is 404 issue_not_found (50.76375ms)
+    ✔ forge 401 is 422 token_check_failed with missing 读 (82.389459ms)
+    ✔ other non-OK forge status is 502 forge_unreachable (63.628417ms)
+    ✔ fetch/network throw is 502 forge_unreachable (50.610708ms)
+  ✔ error mapping (531.566708ms)
+  ▶ profile credential bind, decrypt, and token 揭示
+    ✔ matching profile 200 writes token 揭示 outcome ok; no tasks row; no token in JSON (52.616ms)
+    ✔ profile-path 404 still writes token 揭示 with outcome issue_not_found (47.384834ms)
+    ✔ profile-path 401 still writes token 揭示 with outcome token_check_failed (61.255666ms)
+    ✔ profile-path 502 still writes token 揭示 with outcome forge_unreachable (68.191833ms)
+    ✔ unparseable issue_url with profile_id does not decrypt (no token 揭示, no fetch) (56.60125ms)
+    ✔ missing profile is 400 所选凭证档案不存在 (62.643625ms)
+    ✔ profile bind is exact forge/base_url/parsed full_name (mismatch does not decrypt) (66.543416ms)
+    ✔ profile path without VAULT_MASTER_KEY returns 500 vault_unconfigured (48.233875ms)
+  ✔ profile credential bind, decrypt, and token 揭示 (463.861709ms)
+✔ issue #12 POST /api/v1/tasks/import (1375.827958ms)
+▶ issue #10 MCP server
+  ▶ authentication — device proof, HTTP 401 before JSON-RPC
+    ✔ unauthenticated POST /api/mcp (missing device headers) is 401 unauthorized with WWW-Authenticate Kaola-Device (158.717584ms)
+    ✔ Token scheme, Basic, leftover ktk_, and wrong device proof on POST /api/mcp are 401 with WWW-Authenticate Kaola-Device (77.581125ms)
+    ✔ a session cookie without device proof does not authorize POST /api/mcp (60.262041ms)
+    ✔ authenticated tools/list includes the six tools and claim_task describes token hygiene (102.450459ms)
+  ✔ authentication — device proof, HTTP 401 before JSON-RPC (399.678958ms)
+  ▶ list_tasks / get_task_brief
+    ✔ list_tasks returns { tasks } briefs that parse and never contain forge secrets (86.266333ms)
+    ✔ list_tasks filters by exact status, tag membership of one tag, and exact repo.forge (112.796875ms)
+    ✔ list_tasks and get_task_brief apply sweepExpiredLeases so an expired 进行中 task shows as 待认领 (77.2645ms)
+    ✔ a leftover ktk_ Bearer cannot list_tasks: 401 unauthorized, not a successful tool result (84.806334ms)
+    ✔ get_task_brief returns a top-level brief; missing and numeric ids are isError not_found (73.613834ms)
+  ✔ list_tasks / get_task_brief (435.135333ms)
+  ▶ claim_task
+    ✔ claim_task success envelope keys are exactly task, token, lease, clone with the REST clone pin (68.277292ms)
+    ✔ claim_task on a second task_id returns that task's token, not the first task's (73.8125ms)
+    ✔ claim_task on a github task returns Bearer extra_header and github.com remote_url, not api.github.com (70.407958ms)
+    ✔ claim_task on a gitlab task returns Bearer extra_header and keeps slashes in remote_url (72.954458ms)
+    ✔ leftover ktk_ Bearer cannot claim_task: 401 unauthorized, no token 揭示 (75.5685ms)
+    ✔ second claim_task is conflict; list_tasks and get_task_brief still omit the forge token (103.420042ms)
+  ✔ claim_task (464.951542ms)
+  ▶ report_progress / release_task
+    ✔ report_progress wraps REST: optional note (omit → empty string), envelope { task, lease }, no token (72.792917ms)
+    ✔ release_task wraps REST: optional reason, envelope { task } 待认领, no token (86.867667ms)
+    ✔ non-holder report_progress and release_task are isError forbidden with no message (93.196041ms)
+    ✔ report_progress and release_task with no live lease are isError 任务未被认领 (79.369459ms)
+  ✔ report_progress / release_task (332.559958ms)
+  ▶ submit_pr
+    ✔ submit_pr success is { task, pr_url, summary } 待验收, persists submissions, clears the lease, writes 状态迁移 (83.6205ms)
+    ✔ submit_pr fails for non-holder, no lease, and not 进行中 (87.275708ms)
+  ✔ submit_pr (171.109959ms)
+✔ issue #10 MCP server (1803.928ms)
+▶ password hasher
+  ✔ correct password verifies; wrong password does not (123.783ms)
+  ✔ hash is not the plaintext and never equals the password string (38.983458ms)
+  ✔ hashPassword rejects an empty password (0.583417ms)
+✔ password hasher (164.975917ms)
+✔ getPlaceholderBody returns the pinned non-empty placeholder HTTP body (1.240708ms)
+▶ issue #11 poller (pollPendingReviews)
+  ▶ getPullRequest-driven terminal transitions
+    ✔ merged PR: 待验收 → 已完成, submissions.pr_state → merged, system 状态迁移 (actor_user_id null) (221.665666ms)
+    ✔ closed (unmerged) PR: 待验收 → 已退回, submissions.pr_state → closed (86.028041ms)
+    ✔ open PR: task stays 待验收, pr_state stays open (58.519458ms)
+  ✔ getPullRequest-driven terminal transitions (366.684458ms)
+  ▶ scope: only 待验收 tasks are ever fetched
+    ✔ 待认领/进行中/已完成/已取消/已退回 tasks are never fetched as PRs and are left untouched (171.596042ms)
+  ✔ scope: only 待验收 tasks are ever fetched (171.705292ms)
+  ▶ resilience
+    ✔ a fetch failure on one 待验收 task is skipped, and a sibling 待验收 task still completes (104.576667ms)
+  ✔ resilience (104.690125ms)
+  ▶ reopen after a poller-driven 已退回
+    ✔ poster PATCH { status: 待认领 } succeeds after 已退回, and prior events + the submissions row remain (86.227875ms)
+  ✔ reopen after a poller-driven 已退回 (86.334ms)
+  ▶ buildApp({ pollIntervalMs }) frequency contract
+    ✔ omitted pollIntervalMs registers no interval (10.293292ms)
+    ✔ pollIntervalMs: 0 registers no interval (6.627458ms)
+    ✔ pollIntervalMs: 1234 registers setInterval with delay 1234 (16.880208ms)
+  ✔ buildApp({ pollIntervalMs }) frequency contract (37.109834ms)
+✔ issue #11 poller (pollPendingReviews) (767.802417ms)
+▶ issue #13: per-instance webhook-vs-poll config (pollPendingReviews honors forgeInstances)
+  ✔ a syncMode: "webhook" instance matching (repoForge, repoBaseUrl) is skipped: zero getPullRequest fetches, task stays 待验收 (84.140875ms)
+  ✔ an unlisted/mismatched instance (wrong base_url, or right base_url with the wrong forge) is still polled as before (72.550458ms)
+  ✔ a syncMode: "poll" instance matching (repoForge, repoBaseUrl) is still polled (91.777958ms)
+  ✔ an explicit empty forgeInstances array polls every 待验收 task exactly as omitting the argument does (71.3725ms)
+✔ issue #13: per-instance webhook-vs-poll config (pollPendingReviews honors forgeInstances) (320.037416ms)
+▶ issue #7 tasks HTTP surface
+  ▶ authentication and DESIGN §11 permissions
+    ✔ unauthenticated JSON GET/POST/PATCH return 401 unauthorized (153.689166ms)
+    ✔ browser-like GET /api/v1/tasks redirects to /login (18.221833ms)
+    ✔ leftover 待批准 GitHub user may read the board (§11 查看任务板 ✓) but not post (48.647833ms)
+    ✔ leftover active GitHub claim_only user may read the board but not post or patch (71.0295ms)
+    ✔ only the 发布者 may cancel — another active full member gets 403 (66.752708ms)
+  ✔ authentication and DESIGN §11 permissions (358.931584ms)
+  ▶ POST /api/v1/tasks — 凭证档案下拉选择 path
+    ✔ profile path creates a 待认领 task whose credential is { profile_id } (56.874291ms)
+    ✔ profile_id is accepted as a number and as a numeric string (62.41325ms)
+    ✔ an unknown profile_id is refused with 400 invalid_body and a Chinese message (67.2355ms)
+  ✔ POST /api/v1/tasks — 凭证档案下拉选择 path (186.8255ms)
+  ▶ POST /api/v1/tasks — 单任务临时 token path
+    ✔ inline token path creates a 待认领 task whose credential is { inline: true } (66.089958ms)
+    ✔ inline token is stored as ciphertext and recoverable through the vault (59.863417ms)
+    ✔ both credential paths return 500 vault_unconfigured without VAULT_MASTER_KEY (58.822833ms)
+  ✔ POST /api/v1/tasks — 单任务临时 token path (185.129708ms)
+  ▶ 发布即校验 — DESIGN §5
+    ✔ a token missing 推 and PR is refused with 422 and names both capabilities (63.59275ms)
+    ✔ a token that can push but cannot open PRs is refused naming only PR (60.007459ms)
+    ✔ a 401 token is refused with the token-invalid message, not the 权限不足 one (62.681333ms)
+    ✔ a token with no access to the repo is refused with the token-invalid message (54.687375ms)
+    ✔ an unreachable forge is a DIFFERENT outcome: 502 with its own Chinese message (55.987917ms)
+    ✔ the profile path is validated too — an under-scoped profile token is refused (61.546708ms)
+  ✔ 发布即校验 — DESIGN §5 (358.901042ms)
+  ▶ 任务卡字段完整符合 §6 schema
+    ✔ a full request body round-trips every DESIGN §6 field (51.951667ms)
+    ✔ pr_convention is derived from the public id, per DESIGN §6 (39.461916ms)
+    ✔ a client-supplied pr_convention or id or status is ignored — the server owns them (34.090042ms)
+    ✔ an imported source round-trips issue_url; a native source carries only type (31.362458ms)
+    ✔ a minimal request body is completed with the documented defaults (30.318208ms)
+    ✔ created_at is ISO-8601 with offset and matches the stored unix seconds (35.55325ms)
+    ✔ POST with no title returns 400 invalid_body (35.560333ms)
+    ✔ POST with an empty title returns 400 invalid_body (39.832583ms)
+    ✔ POST with no repo returns 400 invalid_body (30.956292ms)
+    ✔ POST with an unknown forge returns 400 invalid_body (32.817208ms)
+    ✔ POST with no repo.full_name returns 400 invalid_body (32.0955ms)
+    ✔ POST with an unknown priority returns 400 invalid_body (31.262833ms)
+    ✔ POST with an unknown source type returns 400 invalid_body (31.590458ms)
+    ✔ POST with an imported source without issue_url returns 400 invalid_body (32.160916ms)
+    ✔ POST with no credential returns 400 invalid_body (32.431ms)
+    ✔ POST with an empty credential returns 400 invalid_body (31.078ms)
+    ✔ POST with both credential forms at once returns 400 invalid_body (31.849375ms)
+    ✔ POST with a bare inline marker and no token returns 400 invalid_body (37.285458ms)
+    ✔ POST with an empty inline token returns 400 invalid_body (31.435417ms)
+  ✔ 任务卡字段完整符合 §6 schema (653.697375ms)
+  ▶ public_id — kt-YYYY-NNNN
+    ✔ public_id has the kt-YYYY-NNNN form and carries the current year (33.662584ms)
+    ✔ public ids are distinct and their sequence increases (30.435042ms)
+    ✔ public_id is UNIQUE in SQLite (36.147291ms)
+  ✔ public_id — kt-YYYY-NNNN (100.355166ms)
+  ▶ token secrecy — DESIGN §7
+    ✔ no create/list/get response carries the inline token in any field (30.417583ms)
+    ✔ no create/list/get response carries the profile token in any field (31.099916ms)
+  ✔ token secrecy — DESIGN §7 (61.603709ms)
+  ▶ GET /api/v1/tasks and GET /api/v1/tasks/:public_id
+    ✔ list returns every task under a tasks key, each a §6 brief (32.365416ms)
+    ✔ get by public_id returns exactly the brief that create returned (29.725ms)
+    ✔ an unknown public_id returns 404 not_found (29.889958ms)
+    ✔ a numeric-looking id returns 404 not_found — tasks are addressed by public_id only (31.149209ms)
+  ✔ GET /api/v1/tasks and GET /api/v1/tasks/:public_id (123.264583ms)
+  ▶ PATCH /api/v1/tasks/:public_id — 取消 / 重新开放
+    ✔ 待认领 → 已取消 by the poster returns the updated brief (30.107041ms)
+    ✔ 已退回 → 待认领 reopens the task (37.983333ms)
+    ✔ 已退回 → 已取消 by the poster (34.12125ms)
+    ✔ an illegal transition 待认领 → 已完成 returns 409 with a Chinese message (29.832917ms)
+    ✔ 待认领 → 进行中 is claim territory, not a poster edit: 409 illegal_transition (29.386333ms)
+    ✔ 已取消 is terminal — 已取消 → 待认领 returns 409 (29.748667ms)
+    ✔ an unknown status value returns 400 invalid_body (30.478791ms)
+    ✔ PATCH on an unknown public_id returns 404 not_found (29.423459ms)
+  ✔ PATCH /api/v1/tasks/:public_id — 取消 / 重新开放 (251.287166ms)
+  ▶ audit — 状态迁移 events (DESIGN §10)
+    ✔ cancelling writes one 状态迁移 event naming the task, from, to and actor (34.848958ms)
+    ✔ reopening writes a 状态迁移 event from 已退回 to 待认领 (35.310417ms)
+    ✔ a refused transition writes no 状态迁移 event (33.948667ms)
+  ✔ audit — 状态迁移 events (DESIGN §10) (104.21925ms)
+  ▶ tasks table invariants (DESIGN §10: credential_profile_id / inline_token_encrypted 二选一)
+    ✔ the profile path stores credential_profile_id and leaves inline_token_encrypted NULL (35.636375ms)
+    ✔ SQLite refuses a row with BOTH credential columns set (39.244833ms)
+    ✔ SQLite refuses a row with NEITHER credential column set (33.444ms)
+  ✔ tasks table invariants (DESIGN §10: credential_profile_id / inline_token_encrypted 二选一) (108.438791ms)
+  ▶ POST /api/v1/tasks — security-review repair (profile binding / base_url / audit)
+    ▶ F1 — profile-to-repo binding (exact forge + base_url + full_name)
+      ✔ gitlab profile + gitea request is 400 before decrypt and never sends the plaintext token (34.459792ms)
+      ✔ matching forge and full_name with an attacker base_url is 400 before decrypt (34.027709ms)
+      ✔ matching forge and base_url with a different full_name is 400 before decrypt (33.853708ms)
+    ✔ F1 — profile-to-repo binding (exact forge + base_url + full_name) (102.449708ms)
+    ▶ F2 — repo.base_url must be http(s) with a non-empty host
+      ✔ POST with repo.base_url a file: URL returns 400 invalid_body before any forge fetch (28.438084ms)
+      ✔ POST with repo.base_url a javascript: URL returns 400 invalid_body before any forge fetch (29.049583ms)
+      ✔ POST with repo.base_url a missing scheme returns 400 invalid_body before any forge fetch (29.128834ms)
+      ✔ POST with repo.base_url an empty host returns 400 invalid_body before any forge fetch (28.789375ms)
+    ✔ F2 — repo.base_url must be http(s) with a non-empty host (115.523625ms)
+    ▶ F3 — decrypting a stored profile for 发布即校验 writes token 揭示
+      ✔ a matching profile 201 writes token 揭示 with pinned details; an inline token does not (36.047667ms)
+      ✔ a profile-path 422 still writes token 揭示 (plaintext already left the process) (34.064792ms)
+      ✔ a profile-path 502 still writes token 揭示 (plaintext already left the process) (33.876417ms)
+    ✔ F3 — decrypting a stored profile for 发布即校验 writes token 揭示 (104.089584ms)
+  ✔ POST /api/v1/tasks — security-review repair (profile binding / base_url / audit) (322.127458ms)
+✔ issue #7 tasks HTTP surface (2815.996417ms)
+▶ issue #5 credential vault
+  ▶ placeholder pin
+    ✔ GET / still returns 考拉任务服务占位 (127.560125ms)
+  ✔ placeholder pin (127.986333ms)
+  ▶ unauthenticated credential-profile routes
+    ✔ JSON GET/POST/DELETE without a session return 401 unauthorized (43.125125ms)
+    ✔ browser-like GET /api/v1/credential-profiles redirects to /login (26.872875ms)
+  ✔ unauthenticated credential-profile routes (70.797084ms)
+  ▶ credential profile CRUD (session, active full)
+    ✔ GitLab POST returns 201 public fields and GET lists them without secrets (64.723292ms)
+    ✔ Gitea active full member can POST a credential profile (57.411458ms)
+    ✔ duplicate (forge, base_url, repo_full_name) returns 409 conflict (70.69575ms)
+    ✔ DELETE returns forge-revoke copy; missing id is 404 not_found (74.604542ms)
+    ✔ any active full member lists and deletes team-shared profiles (77.799917ms)
+  ✔ credential profile CRUD (session, active full) (345.84725ms)
+  ▶ permission gate (profiles are active+full only)
+    ✔ leftover 待批准 GitHub user gets 403 forbidden on POST/GET/DELETE (19.62175ms)
+    ✔ leftover active GitHub claim_only still gets 403 forbidden on POST/GET/DELETE (58.943125ms)
+  ✔ permission gate (profiles are active+full only) (78.736209ms)
+  ▶ SQLite: no plaintext token; 变更 events
+    ✔ token_encrypted TEXT omits plaintext and create writes 变更 (55.325875ms)
+    ✔ DELETE writes 变更 action delete (65.413ms)
+  ✔ SQLite: no plaintext token; 变更 events (121.338541ms)
+  ▶ vault_unconfigured
+    ✔ HTTP POST without VAULT_MASTER_KEY returns 500 vault_unconfigured (57.515792ms)
+  ✔ vault_unconfigured (57.608ms)
+  ▶ encryptToken / decryptToken (dynamic import ./vault.ts)
+    ✔ round-trips a one-off token string and ciphertext omits plaintext (0.365417ms)
+    ✔ encryptToken throws when VAULT_MASTER_KEY is missing (0.252375ms)
+  ✔ encryptToken / decryptToken (dynamic import ./vault.ts) (0.653291ms)
+  ▶ revealCredentialProfile (dynamic import ./vault.ts)
+    ✔ returns plaintext, writes token 揭示 audit, and throws after DELETE (63.442542ms)
+  ✔ revealCredentialProfile (dynamic import ./vault.ts) (63.5385ms)
+✔ issue #5 credential vault (867.072708ms)
+▶ issue #13 webhook receiver (POST /api/v1/webhooks/:publicId)
+  ✔ unknown publicId (no matching forgeInstances entry) → 404 { error: "not_found" }, no signature required (97.210041ms)
+  ✔ bad signature (wrong secret) → 401 { error: "invalid_signature" }, and the response never leaks the secret (12.665084ms)
+  ✔ bad signature (missing signature header) → 401 { error: "invalid_signature" } (13.796834ms)
+  ✔ ping/irrelevant event with a correct signature → 204 empty body (10.04325ms)
+  ✔ merge event with a matching 待验收 submission → 204, task 已完成, submissions.pr_state merged, system 状态迁移 event (131.899125ms)
+  ✔ closed-unmerged event with a matching 待验收 submission → 204, task 已退回, submissions.pr_state closed (80.068ms)
+  ✔ a delivery whose pr_url matches no 待验收 submission → 204 no-op, no task/event changes (69.579917ms)
+  ✔ a syncMode: "poll" instance webhook still completes the task (mode gates the poller, not this receiver) (69.041458ms)
+  ✔ no session cookie and no Bearer token are required or accepted as auth — the signature alone gates the request (60.2505ms)
+  ✔ cross-forge dispatch: a github forgeInstances entry is verified with X-Hub-Signature-256, not the gitea scheme (9.026708ms)
+  ✔ confused deputy: a correctly-signed github delivery must not complete an unrelated gitea instance's task merely because pr_url matches (74.823333ms)
+✔ issue #13 webhook receiver (POST /api/v1/webhooks/:publicId) (631.977ms)
+▶ issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成)
+  ▶ 认领 (claim) write-back
+    ✔ imported gitea task: REST claim posts a write-back comment with the task credential, not the agent key (184.34425ms)
+    ✔ native task: REST claim never posts a write-back comment and writes no 回写 event (56.249542ms)
+    ✔ imported github task: claim posts to the GitHub Issues API with a Bearer task-credential header (67.757417ms)
+    ✔ imported gitlab task: claim posts a note with a PRIVATE-TOKEN task-credential header (44.354458ms)
+    ✔ a forge 5xx on the claim comment never blocks the claim, and no successful 回写 is recorded (39.658208ms)
+  ✔ 认领 (claim) write-back (392.942666ms)
+  ▶ 提交 PR (submit_pr) write-back
+    ✔ imported gitea task: MCP submit_pr posts a write-back comment containing publicId, PUBLIC_URL, and pr_url (57.230208ms)
+    ✔ a forge network failure on the submit_pr comment never blocks submit_pr, and no successful 回写 is recorded (53.30475ms)
+  ✔ 提交 PR (submit_pr) write-back (110.7005ms)
+  ▶ 完成 (complete) write-back
+    ✔ imported gitea task: pollPendingReviews posts a write-back comment on 已完成 (merged) (48.934333ms)
+    ✔ imported gitea task: a webhook merged delivery posts a write-back comment on 已完成 (48.400583ms)
+    ✔ imported gitea task: a closed (unmerged) PR via pollPendingReviews (已退回) never posts a completion write-back comment (46.639ms)
+    ✔ a forge 5xx on the completion comment never blocks reaching 已完成, and no successful 回写 is recorded (46.496167ms)
+  ✔ 完成 (complete) write-back (190.679ms)
+  ▶ native task: no write-back at any of the three hooks
+    ✔ a native task never posts a write-back comment across claim, submit_pr, and completion (50.031917ms)
+  ✔ native task: no write-back at any of the three hooks (50.122792ms)
+  ▶ retry (retryPendingWritebacks, exported from apps/server/src/poller.ts)
+    ✔ re-posts a write-back comment that failed on 认领, and does not duplicate once it has succeeded (41.164458ms)
+    ✔ re-posts a write-back comment that failed on 完成 (via pollPendingReviews) (51.551708ms)
+    ✔ is a safe no-op when there is nothing pending (6.913333ms)
+  ✔ retry (retryPendingWritebacks, exported from apps/server/src/poller.ts) (99.769458ms)
+✔ issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成) (844.721375ms)
+▶ commentOnIssue shared spec
+  ▶ github
+    ✔ POSTs { body } to the comment endpoint with the same per-kind auth headers as the sibling methods (41.625125ms)
+    ✔ treats any res.ok (2xx) response as success, not only a hard-coded 201 (0.318583ms)
+    ✔ non-OK HTTP response rejects with "commentOnIssue: <kind> responded <status>", after exactly one fetch (0.346458ms)
+    ✔ an unparseable issue_url rejects without calling fetch (not merely notImplemented) (0.147333ms)
+    ✔ a pull/MR web path in issue_url is unparseable and must not fetch (0.104042ms)
+  ✔ github (42.957167ms)
+  ▶ gitlab
+    ✔ POSTs { body } to the comment endpoint with the same per-kind auth headers as the sibling methods (0.221583ms)
+    ✔ treats any res.ok (2xx) response as success, not only a hard-coded 201 (0.143291ms)
+    ✔ non-OK HTTP response rejects with "commentOnIssue: <kind> responded <status>", after exactly one fetch (0.123084ms)
+    ✔ an unparseable issue_url rejects without calling fetch (not merely notImplemented) (0.096584ms)
+    ✔ a pull/MR web path in issue_url is unparseable and must not fetch (0.117667ms)
+  ✔ gitlab (0.826666ms)
+  ▶ gitea
+    ✔ POSTs { body } to the comment endpoint with the same per-kind auth headers as the sibling methods (0.176208ms)
+    ✔ treats any res.ok (2xx) response as success, not only a hard-coded 201 (0.109166ms)
+    ✔ non-OK HTTP response rejects with "commentOnIssue: <kind> responded <status>", after exactly one fetch (0.154584ms)
+    ✔ an unparseable issue_url rejects without calling fetch (not merely notImplemented) (0.047125ms)
+    ✔ a pull/MR web path in issue_url is unparseable and must not fetch (0.047875ms)
+  ✔ gitea (0.600042ms)
+  ✔ github: always POSTs to api.github.com regardless of a custom baseUrl option or the pasted issue host (1.481625ms)
+  ✔ gitlab/gitea: the API origin comes from the constructor baseUrl option, never from the issue_url host (SSRF) (0.238291ms)
+  ✔ gitlab: a nested-group namespace is encodeURIComponent-ed as a single :id segment in the notes URL (0.12675ms)
+  ✔ the same body string is sent verbatim as the JSON { body } field for every kind (0.194833ms)
+✔ commentOnIssue shared spec (46.953125ms)
+▶ getPullRequest shared spec
+  ▶ github
+    ✔ GETs the pull/merge-request endpoint with validateToken-style auth headers (62.325917ms)
+    ✔ merged → { state: "merged" } (0.316959ms)
+    ✔ closed and not merged → { state: "closed" } (0.205291ms)
+    ✔ open → { state: "open" } (0.175709ms)
+    ✔ trailing slash on the pasted URL is stripped before parsing (0.164ms)
+    ✔ non-OK HTTP response rejects (after actually calling fetch, not merely throwing) (0.212708ms)
+    ✔ an unparseable prUrl rejects without calling fetch, while a valid URL from the same adapter succeeds (0.238917ms)
+  ✔ github (64.196458ms)
+  ▶ gitlab
+    ✔ GETs the pull/merge-request endpoint with validateToken-style auth headers (0.232208ms)
+    ✔ merged → { state: "merged" } (0.194834ms)
+    ✔ closed and not merged → { state: "closed" } (0.197708ms)
+    ✔ open → { state: "open" } (0.131125ms)
+    ✔ trailing slash on the pasted URL is stripped before parsing (0.100459ms)
+    ✔ non-OK HTTP response rejects (after actually calling fetch, not merely throwing) (0.0835ms)
+    ✔ an unparseable prUrl rejects without calling fetch, while a valid URL from the same adapter succeeds (0.110083ms)
+  ✔ gitlab (1.189416ms)
+  ▶ gitea
+    ✔ GETs the pull/merge-request endpoint with validateToken-style auth headers (0.174666ms)
+    ✔ merged → { state: "merged" } (0.107459ms)
+    ✔ closed and not merged → { state: "closed" } (0.086208ms)
+    ✔ open → { state: "open" } (0.092208ms)
+    ✔ trailing slash on the pasted URL is stripped before parsing (0.094708ms)
+    ✔ non-OK HTTP response rejects (after actually calling fetch, not merely throwing) (0.074625ms)
+    ✔ an unparseable prUrl rejects without calling fetch, while a valid URL from the same adapter succeeds (0.871583ms)
+  ✔ gitea (1.626292ms)
+  ✔ github: .diff and .patch suffixes on the pasted URL are stripped before parsing (1.530125ms)
+  ✔ github: always calls api.github.com regardless of a custom baseUrl option (0.204291ms)
+  ✔ gitlab: opened → open (verified 4-valued vendor enum mapped down to 3) (0.180709ms)
+  ✔ gitlab: locked (transient, en route to merged) → open, not merged and not closed (0.111125ms)
+  ✔ gitlab: a namespace path with subgroup slashes is encodeURIComponent-ed as a single :id segment (0.151833ms)
+  ✔ gitlab/gitea: the API origin comes from the constructor baseUrl option, not from the prUrl host (0.221042ms)
+✔ getPullRequest shared spec (70.481959ms)
+▶ importIssue shared spec
+  ▶ github
+    ✔ GETs the issue endpoint with validateToken-style auth headers and returns ImportedIssue (45.04925ms)
+    ✔ trailing slash on the pasted URL is stripped before parsing and from returned issue_url (0.608583ms)
+    ✔ query and hash on the pasted URL are dropped by pathname when building the REST URL (0.241625ms)
+    ✔ null issue body/description maps to an empty description_md (0.196292ms)
+    ✔ missing issue body/description maps to an empty description_md (0.528834ms)
+    ✔ returned issue_url is the pasted web URL, not html_url / web_url from JSON (0.250334ms)
+    ✔ missing or non-string title rejects after fetch (0.32475ms)
+    ✔ non-OK HTTP response rejects after actually calling fetch, with status in the message (0.551291ms)
+    ✔ an unparseable issueUrl rejects without calling fetch (not merely notImplemented) (0.430917ms)
+    ✔ a pull/MR/work-item web path is unparseable and must not fetch (0.37325ms)
+  ✔ github (49.597416ms)
+  ▶ gitlab
+    ✔ GETs the issue endpoint with validateToken-style auth headers and returns ImportedIssue (0.695042ms)
+    ✔ trailing slash on the pasted URL is stripped before parsing and from returned issue_url (0.455791ms)
+    ✔ query and hash on the pasted URL are dropped by pathname when building the REST URL (0.272834ms)
+    ✔ null issue body/description maps to an empty description_md (0.200792ms)
+    ✔ missing issue body/description maps to an empty description_md (0.195375ms)
+    ✔ returned issue_url is the pasted web URL, not html_url / web_url from JSON (0.194958ms)
+    ✔ missing or non-string title rejects after fetch (0.181375ms)
+    ✔ non-OK HTTP response rejects after actually calling fetch, with status in the message (0.179791ms)
+    ✔ an unparseable issueUrl rejects without calling fetch (not merely notImplemented) (0.128459ms)
+    ✔ a pull/MR/work-item web path is unparseable and must not fetch (0.219917ms)
+  ✔ gitlab (3.042375ms)
+  ▶ gitea
+    ✔ GETs the issue endpoint with validateToken-style auth headers and returns ImportedIssue (0.486458ms)
+    ✔ trailing slash on the pasted URL is stripped before parsing and from returned issue_url (0.212916ms)
+    ✔ query and hash on the pasted URL are dropped by pathname when building the REST URL (0.164083ms)
+    ✔ null issue body/description maps to an empty description_md (0.173417ms)
+    ✔ missing issue body/description maps to an empty description_md (0.202125ms)
+    ✔ returned issue_url is the pasted web URL, not html_url / web_url from JSON (0.20725ms)
+    ✔ missing or non-string title rejects after fetch (0.160875ms)
+    ✔ non-OK HTTP response rejects after actually calling fetch, with status in the message (0.145ms)
+    ✔ an unparseable issueUrl rejects without calling fetch (not merely notImplemented) (0.111667ms)
+    ✔ a pull/MR/work-item web path is unparseable and must not fetch (0.088ms)
+  ✔ gitea (2.245208ms)
+  ✔ github: always calls api.github.com regardless of a custom baseUrl option or pasted host (0.2815ms)
+  ✔ github/gitea: a GET /issues/{n} payload that includes pull_request is still accepted (0.621458ms)
+  ✔ gitlab: description_md comes from JSON description, not body (0.285375ms)
+  ✔ github/gitea: description_md comes from JSON body, not description (0.364542ms)
+  ✔ gitlab: a nested-group namespace is encodeURIComponent-ed as a single :id segment (0.2675ms)
+  ✔ gitlab: canonical /-/issues/ is not parsed as a legacy namespace ending in /- (0.249834ms)
+  ✔ gitlab: the legacy /issues/ web_url (no /-/) is also accepted (0.258625ms)
+  ✔ gitlab: /-/work_items/ is unparseable (zero fetch) (0.240209ms)
+  ✔ gitlab/gitea: the API origin comes from the constructor baseUrl option, not from the issueUrl host (0.585417ms)
+✔ importIssue shared spec (59.5985ms)
+✔ getForgeAdaptersHealth returns the pinned non-empty forge-adapters package health string (0.603625ms)
+▶ listIssues shared spec
+  ▶ github
+    ✔ GETs the open-issues list with importIssue-style auth headers and returns ListedIssue[] (51.051584ms)
+    ✔ trailing slash on repo.base_url is stripped when constructing issue_url (1.557375ms)
+    ✔ non-OK HTTP 401 rejects after fetch with listIssues: github responded 401 (1.263084ms)
+    ✔ non-OK HTTP 500 rejects after fetch with listIssues: github responded 500 (0.408917ms)
+    ✔ a network rejection from fetch rejects the listIssues promise (0.422625ms)
+    ✔ keeps JSON array order and does not re-sort (0.475458ms)
+  ✔ github (56.045667ms)
+  ▶ gitlab
+    ✔ GETs the open-issues list with importIssue-style auth headers and returns ListedIssue[] (0.594375ms)
+    ✔ trailing slash on repo.base_url is stripped when constructing issue_url (0.433708ms)
+    ✔ non-OK HTTP 401 rejects after fetch with listIssues: gitlab responded 401 (0.348ms)
+    ✔ non-OK HTTP 500 rejects after fetch with listIssues: gitlab responded 500 (0.379458ms)
+    ✔ a network rejection from fetch rejects the listIssues promise (0.144833ms)
+    ✔ keeps JSON array order and does not re-sort (0.35875ms)
+  ✔ gitlab (2.566458ms)
+  ▶ gitea
+    ✔ GETs the open-issues list with importIssue-style auth headers and returns ListedIssue[] (0.637167ms)
+    ✔ trailing slash on repo.base_url is stripped when constructing issue_url (0.341ms)
+    ✔ non-OK HTTP 401 rejects after fetch with listIssues: gitea responded 401 (0.264417ms)
+    ✔ non-OK HTTP 500 rejects after fetch with listIssues: gitea responded 500 (0.178ms)
+    ✔ a network rejection from fetch rejects the listIssues promise (0.136666ms)
+    ✔ keeps JSON array order and does not re-sort (0.296167ms)
+  ✔ gitea (2.055917ms)
+  ✔ github: always calls api.github.com even with constructor baseUrl and a different repo.base_url (0.447ms)
+  ✔ github: drops an item with a pull_request object; a following real issue remains; html_url is not copied (0.391875ms)
+  ✔ gitlab: API origin is constructor baseUrl, never repo.base_url, never JSON web_url host (0.289167ms)
+  ✔ gitlab: maps iid not id; constructs canonical /-/issues/; parseIssueUrl round-trip; does not copy work_items web_url (0.392209ms)
+  ✔ gitlab: a nested-group namespace is encodeURIComponent-ed as a single :id segment (0.310458ms)
+  ✔ gitea: API origin is constructor baseUrl, never repo.base_url (0.393084ms)
+  ✔ gitea: maps number not id; does not copy html_url; query uses type=issues and limit not per_page (0.413792ms)
+✔ listIssues shared spec (65.581708ms)
+▶ validateToken shared spec
+  ▶ github
+    ✔ all ok: GET user + push-capable repo → missing [] (same-repo, no /forks) (47.853208ms)
+    ✔ cannot read: repo/project GET 404 → missing includes 读 (0.880958ms)
+    ✔ dead token: user GET 401 → missing includes 读, 推, and PR (0.341917ms)
+    ✔ read but cannot push (Reporter / push:false / access_level 20) → missing 推, not 读 (0.737833ms)
+    ✔ cannot open PR/MR while readable → missing includes PR (0.588166ms)
+    ✔ custom baseUrl: GitLab/Gitea keep subpath; GitHub always api.github.com (0.88475ms)
+  ✔ github (52.354959ms)
+  ▶ gitlab
+    ✔ all ok: GET user + push-capable repo → missing [] (same-repo, no /forks) (0.995708ms)
+    ✔ cannot read: repo/project GET 404 → missing includes 读 (0.30725ms)
+    ✔ dead token: user GET 401 → missing includes 读, 推, and PR (0.291333ms)
+    ✔ read but cannot push (Reporter / push:false / access_level 20) → missing 推, not 读 (0.414666ms)
+    ✔ cannot open PR/MR while readable → missing includes PR (0.294542ms)
+    ✔ custom baseUrl: GitLab/Gitea keep subpath; GitHub always api.github.com (0.349209ms)
+  ✔ gitlab (2.997333ms)
+  ▶ gitea
+    ✔ all ok: GET user + push-capable repo → missing [] (same-repo, no /forks) (0.766625ms)
+    ✔ cannot read: repo/project GET 404 → missing includes 读 (0.269625ms)
+    ✔ dead token: user GET 401 → missing includes 读, 推, and PR (0.155875ms)
+    ✔ read but cannot push (Reporter / push:false / access_level 20) → missing 推, not 读 (0.348125ms)
+    ✔ cannot open PR/MR while readable → missing includes PR (0.416417ms)
+    ✔ custom baseUrl: GitLab/Gitea keep subpath; GitHub always api.github.com (0.281125ms)
+  ✔ gitea (2.454833ms)
+  ✔ github classic PAT without repo scope cannot push or open PR (1.600375ms)
+✔ validateToken shared spec (60.397792ms)
+▶ parseWebhook shared spec
+  ▶ github
+    ✔ valid signature + merged terminal event → concrete ForgeEvent with state "merged" (42.460709ms)
+    ✔ valid signature + closed-unmerged terminal event → concrete ForgeEvent with state "closed" (0.334458ms)
+    ✔ valid signature + non-terminal action/state (still open) → null, not throw (0.279875ms)
+    ✔ valid signature + irrelevant event type (push) → null, not throw (0.59475ms)
+    ✔ wrong-secret signature → throws WebhookSignatureError (not the notImplemented placeholder) (0.748125ms)
+    ✔ missing signature header entirely → throws WebhookSignatureError (0.116417ms)
+    ✔ adapter created without a webhookSecret (undefined or empty) → parse fails the same as a bad signature (0.104208ms)
+  ✔ github (45.621292ms)
+  ▶ gitlab
+    ✔ valid signature + merged terminal event → concrete ForgeEvent with state "merged" (0.168125ms)
+    ✔ valid signature + closed-unmerged terminal event → concrete ForgeEvent with state "closed" (0.093167ms)
+    ✔ valid signature + non-terminal action/state (still open) → null, not throw (0.399125ms)
+    ✔ valid signature + irrelevant event type (push) → null, not throw (0.132791ms)
+    ✔ wrong-secret signature → throws WebhookSignatureError (not the notImplemented placeholder) (0.111542ms)
+    ✔ missing signature header entirely → throws WebhookSignatureError (0.086666ms)
+    ✔ adapter created without a webhookSecret (undefined or empty) → parse fails the same as a bad signature (0.142333ms)
+  ✔ gitlab (1.393792ms)
+  ▶ gitea
+    ✔ valid signature + merged terminal event → concrete ForgeEvent with state "merged" (0.39025ms)
+    ✔ valid signature + closed-unmerged terminal event → concrete ForgeEvent with state "closed" (0.117625ms)
+    ✔ valid signature + non-terminal action/state (still open) → null, not throw (0.082ms)
+    ✔ valid signature + irrelevant event type (push) → null, not throw (0.089292ms)
+    ✔ wrong-secret signature → throws WebhookSignatureError (not the notImplemented placeholder) (0.164708ms)
+    ✔ missing signature header entirely → throws WebhookSignatureError (0.109958ms)
+    ✔ adapter created without a webhookSecret (undefined or empty) → parse fails the same as a bad signature (0.184709ms)
+  ✔ gitea (1.348417ms)
+  ✔ body may be passed as a Buffer (raw bytes), not only a string, for every kind (0.318833ms)
+  ✔ github: ping event with a valid signature → null, must not throw (hook setup must not fail) (0.129166ms)
+  ✔ gitea: a tampered body (bytes differ from what was signed) → throws WebhookSignatureError (0.182125ms)
+  ✔ gitlab: irrelevant event type with a correct token is still null, not an error (token alone is not "terminal") (0.114417ms)
+✔ parseWebhook shared spec (51.156167ms)
+▶ registerWebhook shared spec
+  ▶ github
+    ✔ non-OK HTTP response rejects with a message containing "<kind> responded <status>", after exactly one fetch (2.695459ms)
+  ✔ github (2.778584ms)
+  ▶ gitlab
+    ✔ non-OK HTTP response rejects with a message containing "<kind> responded <status>", after exactly one fetch (0.196584ms)
+  ✔ gitlab (0.233583ms)
+  ▶ gitea
+    ✔ non-OK HTTP response rejects with a message containing "<kind> responded <status>", after exactly one fetch (0.1515ms)
+  ✔ gitea (0.17775ms)
+  ✔ github: POST https://api.github.com/repos/{owner}/{repo}/hooks with pull_request events + secret, GitHub auth (0.174292ms)
+  ✔ github: registerWebhook always targets api.github.com regardless of a custom baseUrl option (0.127959ms)
+  ✔ gitlab: POST {baseUrl}/api/v4/projects/{id}/hooks with merge_requests_events + token, PRIVATE-TOKEN auth (0.128083ms)
+  ✔ gitlab: registerWebhook uses the constructor baseUrl, not repo.base_url, and encodes nested-group namespaces (0.128ms)
+  ✔ gitea: POST {baseUrl}/api/v1/repos/{owner}/{repo}/hooks with type gitea + pull_request events + config, token auth (0.125917ms)
+  ✔ gitea: registerWebhook uses the constructor baseUrl, not repo.base_url (0.11875ms)
+✔ registerWebhook shared spec (4.233625ms)
+✔ getSharedHealth returns the pinned non-empty shared package health string (0.635791ms)
+▶ parseTaskBrief
+  ✔ parseTaskBrief accepts the DESIGN.md §6 Task Brief example including Chinese ellipsis description (9.710917ms)
+  ✔ parseTaskBrief accepts a valid brief whose source is native with no issue_url (1.146667ms)
+  ✔ parseTaskBrief accepts status 待认领 (0.207875ms)
+  ✔ parseTaskBrief accepts status 进行中 (6.046125ms)
+  ✔ parseTaskBrief accepts status 待验收 (0.167875ms)
+  ✔ parseTaskBrief accepts status 已完成 (0.104042ms)
+  ✔ parseTaskBrief accepts status 已退回 (0.099291ms)
+  ✔ parseTaskBrief accepts status 已取消 (0.1045ms)
+  ✔ parseTaskBrief accepts repo.forge github (0.15975ms)
+  ✔ parseTaskBrief accepts repo.forge gitlab (0.122458ms)
+  ✔ parseTaskBrief accepts repo.forge gitea (0.077125ms)
+  ✔ parseTaskBrief accepts priority P0 (0.076958ms)
+  ✔ parseTaskBrief accepts priority P1 (0.056709ms)
+  ✔ parseTaskBrief accepts priority P2 (0.063209ms)
+  ✔ parseTaskBrief accepts priority P3 (0.05325ms)
+  ✔ parseTaskBrief rejects a brief missing required field id (0.390208ms)
+  ✔ parseTaskBrief rejects a brief missing required field title (0.112833ms)
+  ✔ parseTaskBrief rejects a brief missing required field description_md (0.096916ms)
+  ✔ parseTaskBrief rejects a brief missing required field source (0.084041ms)
+  ✔ parseTaskBrief rejects a brief missing required field repo (0.078417ms)
+  ✔ parseTaskBrief rejects a brief missing required field acceptance_criteria (0.078417ms)
+  ✔ parseTaskBrief rejects a brief missing required field test_command (0.080458ms)
+  ✔ parseTaskBrief rejects a brief missing required field constraints (0.069666ms)
+  ✔ parseTaskBrief rejects a brief missing required field pr_convention (0.087667ms)
+  ✔ parseTaskBrief rejects a brief missing required field credential (0.147ms)
+  ✔ parseTaskBrief rejects a brief missing required field priority (0.101459ms)
+  ✔ parseTaskBrief rejects a brief missing required field tags (0.0765ms)
+  ✔ parseTaskBrief rejects a brief missing required field poster (0.077542ms)
+  ✔ parseTaskBrief rejects a brief missing required field status (0.070292ms)
+  ✔ parseTaskBrief rejects a brief missing required field created_at (0.062667ms)
+  ✔ parseTaskBrief rejects a brief missing repo.forge (2.548667ms)
+  ✔ parseTaskBrief rejects a brief missing repo.base_url (0.171042ms)
+  ✔ parseTaskBrief rejects a brief missing repo.full_name (0.086667ms)
+  ✔ parseTaskBrief rejects a brief missing repo.base_branch (0.070958ms)
+  ✔ parseTaskBrief rejects a brief missing repo.suggested_dir (0.063583ms)
+  ✔ parseTaskBrief rejects a brief missing constraints.allowed_paths (0.061125ms)
+  ✔ parseTaskBrief rejects a brief missing constraints.forbidden_paths (0.071291ms)
+  ✔ parseTaskBrief rejects a brief missing pr_convention.branch_prefix (0.052ms)
+  ✔ parseTaskBrief rejects a brief missing pr_convention.title_prefix (0.04875ms)
+  ✔ parseTaskBrief rejects status that is not one of the six Chinese labels (0.072042ms)
+  ✔ parseTaskBrief rejects repo.forge outside github | gitlab | gitea (0.058959ms)
+  ✔ parseTaskBrief rejects imported source without issue_url (0.064459ms)
+  ✔ parseTaskBrief rejects native source that includes issue_url (0.089875ms)
+  ✔ parseTaskBrief rejects priority outside P0|P1|P2|P3 (0.052125ms)
+  ✔ parseTaskBrief rejects a raw token field on the brief (0.064208ms)
+  ✔ parseTaskBrief rejects credential that has no profile_id (0.148291ms)
+  ✔ parseTaskBrief rejects a raw token field inside credential (0.157583ms)
+  ✔ parseTaskBrief rejects credential that includes both profile_id and a raw token (0.394458ms)
+✔ parseTaskBrief (24.881958ms)
+▶ parseTaskBrief credential union
+  ✔ parseTaskBrief accepts credential { profile_id } — the shared credential profile form (0.468ms)
+  ✔ parseTaskBrief accepts credential { inline: true } — the single-task temporary token form (0.35525ms)
+  ✔ parseTaskBrief round-trips credential { inline: true } without adding or dropping keys (0.277125ms)
+  ✔ parseTaskBrief accepts the DESIGN.md §6 example when its credential row is the inline form (0.239583ms)
+  ✔ parseTaskBrief rejects credential { inline: false } — inline is a marker, only true is legal (0.158209ms)
+  ✔ parseTaskBrief rejects credential carrying both profile_id and inline (二选一, exactly one form) (0.104875ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type "yes" (0.1025ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type "true" (0.069625ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type 1 (0.069125ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type 0 (0.052ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type null (0.179917ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type [] (0.28975ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type {} (0.176042ms)
+  ✔ parseTaskBrief rejects credential {} — neither form is present (0.2055ms)
+  ✔ parseTaskBrief rejects a credential shape that is neither profile_id nor inline (0.172125ms)
+  ✔ parseTaskBrief rejects an unknown extra key alongside profile_id (0.175875ms)
+  ✔ parseTaskBrief rejects an unknown extra key alongside inline: true (0.23425ms)
+  ✔ parseTaskBrief rejects a raw token alongside inline: true (0.191667ms)
+  ✔ parseTaskBrief rejects a ciphertext-bearing credential even in the inline form (0.315625ms)
+  ✔ parseTaskBrief rejects profile_id that is not a string (0.148ms)
+  ✔ parseTaskBrief rejects credential that is not an object: "cp-gitea-orders" (0.087666ms)
+  ✔ parseTaskBrief rejects credential that is not an object: 42 (0.072875ms)
+  ✔ parseTaskBrief rejects credential that is not an object: true (0.050083ms)
+  ✔ parseTaskBrief rejects credential that is not an object: null (0.056375ms)
+  ✔ parseTaskBrief rejects credential that is not an object: [] (0.260084ms)
+✔ parseTaskBrief credential union (5.198333ms)
+▶ transitionTaskStatus
+  ✔ transitionTaskStatus rejects 待认领 → 待认领 (0.509833ms)
+  ✔ transitionTaskStatus allows 待认领 → 进行中 (0.115ms)
+  ✔ transitionTaskStatus rejects 待认领 → 待验收 (0.06675ms)
+  ✔ transitionTaskStatus rejects 待认领 → 已完成 (0.059167ms)
+  ✔ transitionTaskStatus rejects 待认领 → 已退回 (0.073458ms)
+  ✔ transitionTaskStatus allows 待认领 → 已取消 (0.055583ms)
+  ✔ transitionTaskStatus allows 进行中 → 待认领 (0.061917ms)
+  ✔ transitionTaskStatus rejects 进行中 → 进行中 (0.060792ms)
+  ✔ transitionTaskStatus allows 进行中 → 待验收 (0.063584ms)
+  ✔ transitionTaskStatus rejects 进行中 → 已完成 (0.070958ms)
+  ✔ transitionTaskStatus rejects 进行中 → 已退回 (0.072375ms)
+  ✔ transitionTaskStatus rejects 进行中 → 已取消 (0.095917ms)
+  ✔ transitionTaskStatus rejects 待验收 → 待认领 (0.113ms)
+  ✔ transitionTaskStatus rejects 待验收 → 进行中 (0.072958ms)
+  ✔ transitionTaskStatus rejects 待验收 → 待验收 (0.072833ms)
+  ✔ transitionTaskStatus allows 待验收 → 已完成 (0.065167ms)
+  ✔ transitionTaskStatus allows 待验收 → 已退回 (0.057417ms)
+  ✔ transitionTaskStatus rejects 待验收 → 已取消 (0.113167ms)
+  ✔ transitionTaskStatus rejects 已完成 → 待认领 (0.082ms)
+  ✔ transitionTaskStatus rejects 已完成 → 进行中 (0.075125ms)
+  ✔ transitionTaskStatus rejects 已完成 → 待验收 (0.082042ms)
+  ✔ transitionTaskStatus rejects 已完成 → 已完成 (0.078334ms)
+  ✔ transitionTaskStatus rejects 已完成 → 已退回 (0.078667ms)
+  ✔ transitionTaskStatus rejects 已完成 → 已取消 (0.069041ms)
+  ✔ transitionTaskStatus allows 已退回 → 待认领 (0.073833ms)
+  ✔ transitionTaskStatus rejects 已退回 → 进行中 (1.196667ms)
+  ✔ transitionTaskStatus rejects 已退回 → 待验收 (0.049834ms)
+  ✔ transitionTaskStatus rejects 已退回 → 已完成 (0.13525ms)
+  ✔ transitionTaskStatus rejects 已退回 → 已退回 (0.14425ms)
+  ✔ transitionTaskStatus allows 已退回 → 已取消 (0.073958ms)
+  ✔ transitionTaskStatus rejects 已取消 → 待认领 (0.064083ms)
+  ✔ transitionTaskStatus rejects 已取消 → 进行中 (0.058584ms)
+  ✔ transitionTaskStatus rejects 已取消 → 待验收 (0.059709ms)
+  ✔ transitionTaskStatus rejects 已取消 → 已完成 (0.059875ms)
+  ✔ transitionTaskStatus rejects 已取消 → 已退回 (0.060333ms)
+  ✔ transitionTaskStatus rejects 已取消 → 已取消 (0.28075ms)
+  ✔ transitionTaskStatus rejects an unknown from status (0.068ms)
+  ✔ transitionTaskStatus rejects an unknown to status (0.041041ms)
+✔ transitionTaskStatus (5.288375ms)
+ℹ tests 625
+ℹ suites 150
+ℹ pass 608
+ℹ fail 17
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 7082.593209
+
+✖ failing tests:
+
+test at apps/server/src/claim-identity.test.ts:628:5
+✖ claimIdForLease is exported and returns a clm_-prefixed opaque string (1.922583ms)
+  AssertionError [ERR_ASSERTION]: apps/server/src/leases.ts must export claimIdForLease(lease)
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:630:14)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:385:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:652:5
+✖ claimIdForLease is stable across a heartbeat and across release (only immutable fields matter) (0.337625ms)
+  TypeError: claimIdForLease is not a function
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:667:20)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7)
+
+test at apps/server/src/claim-identity.test.ts:672:5
+✖ claimIdForLease differs between two different lease rows (0.14625ms)
+  TypeError: claimIdForLease is not a function
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:688:23)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7)
+
+test at apps/server/src/claim-identity.test.ts:694:5
+✖ REST claim without request_id stays 201 and the lease envelope is exactly { claim_id, expires_at, ttl_seconds } (241.913333ms)
+  AssertionError [ERR_ASSERTION]: lease envelope must gain claim_id alongside the existing fields, got ["expires_at","ttl_seconds"]
+  + actual - expected
+  
+    [
+  -   'claim_id',
+      'expires_at',
+      'ttl_seconds'
+    ]
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:703:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: [ 'expires_at', 'ttl_seconds' ],
+    expected: [ 'claim_id', 'expires_at', 'ttl_seconds' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:713:5
+✖ MCP claim_task without request_id stays a success result and the lease envelope carries claim_id (92.76175ms)
+  AssertionError [ERR_ASSERTION]: MCP lease envelope must gain claim_id, got ["expires_at","ttl_seconds"]
+  + actual - expected
+  
+    [
+  -   'claim_id',
+      'expires_at',
+      'ttl_seconds'
+    ]
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:722:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: [ 'expires_at', 'ttl_seconds' ],
+    expected: [ 'claim_id', 'expires_at', 'ttl_seconds' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:733:5
+✖ replaying the same request_id 100 times yields exactly one lease, one 状态迁移 to 进行中, and one claim_id (75.284542ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 'undefined'
+  - 'string'
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:745:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'string',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:767:5
+✖ a single replay reuses the same claim_id and token, and audits the re-reveal as a replay without leaking the token (60.246125ms)
+  AssertionError [ERR_ASSERTION]: replay must still be 201, got 409 {"error":"conflict","message":"任务已被认领。"}
+  
+  409 !== 201
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:780:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 409,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:795:5
+✖ replaying a request_id after the lease is released never creates a new lease (101.688917ms)
+  AssertionError [ERR_ASSERTION]: replaying a request_id whose lease is now terminal must never insert a new lease row, got [{"id":1,"task_id":1,"claimer_user_id":1,"device_id":1,"claimed_at":1788168246,"expires_at":1788254646,"last_heartbeat":1788168246,"state":"released"},{"id":2,"task_id":1,"claimer_user_id":1,"device_id":1,"claimed_at":1788168246,"expires_at":1788254646,"last_heartbeat":1788168246,"state":"active"}]
+  
+  2 !== 1
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:817:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 2,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:850:5
+✖ same request_id against a different task publicId is a typed conflict and changes nothing (70.558709ms)
+  AssertionError [ERR_ASSERTION]: same request_id against a different task publicId must be a typed conflict, got 201 {"task":{"id":"kt-2026-0002","title":"task B for request_id conflict","description_md":"……（Markdown 详述）","source":{"type":"native"},"repo":{"forge":"gitea","base_url":"https://gitea.forge.example.test","full_name":"team/orders","base_branch":"main","suggested_dir":"orders"},"acceptance_criteria":["GET /api/orders/export 支持 page/page_size 参数"],"test_command":"pnpm test","constraints":{"allowed_paths":["src/api/**"],"forbidden_paths":["migrations/**"]},"pr_convention":{"branch_prefix":"kaola/kt-2026-0002-","title_prefix":"[kt-2026-0002] "},"credential":{"inline":true},"priority":"P1","tags":["backend"],"poster":"kaola-admin","status":"进行中","created_at":"2026-08-31T09:24:06.000Z"},"token":"gitea-PROFILE-SHARED-TOKEN-vv31","lease":{"expires_at":"2026-09-01T09:24:06.000Z","ttl_seconds":86400},"clone":{"suggested_dir":"orders","token_usage":"token 请通过环境变量或 git -c http.extraHeader 按次传递，不要写入 remote URL（会落盘到 .git/config）。","remote_url":"https://gitea.forge.example.test/team/orders.git","extra_header":{"name":"Authorization","value_pattern":"token ${token}"}}}
+  
+  201 !== 409
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:867:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 201,
+    expected: 409,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:885:5
+✖ same request_id but a different autonomous flag is a typed conflict and reveals no token (88.334125ms)
+  AssertionError [ERR_ASSERTION]: same request_id with a different autonomous flag must be a typed conflict, got 201 {"task":{"id":"kt-2026-0001","title":"为订单导出接口增加分页","description_md":"……（Markdown 详述）","source":{"type":"native"},"repo":{"forge":"gitea","base_url":"https://gitea.forge.example.test","full_name":"team/orders","base_branch":"main","suggested_dir":"orders"},"acceptance_criteria":["GET /api/orders/export 支持 page/page_size 参数"],"test_command":"pnpm test","constraints":{"allowed_paths":["src/api/**"],"forbidden_paths":["migrations/**"]},"pr_convention":{"branch_prefix":"kaola/kt-2026-0001-","title_prefix":"[kt-2026-0001] "},"credential":{"inline":true},"priority":"P1","tags":["backend"],"poster":"kaola-admin","status":"进行中","created_at":"2026-08-31T09:24:07.000Z"},"token":"gitea-INLINE-ONE-OFF-TOKEN-zzq7","lease":{"expires_at":"2026-09-01T09:24:07.000Z","ttl_seconds":86400},"clone":{"suggested_dir":"orders","token_usage":"token 请通过环境变量或 git -c http.extraHeader 按次传递，不要写入 remote URL（会落盘到 .git/config）。","remote_url":"https://gitea.forge.example.test/team/orders.git","extra_header":{"name":"Authorization","value_pattern":"token ${token}"}}}
+  
+  201 !== 409
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:905:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 201,
+    expected: 409,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:923:5
+✖ 202 is stable while pending under the same request_id, and exactly one 201/lease follows approval even under repeated replay (74.481666ms)
+  AssertionError [ERR_ASSERTION]: replay #0 after approval must stay 201, got 409 {"error":"conflict","message":"任务已被认领。"}
+  
+  409 !== 201
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:966:16)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 409,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:978:5
+✖ DELETE is refused (typed error, profile retained) when referenced by a task in each of the four non-terminal statuses (64.307333ms)
+  AssertionError [ERR_ASSERTION]: deleting a profile referenced by a 待认领 task must be refused, got 200 {"ok":true,"message":"请同时到 forge 侧撤销该 token。"}
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:994:16)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 200,
+    expected: 200,
+    operator: 'notStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:1035:5
+✖ failure injection: a failing lease insert leaves the claim exactly as it was before the attempt (74.269375ms)
+  AssertionError [ERR_ASSERTION]: a failed claim-transaction write must leave the task exactly as it was (待认领), never partially committed to 进行中, got 进行中
+  
+  '进行中' !== '待认领'
+  
+      at assertClaimAllOrNothing (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:475:10)
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:1053:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: '进行中',
+    expected: '待认领',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:1056:5
+✖ failure injection: a failing token 揭示 audit write leaves the claim exactly as it was before the attempt (83.648833ms)
+  AssertionError [ERR_ASSERTION]: a failed claim-transaction write must leave the task exactly as it was (待认领), never partially committed to 进行中, got 进行中
+  
+  '进行中' !== '待认领'
+  
+      at assertClaimAllOrNothing (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:475:10)
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:1074:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: '进行中',
+    expected: '待认领',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:1077:5
+✖ failure injection: a failing 状态迁移 audit write rolls back the task update and the lease insert that preceded it (87.189875ms)
+  AssertionError [ERR_ASSERTION]: a failed claim-transaction write must leave the task exactly as it was (待认领), never partially committed to 进行中, got 进行中
+  
+  '进行中' !== '待认领'
+  
+      at assertClaimAllOrNothing (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:475:10)
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:1097:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: '进行中',
+    expected: '待认领',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:1102:5
+✖ a slow forge write-back comment cannot delay the committed claim response (1568.807584ms)
+  Error: claim did not resolve within 1500ms; a slow forge write-back comment must not block/delay the claim response
+      at Timeout._onTimeout (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:1114:24)
+      at listOnTimeout (node:internal/timers:605:17)
+      at process.processTimers (node:internal/timers:541:7)
+
+test at apps/server/src/claim-identity.test.ts:1129:5
+✖ settleWritebacks lets a test observe a failed background write-back deterministically, and retryPendingWritebacks still recovers it (79.796125ms)
+  AssertionError [ERR_ASSERTION]: apps/server/src/writeback.ts must export settleWritebacks(): Promise<void>
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:1141:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+[ELIFECYCLE] Test failed. See above for more details.

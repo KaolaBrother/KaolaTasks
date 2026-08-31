@@ -1,0 +1,127 @@
+▶ kaola-mcp Claim recovery receipt (Issue #32)
+  ▶ receiptFilePath path safety
+    ✔ is a pure function exported from main.ts (0.286792ms)
+    ✔ a legitimate task id resolves to a path strictly inside kaolaHome (0.628417ms)
+    ✔ hostile task ids either throw or stay strictly inside kaolaHome (no traversal escape) (0.402833ms)
+    ✔ different task ids produce different receipt files for the same origin (0.237625ms)
+  ✔ receiptFilePath path safety (1.811584ms)
+  ▶ originDigest
+    ✔ is deterministic and distinguishes different origins (0.065291ms)
+  ✔ originDigest (0.157084ms)
+  ▶ claim receipt happy path
+    ✖ writes an atomic pre-claim receipt with request_id BEFORE the request, then records claim_id after success (23.383916ms)
+    ✔ directory is 0700 and the receipt file is 0600 (7.964166ms)
+    ✔ a later claim for the same (origin, task) reuses the recorded request_id and never creates a second server-side claim (9.975167ms)
+  ✖ claim receipt happy path (41.509875ms)
+  ▶ mutation claim_id auto-attach
+    ✖ report_progress, release_task and submit_pr get claim_id injected from a persisted receipt, even from a fresh process with no in-memory state (12.159459ms)
+  ✖ mutation claim_id auto-attach (12.294916ms)
+  ▶ legacy server compatibility (lease without claim_id)
+    ✔ claim still succeeds and mutations omit claim_id rather than injecting an undefined/null value (5.090167ms)
+  ✔ legacy server compatibility (lease without claim_id) (5.14ms)
+  ▶ kill/restart boundaries converge to exactly one Claim
+    ✖ boundary: killed before any receipt write — restart claims cleanly with one request_id/claim_id (6.621959ms)
+    ✔ boundary: receipt written but request never reached the server — restart reuses the recorded request_id and creates exactly one claim (4.075375ms)
+    ✔ boundary: server committed the claim but the response was lost — restart replays and the server never creates a second claim (5.31725ms)
+    ✔ boundary: receipt already carried claim_id (full completion) — a repeat claim never creates a second server-side claim (6.653875ms)
+  ✖ kill/restart boundaries converge to exactly one Claim (22.805666ms)
+  ▶ stale mcp-session-id recovery
+    ✔ re-initializes exactly once and replays the pending claim exactly once (no second lease) (7.800708ms)
+    ✔ a second consecutive stale session surfaces an error instead of looping forever (5.639334ms)
+  ✔ stale mcp-session-id recovery (13.515708ms)
+  ▶ two bridge processes sharing one KAOLA_HOME
+    ✔ claiming the same task from two processes serializes on the receipt: exactly one server-side claim (349.822791ms)
+  ✔ two bridge processes sharing one KAOLA_HOME (349.921291ms)
+  ▶ different tasks and different server origins coexist without interference
+    ✔ separate receipt files with correct isolated content, no cross-contamination (9.841834ms)
+  ✔ different tasks and different server origins coexist without interference (9.907417ms)
+  ▶ receipt corruption and mismatch fail safely
+    ✔ truncated JSON at the receipt path does not crash the bridge and leaves unrelated receipts untouched (8.017667ms)
+    ✔ garbage bytes at the receipt path does not crash the bridge and leaves unrelated receipts untouched (6.886ms)
+    ✔ wrong shape (array) at the receipt path does not crash the bridge and leaves unrelated receipts untouched (7.914667ms)
+    ✔ wrong shape (missing fields) at the receipt path does not crash the bridge and leaves unrelated receipts untouched (6.459083ms)
+    ✔ a receipt whose internal server/task_id do not match the lookup key is treated as unusable, not blindly trusted (2.403875ms)
+  ✔ receipt corruption and mismatch fail safely (31.821208ms)
+  ▶ secret scan across a full claim + report_progress + submit_pr cycle
+    ✔ KAOLA_HOME files, stderr, and the receipt field allowlist have zero hits of forge token / auth-shaped value / device private key / task description / decoy prompt fields (6.016417ms)
+  ✔ secret scan across a full claim + report_progress + submit_pr cycle (6.071208ms)
+  ▶ non-tool JSON-RPC methods and unknown tools pass through unmodified
+    ✔ initialize, tools/list, ping, a notification, and an unknown method are forwarded and returned structurally unmodified (7.940042ms)
+    ✔ an unknown tool name inside tools/call is forwarded with its arguments unmodified (1.311042ms)
+  ✔ non-tool JSON-RPC methods and unknown tools pass through unmodified (9.309834ms)
+✖ kaola-mcp Claim recovery receipt (Issue #32) (508.1265ms)
+ℹ tests 26
+ℹ suites 13
+ℹ pass 23
+ℹ fail 3
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 658.812666
+
+✖ failing tests:
+
+test at apps/mcp/src/claim-receipt.test.ts:505:5
+✖ writes an atomic pre-claim receipt with request_id BEFORE the request, then records claim_id after success (23.383916ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + null
+  - 'clm_1_kt-happy'
+  
+      at assertReceiptShape (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/mcp/src/claim-receipt.test.ts:424:47)
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/mcp/src/claim-receipt.test.ts:525:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: null,
+    expected: 'clm_1_kt-happy',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/mcp/src/claim-receipt.test.ts:582:5
+✖ report_progress, release_task and submit_pr get claim_id injected from a persisted receipt, even from a fresh process with no in-memory state (12.159459ms)
+  AssertionError [ERR_ASSERTION]: report_progress must carry the recorded claim_id
+  + actual - expected
+  
+  + undefined
+  - 'clm_1_kt-mutate'
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/mcp/src/claim-receipt.test.ts:609:16)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: 'clm_1_kt-mutate',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/mcp/src/claim-receipt.test.ts:640:5
+✖ boundary: killed before any receipt write — restart claims cleanly with one request_id/claim_id (6.621959ms)
+  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+  
+    assert.ok(receipt.claim_id)
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/mcp/src/claim-receipt.test.ts:660:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: null,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }

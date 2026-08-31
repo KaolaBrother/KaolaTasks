@@ -1,0 +1,318 @@
+▶ Issue #33 workflow-target.ts — pure Workflow-target mapping (no I/O)
+  ✖ apps/server/src/workflow-target.ts must exist and export workflowTargetForTask as a function (0.864291ms)
+  ✖ github imported: an imported Task's existing issue_url becomes an available Workflow target, never contains a token, and is JSON-serializable (149.121666ms)
+  ✖ gitlab subgroup-namespace imported: an imported Task's existing issue_url becomes an available Workflow target, never contains a token, and is JSON-serializable (0.210042ms)
+  ✖ gitea imported: an imported Task's existing issue_url becomes an available Workflow target, never contains a token, and is JSON-serializable (0.10625ms)
+  ✖ github native: a native Task gets an issue-less project named from the Task id, marked advisory-unavailable with the measured reason and Workflow snapshot identity (0.119625ms)
+  ✖ gitlab subgroup-namespace native: a native Task gets an issue-less project named from the Task id, marked advisory-unavailable with the measured reason and Workflow snapshot identity (0.085959ms)
+  ✖ gitea native: a native Task gets an issue-less project named from the Task id, marked advisory-unavailable with the measured reason and Workflow snapshot identity (0.15825ms)
+  ✖ workflowTargetForTask performs zero forge calls and therefore creates no forge Issue, for every imported/native fixture across github, gitlab (subgroup namespace) and gitea (0.322125ms)
+✖ Issue #33 workflow-target.ts — pure Workflow-target mapping (no I/O) (151.874584ms)
+▶ Issue #33 MCP contract text — initialize instructions and tool surface
+  ✖ initialize result.instructions states the subtraction-first default: no explicit Runner request means the current Agent runs Kaola Workflow directly (107.157208ms)
+  ✖ initialize instructions state a missing/unrecognized Workflow capability is advisory evidence for Agent judgment, not a hard gate (48.027292ms)
+  ✔ tools/list still returns exactly six tools; none gains a carrier/runner/execution/capability-shaped input field (43.482459ms)
+  ✖ claim_task description drops "one-shot"/一次性 wording and instead names a repository credential whose lease-expiry revocation never touches the forge token itself (37.923958ms)
+✖ Issue #33 MCP contract text — initialize instructions and tool surface (236.84325ms)
+▶ Issue #33 docs/workflow-default.md — client guidance the implementer must add
+  ✖ docs/workflow-default.md must exist and state the Workflow-direct default (Runner only on explicit request) (0.203959ms)
+  ✖ docs/workflow-default.md must document compensation before durable work exists, preservation after work exists, and forward-only behavior after PR creation (0.086708ms)
+  ✖ docs/workflow-default.md must document the measured issue-less-project fallback, citing the measured reason and snapshot identity rather than assuming support (0.065416ms)
+  ✖ docs/workflow-default.md contains no token-shaped text (0.046333ms)
+✖ Issue #33 docs/workflow-default.md — client guidance the implementer must add (0.45675ms)
+▶ Issue #33 token scan — fixtures this suite adds carry no token-shaped material
+  ✔ every workflow-target fixture brief (imported/native across github, gitlab-subgroup, gitea) is token-free (0.209917ms)
+  ✖ every computed WorkflowTarget for those fixtures is token-free (0.189791ms)
+✖ Issue #33 token scan — fixtures this suite adds carry no token-shaped material (0.436917ms)
+ℹ tests 18
+ℹ suites 4
+ℹ pass 2
+ℹ fail 16
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 880.823708
+
+✖ failing tests:
+
+test at apps/server/src/workflow-default.test.ts:230:3
+✖ apps/server/src/workflow-target.ts must exist and export workflowTargetForTask as a function (0.864291ms)
+  Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/workflow-target.ts' imported from /Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/workflow-default.test.ts
+      at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+      at moduleResolve (node:internal/modules/esm/resolve:865:10)
+      at defaultResolve (node:internal/modules/esm/resolve:992:11)
+      at #cachedDefaultResolve (node:internal/modules/esm/loader:701:20)
+      at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:721:38)
+      at ModuleLoader.resolveSync (node:internal/modules/esm/loader:759:56)
+      at #resolve (node:internal/modules/esm/loader:683:17)
+      at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:603:35)
+      at onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:632:32)
+      at TracingChannel.tracePromise (node:diagnostics_channel:362:14) {
+    code: 'ERR_MODULE_NOT_FOUND',
+    url: 'file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/workflow-target.ts'
+  }
+
+test at apps/server/src/workflow-default.test.ts:240:5
+✖ github imported: an imported Task's existing issue_url becomes an available Workflow target, never contains a token, and is JSON-serializable (149.121666ms)
+  Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/workflow-target.ts' imported from /Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/workflow-default.test.ts
+      at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+      at moduleResolve (node:internal/modules/esm/resolve:865:10)
+      at defaultResolve (node:internal/modules/esm/resolve:992:11)
+      at #cachedDefaultResolve (node:internal/modules/esm/loader:701:20)
+      at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:721:38)
+      at ModuleLoader.resolveSync (node:internal/modules/esm/loader:759:56)
+      at #resolve (node:internal/modules/esm/loader:683:17)
+      at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:603:35)
+      at onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:632:32)
+      at TracingChannel.tracePromise (node:diagnostics_channel:362:14) {
+    code: 'ERR_MODULE_NOT_FOUND',
+    url: 'file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/workflow-target.ts'
+  }
+
+test at apps/server/src/workflow-default.test.ts:240:5
+✖ gitlab subgroup-namespace imported: an imported Task's existing issue_url becomes an available Workflow target, never contains a token, and is JSON-serializable (0.210042ms)
+  Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/workflow-target.ts' imported from /Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/workflow-default.test.ts
+      at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+      at moduleResolve (node:internal/modules/esm/resolve:865:10)
+      at defaultResolve (node:internal/modules/esm/resolve:992:11)
+      at #cachedDefaultResolve (node:internal/modules/esm/loader:701:20)
+      at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:721:38)
+      at ModuleLoader.resolveSync (node:internal/modules/esm/loader:759:56)
+      at #resolve (node:internal/modules/esm/loader:683:17)
+      at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:603:35)
+      at onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:632:32)
+      at TracingChannel.tracePromise (node:diagnostics_channel:362:14) {
+    code: 'ERR_MODULE_NOT_FOUND',
+    url: 'file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/workflow-target.ts'
+  }
+
+test at apps/server/src/workflow-default.test.ts:240:5
+✖ gitea imported: an imported Task's existing issue_url becomes an available Workflow target, never contains a token, and is JSON-serializable (0.10625ms)
+  Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/workflow-target.ts' imported from /Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/workflow-default.test.ts
+      at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+      at moduleResolve (node:internal/modules/esm/resolve:865:10)
+      at defaultResolve (node:internal/modules/esm/resolve:992:11)
+      at #cachedDefaultResolve (node:internal/modules/esm/loader:701:20)
+      at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:721:38)
+      at ModuleLoader.resolveSync (node:internal/modules/esm/loader:759:56)
+      at #resolve (node:internal/modules/esm/loader:683:17)
+      at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:603:35)
+      at onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:632:32)
+      at TracingChannel.tracePromise (node:diagnostics_channel:362:14) {
+    code: 'ERR_MODULE_NOT_FOUND',
+    url: 'file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/workflow-target.ts'
+  }
+
+test at apps/server/src/workflow-default.test.ts:258:5
+✖ github native: a native Task gets an issue-less project named from the Task id, marked advisory-unavailable with the measured reason and Workflow snapshot identity (0.119625ms)
+  Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/workflow-target.ts' imported from /Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/workflow-default.test.ts
+      at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+      at moduleResolve (node:internal/modules/esm/resolve:865:10)
+      at defaultResolve (node:internal/modules/esm/resolve:992:11)
+      at #cachedDefaultResolve (node:internal/modules/esm/loader:701:20)
+      at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:721:38)
+      at ModuleLoader.resolveSync (node:internal/modules/esm/loader:759:56)
+      at #resolve (node:internal/modules/esm/loader:683:17)
+      at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:603:35)
+      at onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:632:32)
+      at TracingChannel.tracePromise (node:diagnostics_channel:362:14) {
+    code: 'ERR_MODULE_NOT_FOUND',
+    url: 'file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/workflow-target.ts'
+  }
+
+test at apps/server/src/workflow-default.test.ts:258:5
+✖ gitlab subgroup-namespace native: a native Task gets an issue-less project named from the Task id, marked advisory-unavailable with the measured reason and Workflow snapshot identity (0.085959ms)
+  Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/workflow-target.ts' imported from /Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/workflow-default.test.ts
+      at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+      at moduleResolve (node:internal/modules/esm/resolve:865:10)
+      at defaultResolve (node:internal/modules/esm/resolve:992:11)
+      at #cachedDefaultResolve (node:internal/modules/esm/loader:701:20)
+      at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:721:38)
+      at ModuleLoader.resolveSync (node:internal/modules/esm/loader:759:56)
+      at #resolve (node:internal/modules/esm/loader:683:17)
+      at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:603:35)
+      at onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:632:32)
+      at TracingChannel.tracePromise (node:diagnostics_channel:362:14) {
+    code: 'ERR_MODULE_NOT_FOUND',
+    url: 'file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/workflow-target.ts'
+  }
+
+test at apps/server/src/workflow-default.test.ts:258:5
+✖ gitea native: a native Task gets an issue-less project named from the Task id, marked advisory-unavailable with the measured reason and Workflow snapshot identity (0.15825ms)
+  Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/workflow-target.ts' imported from /Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/workflow-default.test.ts
+      at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+      at moduleResolve (node:internal/modules/esm/resolve:865:10)
+      at defaultResolve (node:internal/modules/esm/resolve:992:11)
+      at #cachedDefaultResolve (node:internal/modules/esm/loader:701:20)
+      at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:721:38)
+      at ModuleLoader.resolveSync (node:internal/modules/esm/loader:759:56)
+      at #resolve (node:internal/modules/esm/loader:683:17)
+      at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:603:35)
+      at onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:632:32)
+      at TracingChannel.tracePromise (node:diagnostics_channel:362:14) {
+    code: 'ERR_MODULE_NOT_FOUND',
+    url: 'file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/workflow-target.ts'
+  }
+
+test at apps/server/src/workflow-default.test.ts:294:3
+✖ workflowTargetForTask performs zero forge calls and therefore creates no forge Issue, for every imported/native fixture across github, gitlab (subgroup namespace) and gitea (0.322125ms)
+  Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/workflow-target.ts' imported from /Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/workflow-default.test.ts
+      at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+      at moduleResolve (node:internal/modules/esm/resolve:865:10)
+      at defaultResolve (node:internal/modules/esm/resolve:992:11)
+      at #cachedDefaultResolve (node:internal/modules/esm/loader:701:20)
+      at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:721:38)
+      at ModuleLoader.resolveSync (node:internal/modules/esm/loader:759:56)
+      at #resolve (node:internal/modules/esm/loader:683:17)
+      at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:603:35)
+      at onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:632:32)
+      at TracingChannel.tracePromise (node:diagnostics_channel:362:14) {
+    code: 'ERR_MODULE_NOT_FOUND',
+    url: 'file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/workflow-target.ts'
+  }
+
+test at apps/server/src/workflow-default.test.ts:437:3
+✖ initialize result.instructions states the subtraction-first default: no explicit Runner request means the current Agent runs Kaola Workflow directly (107.157208ms)
+  AssertionError [ERR_ASSERTION]: initialize result must carry a non-empty string "instructions" field: {"protocolVersion":"2025-11-25","capabilities":{"tools":{"listChanged":true}},"serverInfo":{"name":"kaola-tasks","version":"0.0.0"}}
+  + actual - expected
+  
+  + 'undefined'
+  - 'string'
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/workflow-default.test.ts:442:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'string',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/workflow-default.test.ts:464:3
+✖ initialize instructions state a missing/unrecognized Workflow capability is advisory evidence for Agent judgment, not a hard gate (48.027292ms)
+  AssertionError [ERR_ASSERTION]: instructions must state Workflow/Runner capability observations are advisory: 
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/workflow-default.test.ts:469:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: '',
+    expected: /advisory/i,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at apps/server/src/workflow-default.test.ts:505:3
+✖ claim_task description drops "one-shot"/一次性 wording and instead names a repository credential whose lease-expiry revocation never touches the forge token itself (37.923958ms)
+  AssertionError [ERR_ASSERTION]: claim_task description must drop the misleading "one-shot" wording (Issue #30 correction): Claim a task and receive a one-shot forge token. token 请通过环境变量或 git -c http.extraHeader 按次传递，不要写入 remote URL（会落盘到 .git/config）。 When the human instructed this claim, omit autonomous. Set autonomous: true when the Agent discovered and initiated this claim itself (not on human instruction) — an untrusted user may then need to confirm it in the web UI before a token is issued. Optional request_id makes retries of the same claim attempt idempotent: replaying the same (device, request_id) returns the same claim_id and credential instead of erroring.
+  
+  true !== false
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/workflow-default.test.ts:514:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: false,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/workflow-default.test.ts:543:3
+✖ docs/workflow-default.md must exist and state the Workflow-direct default (Runner only on explicit request) (0.203959ms)
+  Error: ENOENT: no such file or directory, open '/Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/docs/workflow-default.md'
+      at readFileSync (node:fs:441:20)
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/workflow-default.test.ts:544:18)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1325:25)
+      at Test.start (node:internal/test_runner/test:1191:17)
+      at node:internal/test_runner/test:1792:71
+      at node:internal/per_context/primordials:466:82
+      at new Promise (<anonymous>)
+      at new SafePromise (node:internal/per_context/primordials:435:3)
+      at node:internal/per_context/primordials:466:9 {
+    errno: -2,
+    code: 'ENOENT',
+    syscall: 'open',
+    path: '/Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/docs/workflow-default.md'
+  }
+
+test at apps/server/src/workflow-default.test.ts:550:3
+✖ docs/workflow-default.md must document compensation before durable work exists, preservation after work exists, and forward-only behavior after PR creation (0.086708ms)
+  Error: ENOENT: no such file or directory, open '/Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/docs/workflow-default.md'
+      at readFileSync (node:fs:441:20)
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/workflow-default.test.ts:551:18)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1325:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:911:18)
+      at Test.postRun (node:internal/test_runner/test:1465:19)
+      at Test.run (node:internal/test_runner/test:1390:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7) {
+    errno: -2,
+    code: 'ENOENT',
+    syscall: 'open',
+    path: '/Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/docs/workflow-default.md'
+  }
+
+test at apps/server/src/workflow-default.test.ts:557:3
+✖ docs/workflow-default.md must document the measured issue-less-project fallback, citing the measured reason and snapshot identity rather than assuming support (0.065416ms)
+  Error: ENOENT: no such file or directory, open '/Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/docs/workflow-default.md'
+      at readFileSync (node:fs:441:20)
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/workflow-default.test.ts:558:18)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1325:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:911:18)
+      at Test.postRun (node:internal/test_runner/test:1465:19)
+      at Test.run (node:internal/test_runner/test:1390:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    errno: -2,
+    code: 'ENOENT',
+    syscall: 'open',
+    path: '/Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/docs/workflow-default.md'
+  }
+
+test at apps/server/src/workflow-default.test.ts:569:3
+✖ docs/workflow-default.md contains no token-shaped text (0.046333ms)
+  Error: ENOENT: no such file or directory, open '/Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/docs/workflow-default.md'
+      at readFileSync (node:fs:441:20)
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/workflow-default.test.ts:570:18)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1325:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:911:18)
+      at Test.postRun (node:internal/test_runner/test:1465:19)
+      at Test.run (node:internal/test_runner/test:1390:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    errno: -2,
+    code: 'ENOENT',
+    syscall: 'open',
+    path: '/Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/docs/workflow-default.md'
+  }
+
+test at apps/server/src/workflow-default.test.ts:584:3
+✖ every computed WorkflowTarget for those fixtures is token-free (0.189791ms)
+  Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/workflow-target.ts' imported from /Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/workflow-default.test.ts
+      at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+      at moduleResolve (node:internal/modules/esm/resolve:865:10)
+      at defaultResolve (node:internal/modules/esm/resolve:992:11)
+      at #cachedDefaultResolve (node:internal/modules/esm/loader:701:20)
+      at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:721:38)
+      at ModuleLoader.resolveSync (node:internal/modules/esm/loader:759:56)
+      at #resolve (node:internal/modules/esm/loader:683:17)
+      at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:603:35)
+      at onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:632:32)
+      at TracingChannel.tracePromise (node:diagnostics_channel:362:14) {
+    code: 'ERR_MODULE_NOT_FOUND',
+    url: 'file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/workflow-target.ts'
+  }

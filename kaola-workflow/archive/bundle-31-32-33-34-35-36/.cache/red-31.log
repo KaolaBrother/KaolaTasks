@@ -1,0 +1,1869 @@
+=== RED: node --experimental-strip-types --test apps/server/src/claim-fencing.test.ts ===
+baseline commit: 8a49a63477115f998f24e1ff989ab7d709bddd22
+
+▶ issue #31 claim fencing
+  ▶ parsePrUrl (packages/forge-adapters) — pure fixture table
+    ✖ @kaola/forge-adapters exports parsePrUrl(kind, prUrl): { full_name } | undefined (1.711125ms)
+    ✖ github: base, trailing slash, query string, and fragment all resolve to the same repo full_name (0.107792ms)
+    ✖ gitlab: a subgroup MR URL (base, trailing slash, query string, fragment) resolves to the full nested namespace (0.095125ms)
+    ✖ gitea: base, trailing slash, query string, and fragment all resolve to the same repo full_name (0.19175ms)
+    ✖ unparseable garbage (not a URL, wrong path shape, or a bare .git repo URL with no pull/MR segment) resolves to undefined, never throws (0.184166ms)
+  ✖ parsePrUrl (packages/forge-adapters) — pure fixture table (2.833042ms)
+  ▶ new-style Claim (request_id present) requires claim_id — omitting it is refused before any write
+    ✖ REST progress without claim_id: 400 claim_id_required, lease heartbeat untouched, no 心跳 event (183.19725ms)
+    ✖ REST release without claim_id: 400 claim_id_required, lease stays active, task stays 进行中 (51.13375ms)
+    ✖ MCP report_progress without claim_id: isError claim_id_required, no 心跳 event (60.642416ms)
+    ✖ MCP release_task without claim_id: isError claim_id_required, lease stays active (50.737291ms)
+    ✖ MCP submit_pr without claim_id: isError claim_id_required, task stays 进行中, no submission row (55.07225ms)
+  ✖ new-style Claim (request_id present) requires claim_id — omitting it is refused before any write (401.2015ms)
+  ▶ legacy Claim (no request_id) still accepts an omitted claim_id
+    ✔ REST progress and release succeed for a legacy Claim with no claim_id in the body (48.99025ms)
+    ✔ MCP report_progress, release_task, and submit_pr succeed for a legacy Claim with no claim_id (59.868333ms)
+  ✔ legacy Claim (no request_id) still accepts an omitted claim_id (109.065292ms)
+  ▶ wrong claim_id is a typed stale_claim — refused before any write
+    ✖ REST progress with a garbage claim_id: 409 stale_claim, lease heartbeat untouched (49.22675ms)
+    ✖ REST release with a garbage claim_id: 409 stale_claim, lease stays active (58.509625ms)
+    ✖ MCP submit_pr with a garbage claim_id: isError stale_claim, task stays 进行中, no submission row (59.006916ms)
+  ✖ wrong claim_id is a typed stale_claim — refused before any write (167.245042ms)
+  ▶ an old (now-terminal) claim_id cannot act on a newer Claim on the same task
+    ✖ the old claim_id cannot heartbeat the newer Claim (58.438792ms)
+    ✖ the old claim_id cannot release the newer Claim (47.933458ms)
+    ✖ the old claim_id cannot submit a PR against the newer Claim (50.890541ms)
+  ✖ an old (now-terminal) claim_id cannot act on a newer Claim on the same task (157.476833ms)
+  ▶ exact-device fencing — the deliberate legacy tightening (ownerMatchesLease now also checks leases.device_id)
+    ✖ ISSUE #31 LEGACY TIGHTENING: a second device bound to the SAME owner can no longer heartbeat or release a legacy Claim it does not hold (46.607417ms)
+    ✖ a different device presenting the correct (copied) claim_id for a new-style Claim is still rejected — claim_id alone is not device proof (43.923167ms)
+  ✖ exact-device fencing — the deliberate legacy tightening (ownerMatchesLease now also checks leases.device_id) (90.77925ms)
+  ▶ idempotent release — repeating release for an already-terminal Claim returns the same result, no duplicate transition/audit
+    ✖ new-style Claim: releasing twice with the same claim_id is idempotent, not a 409 (41.880416ms)
+    ✖ legacy Claim: releasing twice in a row (no claim_id) is idempotent, not a 409 (41.541208ms)
+  ✖ idempotent release — repeating release for an already-terminal Claim returns the same result, no duplicate transition/audit (83.5665ms)
+  ▶ report_progress is one transaction with its 心跳 audit
+    ✖ failure injection: a failing 心跳 audit write leaves the lease heartbeat exactly as it was before the call (46.045417ms)
+  ✖ report_progress is one transaction with its 心跳 audit (46.197625ms)
+  ▶ release_task is one transaction with the lease release, the task update, and the 状态迁移 audit
+    ✖ failure injection: a failing 状态迁移 audit write rolls back the lease release and the task update (41.641667ms)
+    ✖ failure injection: a failing task-status update rolls back the lease release that preceded it (44.226042ms)
+  ✖ release_task is one transaction with the lease release, the task update, and the 状态迁移 audit (86.072167ms)
+  ▶ the expiry sweep is one transaction per lease — no reachable 进行中 task with no active lease
+    ✖ failure injection: a failing task-status update leaves the lease still active and the task still 进行中 (never both expired-lease + 进行中) (46.439709ms)
+    ✖ failure injection: a failing 状态迁移 audit write leaves the lease still active and the task still 进行中 (47.728ms)
+  ✖ the expiry sweep is one transaction per lease — no reachable 进行中 task with no active lease (94.427042ms)
+  ▶ submit_pr is one transaction with the lease release, the task update, the submissions insert, and the 状态迁移 audit
+    ✖ failure injection: a failing submissions insert rolls back the lease release and the task update (51.524625ms)
+    ✖ failure injection: a failing 状态迁移 audit write rolls back the lease release, the task update, and the submissions insert (49.479666ms)
+  ✖ submit_pr is one transaction with the lease release, the task update, the submissions insert, and the 状态迁移 audit (101.171583ms)
+  ▶ one submission per Claim (a unique index on submissions.lease_id)
+    ✖ the schema enforces a unique index on submissions.lease_id — two raw inserts with the same lease_id must conflict (1.054583ms)
+    ✖ repeating submit_pr with the same Claim and the same pr_url is idempotent — one submission row, same response (50.942625ms)
+    ✔ repeating submit_pr with the same Claim but a DIFFERENT pr_url is a typed conflict, and the original submission is untouched (60.65725ms)
+  ✖ one submission per Claim (a unique index on submissions.lease_id) (112.789792ms)
+  ▶ a submitted PR/MR URL must belong to the Task repository — rejected before any mutation
+    ✖ github: a PR URL for a different repo is rejected, task stays 进行中, no submission row (49.6765ms)
+    ✖ gitlab (subgroup repo): an MR URL for a different subgroup repo is rejected, task stays 进行中, no submission row (50.072458ms)
+    ✖ gitea: a PR URL for a different repo is rejected, task stays 进行中, no submission row (52.782375ms)
+    ✖ an unparseable pr_url is rejected before any mutation (56.53825ms)
+  ✖ a submitted PR/MR URL must belong to the Task repository — rejected before any mutation (209.33325ms)
+  ▶ no duplicate PR across tasks — a pr_url already held by another LIVE submission is a typed conflict
+    ✖ a second task cannot submit a pr_url already held by another live (open) submission, before any state change (74.015ms)
+    ✔ once the first task's submission is terminal (merged), a second task may reuse the same pr_url (74.251166ms)
+  ✖ no duplicate PR across tasks — a pr_url already held by another LIVE submission is a typed conflict (148.414125ms)
+  ▶ canonicalization — the stored pr_url absorbs decoration, proven via idempotent matching across variants
+    ✖ gitea: trailing slash, query string, and a /commits suffix all resolve to the same stored canonical pr_url (65.575833ms)
+    ✖ github: trailing slash, fragment, and a /files suffix all resolve to the same stored canonical pr_url (63.098792ms)
+    ✖ gitlab (subgroup): trailing slash, query string, and fragment all resolve to the same stored canonical pr_url (55.999084ms)
+  ✖ canonicalization — the stored pr_url absorbs decoration, proven via idempotent matching across variants (185.03575ms)
+  ▶ canonicalization round trip — webhook delivery of a real forge-shaped (bare) URL still matches the stored value
+    ✖ gitea: a webhook delivery carrying the bare PR URL matches the canonical stored value and completes the task (51.971542ms)
+    ✖ github: a webhook delivery carrying the bare PR URL matches the canonical stored value and completes the task (48.293083ms)
+    ✖ gitlab: a webhook delivery carrying the bare MR URL matches the canonical stored value and completes the task (50.83325ms)
+  ✖ canonicalization round trip — webhook delivery of a real forge-shaped (bare) URL still matches the stored value (151.297583ms)
+  ▶ canonicalization round trip — the poller resolves the canonical stored value against the real PR/MR API
+    ✖ gitea: the poller resolves the stored canonical pr_url and completes a merged PR (44.919959ms)
+    ✖ github: the poller resolves the stored canonical pr_url and completes a merged PR (42.220125ms)
+    ✖ gitlab (subgroup): the poller resolves the stored canonical MR url and completes a merged MR (39.742625ms)
+  ✖ canonicalization round trip — the poller resolves the canonical stored value against the real PR/MR API (127.042292ms)
+✖ issue #31 claim fencing (2275.060458ms)
+ℹ tests 47
+ℹ suites 18
+ℹ pass 4
+ℹ fail 43
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2944.184292
+
+✖ failing tests:
+
+test at apps/server/src/claim-fencing.test.ts:644:5
+✖ @kaola/forge-adapters exports parsePrUrl(kind, prUrl): { full_name } | undefined (1.711125ms)
+  AssertionError [ERR_ASSERTION]: packages/forge-adapters/src/index.ts must export parsePrUrl, analogous to the existing exported parseIssueUrl
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:645:14)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1325:25)
+      at Test.start (node:internal/test_runner/test:1191:17)
+      at node:internal/test_runner/test:1792:71
+      at node:internal/per_context/primordials:466:82
+      at new Promise (<anonymous>)
+      at new SafePromise (node:internal/per_context/primordials:435:3)
+      at node:internal/per_context/primordials:466:9
+      at Array.map (<anonymous>) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-fencing.test.ts:652:5
+✖ github: base, trailing slash, query string, and fragment all resolve to the same repo full_name (0.107792ms)
+  TypeError: parsePrUrl is not a function
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:656:24)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1325:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:911:18)
+      at Test.postRun (node:internal/test_runner/test:1465:19)
+      at Test.run (node:internal/test_runner/test:1390:12)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+
+test at apps/server/src/claim-fencing.test.ts:661:5
+✖ gitlab: a subgroup MR URL (base, trailing slash, query string, fragment) resolves to the full nested namespace (0.095125ms)
+  TypeError: parsePrUrl is not a function
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:665:24)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1325:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:911:18)
+      at Test.postRun (node:internal/test_runner/test:1465:19)
+      at Test.run (node:internal/test_runner/test:1390:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7)
+
+test at apps/server/src/claim-fencing.test.ts:670:5
+✖ gitea: base, trailing slash, query string, and fragment all resolve to the same repo full_name (0.19175ms)
+  TypeError: parsePrUrl is not a function
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:674:24)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1325:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:911:18)
+      at Test.postRun (node:internal/test_runner/test:1465:19)
+      at Test.run (node:internal/test_runner/test:1390:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7)
+
+test at apps/server/src/claim-fencing.test.ts:679:5
+✖ unparseable garbage (not a URL, wrong path shape, or a bare .git repo URL with no pull/MR segment) resolves to undefined, never throws (0.184166ms)
+  AssertionError [ERR_ASSERTION]: Got unwanted exception: parsePrUrl(github, not a url at all) must not throw
+  Actual message: "parsePrUrl is not a function"
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:691:16)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1325:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:911:18)
+      at Test.postRun (node:internal/test_runner/test:1465:19)
+      at Test.run (node:internal/test_runner/test:1390:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: TypeError: parsePrUrl is not a function
+        at file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:691:35
+        at getActual (node:assert:611:5)
+        at strict.doesNotThrow (node:assert:779:32)
+        at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:691:16)
+        at Test.runInAsyncScope (node:async_hooks:227:14)
+        at Test.run (node:internal/test_runner/test:1325:25)
+        at Suite.processPendingSubtests (node:internal/test_runner/test:911:18)
+        at Test.postRun (node:internal/test_runner/test:1465:19)
+        at Test.run (node:internal/test_runner/test:1390:12)
+        at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7),
+    expected: undefined,
+    operator: 'doesNotThrow',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-fencing.test.ts:698:5
+✖ REST progress without claim_id: 400 claim_id_required, lease heartbeat untouched, no 心跳 event (183.19725ms)
+  AssertionError [ERR_ASSERTION]: expected 400, got 200 {"task":{"id":"kt-2026-0001","title":"progress-needs-claim-id","description_md":"……（Markdown 详述）","source":{"type":"native"},"repo":{"forge":"gitea","base_url":"https://gitea.forge.example.test","full_name":"team/orders","base_branch":"main","suggested_dir":"orders"},"acceptance_criteria":["GET /api/orders/export 支持 page/page_size 参数"],"test_command":"pnpm test","constraints":{"allowed_paths":["src/api/**"],"forbidden_paths":["migrations/**"]},"pr_convention":{"branch_prefix":"kaola/kt-2026-0001-","title_prefix":"[kt-2026-0001] "},"credential":{"inline":true},"priority":"P1","tags":["backend"],"poster":"kaola-admin","status":"进行中","created_at":"2026-08-31T10:27:57.000Z"},"lease":{"expires_at":"2026-09-01T10:27:57.000Z","ttl_seconds":86400}}
+  
+  200 !== 400
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:707:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 200,
+    expected: 400,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-fencing.test.ts:716:5
+✖ REST release without claim_id: 400 claim_id_required, lease stays active, task stays 进行中 (51.13375ms)
+  AssertionError [ERR_ASSERTION]: expected 400, got 200 {"task":{"id":"kt-2026-0001","title":"release-needs-claim-id","description_md":"……（Markdown 详述）","source":{"type":"native"},"repo":{"forge":"gitea","base_url":"https://gitea.forge.example.test","full_name":"team/orders","base_branch":"main","suggested_dir":"orders"},"acceptance_criteria":["GET /api/orders/export 支持 page/page_size 参数"],"test_command":"pnpm test","constraints":{"allowed_paths":["src/api/**"],"forbidden_paths":["migrations/**"]},"pr_convention":{"branch_prefix":"kaola/kt-2026-0001-","title_prefix":"[kt-2026-0001] "},"credential":{"inline":true},"priority":"P1","tags":["backend"],"poster":"kaola-admin","status":"待认领","created_at":"2026-08-31T10:27:57.000Z"}}
+  
+  200 !== 400
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:723:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 200,
+    expected: 400,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-fencing.test.ts:733:5
+✖ MCP report_progress without claim_id: isError claim_id_required, no 心跳 event (60.642416ms)
+  AssertionError [ERR_ASSERTION]: expected isError true, got: {"content":[{"type":"text","text":"{\"task\":{\"id\":\"kt-2026-0001\",\"title\":\"mcp-progress-needs-claim-id\",\"description_md\":\"……（Markdown 详述）\",\"source\":{\"type\":\"native\"},\"repo\":{\"forge\":\"gitea\",\"base_url\":\"https://gitea.forge.example.test\",\"full_name\":\"team/orders\",\"base_branch\":\"main\",\"suggested_dir\":\"orders\"},\"acceptance_criteria\":[\"GET /api/orders/export 支持 page/page_size 参数\"],\"test_command\":\"pnpm test\",\"constraints\":{\"allowed_paths\":[\"src/api/**\"],\"forbidden_paths\":[\"migrations/**\"]},\"pr_convention\":{\"branch_prefix\":\"kaola/kt-2026-0001-\",\"title_prefix\":\"[kt-2026-0001] \"},\"credential\":{\"inline\":true},\"priority\":\"P1\",\"tags\":[\"backend\"],\"poster\":\"kaola-admin\",\"status\":\"进行中\",\"created_at\":\"2026-08-31T10:27:57.000Z\"},\"lease\":{\"expires_at\":\"2026-09-01T10:27:57.000Z\",\"ttl_seconds\":86400}}"}],"structuredContent":{"task":{"id":"kt-2026-0001","title":"mcp-progress-needs-claim-id","description_md":"……（Markdown 详述）","source":{"type":"native"},"repo":{"forge":"gitea","base_url":"https://gitea.forge.example.test","full_name":"team/orders","base_branch":"main","suggested_dir":"orders"},"acceptance_criteria":["GET /api/orders/export 支持 page/page_size 参数"],"test_command":"pnpm test","constraints":{"allowed_paths":["src/api/**"],"forbidden_paths":["migrations/**"]},"pr_convention":{"branch_prefix":"kaola/kt-2026-0001-","title_prefix":"[kt-2026-0001] "},"credential":{"inline":true},"priority":"P1","tags":["backend"],"poster":"kaola-admin","status":"进行中","created_at":"2026-08-31T10:27:57.000Z"},"lease":{"expires_at":"2026-09-01T10:27:57.000Z","ttl_seconds":86400}}}
+  + actual - expected
+  
+  + undefined
+  - true
+  
+      at assertToolError (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:438:10)
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:740:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-fencing.test.ts:746:5
+✖ MCP release_task without claim_id: isError claim_id_required, lease stays active (50.737291ms)
+  AssertionError [ERR_ASSERTION]: expected isError true, got: {"content":[{"type":"text","text":"{\"task\":{\"id\":\"kt-2026-0001\",\"title\":\"mcp-release-needs-claim-id\",\"description_md\":\"……（Markdown 详述）\",\"source\":{\"type\":\"native\"},\"repo\":{\"forge\":\"gitea\",\"base_url\":\"https://gitea.forge.example.test\",\"full_name\":\"team/orders\",\"base_branch\":\"main\",\"suggested_dir\":\"orders\"},\"acceptance_criteria\":[\"GET /api/orders/export 支持 page/page_size 参数\"],\"test_command\":\"pnpm test\",\"constraints\":{\"allowed_paths\":[\"src/api/**\"],\"forbidden_paths\":[\"migrations/**\"]},\"pr_convention\":{\"branch_prefix\":\"kaola/kt-2026-0001-\",\"title_prefix\":\"[kt-2026-0001] \"},\"credential\":{\"inline\":true},\"priority\":\"P1\",\"tags\":[\"backend\"],\"poster\":\"kaola-admin\",\"status\":\"待认领\",\"created_at\":\"2026-08-31T10:27:57.000Z\"}}"}],"structuredContent":{"task":{"id":"kt-2026-0001","title":"mcp-release-needs-claim-id","description_md":"……（Markdown 详述）","source":{"type":"native"},"repo":{"forge":"gitea","base_url":"https://gitea.forge.example.test","full_name":"team/orders","base_branch":"main","suggested_dir":"orders"},"acceptance_criteria":["GET /api/orders/export 支持 page/page_size 参数"],"test_command":"pnpm test","constraints":{"allowed_paths":["src/api/**"],"forbidden_paths":["migrations/**"]},"pr_convention":{"branch_prefix":"kaola/kt-2026-0001-","title_prefix":"[kt-2026-0001] "},"credential":{"inline":true},"priority":"P1","tags":["backend"],"poster":"kaola-admin","status":"待认领","created_at":"2026-08-31T10:27:57.000Z"}}}
+  + actual - expected
+  
+  + undefined
+  - true
+  
+      at assertToolError (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:438:10)
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:753:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-fencing.test.ts:761:5
+✖ MCP submit_pr without claim_id: isError claim_id_required, task stays 进行中, no submission row (55.07225ms)
+  AssertionError [ERR_ASSERTION]: expected isError true, got: {"content":[{"type":"text","text":"{\"task\":{\"id\":\"kt-2026-0001\",\"title\":\"mcp-submit-needs-claim-id\",\"description_md\":\"……（Markdown 详述）\",\"source\":{\"type\":\"native\"},\"repo\":{\"forge\":\"gitea\",\"base_url\":\"https://gitea.forge.example.test\",\"full_name\":\"team/orders\",\"base_branch\":\"main\",\"suggested_dir\":\"orders\"},\"acceptance_criteria\":[\"GET /api/orders/export 支持 page/page_size 参数\"],\"test_command\":\"pnpm test\",\"constraints\":{\"allowed_paths\":[\"src/api/**\"],\"forbidden_paths\":[\"migrations/**\"]},\"pr_convention\":{\"branch_prefix\":\"kaola/kt-2026-0001-\",\"title_prefix\":\"[kt-2026-0001] \"},\"credential\":{\"inline\":true},\"priority\":\"P1\",\"tags\":[\"backend\"],\"poster\":\"kaola-admin\",\"status\":\"待验收\",\"created_at\":\"2026-08-31T10:27:57.000Z\"},\"pr_url\":\"https://gitea.forge.example.test/team/orders/pulls/1\",\"summary\":\"不应成功\"}"}],"structuredContent":{"task":{"id":"kt-2026-0001","title":"mcp-submit-needs-claim-id","description_md":"……（Markdown 详述）","source":{"type":"native"},"repo":{"forge":"gitea","base_url":"https://gitea.forge.example.test","full_name":"team/orders","base_branch":"main","suggested_dir":"orders"},"acceptance_criteria":["GET /api/orders/export 支持 page/page_size 参数"],"test_command":"pnpm test","constraints":{"allowed_paths":["src/api/**"],"forbidden_paths":["migrations/**"]},"pr_convention":{"branch_prefix":"kaola/kt-2026-0001-","title_prefix":"[kt-2026-0001] "},"credential":{"inline":true},"priority":"P1","tags":["backend"],"poster":"kaola-admin","status":"待验收","created_at":"2026-08-31T10:27:57.000Z"},"pr_url":"https://gitea.forge.example.test/team/orders/pulls/1","summary":"不应成功"}}
+  + actual - expected
+  
+  + undefined
+  - true
+  
+      at assertToolError (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:438:10)
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:772:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-fencing.test.ts:815:5
+✖ REST progress with a garbage claim_id: 409 stale_claim, lease heartbeat untouched (49.22675ms)
+  AssertionError [ERR_ASSERTION]: expected 409, got 200 {"task":{"id":"kt-2026-0001","title":"progress-wrong-claim-id","description_md":"……（Markdown 详述）","source":{"type":"native"},"repo":{"forge":"gitea","base_url":"https://gitea.forge.example.test","full_name":"team/orders","base_branch":"main","suggested_dir":"orders"},"acceptance_criteria":["GET /api/orders/export 支持 page/page_size 参数"],"test_command":"pnpm test","constraints":{"allowed_paths":["src/api/**"],"forbidden_paths":["migrations/**"]},"pr_convention":{"branch_prefix":"kaola/kt-2026-0001-","title_prefix":"[kt-2026-0001] "},"credential":{"inline":true},"priority":"P1","tags":["backend"],"poster":"kaola-admin","status":"进行中","created_at":"2026-08-31T10:27:57.000Z"},"lease":{"expires_at":"2026-09-01T10:27:57.000Z","ttl_seconds":86400}}
+  
+  200 !== 409
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:824:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 200,
+    expected: 409,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-fencing.test.ts:832:5
+✖ REST release with a garbage claim_id: 409 stale_claim, lease stays active (58.509625ms)
+  AssertionError [ERR_ASSERTION]: expected 409, got 200 {"task":{"id":"kt-2026-0001","title":"release-wrong-claim-id","description_md":"……（Markdown 详述）","source":{"type":"native"},"repo":{"forge":"gitea","base_url":"https://gitea.forge.example.test","full_name":"team/orders","base_branch":"main","suggested_dir":"orders"},"acceptance_criteria":["GET /api/orders/export 支持 page/page_size 参数"],"test_command":"pnpm test","constraints":{"allowed_paths":["src/api/**"],"forbidden_paths":["migrations/**"]},"pr_convention":{"branch_prefix":"kaola/kt-2026-0001-","title_prefix":"[kt-2026-0001] "},"credential":{"inline":true},"priority":"P1","tags":["backend"],"poster":"kaola-admin","status":"待认领","created_at":"2026-08-31T10:27:57.000Z"}}
+  
+  200 !== 409
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:839:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 200,
+    expected: 409,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-fencing.test.ts:848:5
+✖ MCP submit_pr with a garbage claim_id: isError stale_claim, task stays 进行中, no submission row (59.006916ms)
+  AssertionError [ERR_ASSERTION]: expected isError true, got: {"content":[{"type":"text","text":"{\"task\":{\"id\":\"kt-2026-0001\",\"title\":\"submit-wrong-claim-id\",\"description_md\":\"……（Markdown 详述）\",\"source\":{\"type\":\"native\"},\"repo\":{\"forge\":\"gitea\",\"base_url\":\"https://gitea.forge.example.test\",\"full_name\":\"team/orders\",\"base_branch\":\"main\",\"suggested_dir\":\"orders\"},\"acceptance_criteria\":[\"GET /api/orders/export 支持 page/page_size 参数\"],\"test_command\":\"pnpm test\",\"constraints\":{\"allowed_paths\":[\"src/api/**\"],\"forbidden_paths\":[\"migrations/**\"]},\"pr_convention\":{\"branch_prefix\":\"kaola/kt-2026-0001-\",\"title_prefix\":\"[kt-2026-0001] \"},\"credential\":{\"inline\":true},\"priority\":\"P1\",\"tags\":[\"backend\"],\"poster\":\"kaola-admin\",\"status\":\"待验收\",\"created_at\":\"2026-08-31T10:27:57.000Z\"},\"pr_url\":\"https://gitea.forge.example.test/team/orders/pulls/9\",\"summary\":\"不应成功\"}"}],"structuredContent":{"task":{"id":"kt-2026-0001","title":"submit-wrong-claim-id","description_md":"……（Markdown 详述）","source":{"type":"native"},"repo":{"forge":"gitea","base_url":"https://gitea.forge.example.test","full_name":"team/orders","base_branch":"main","suggested_dir":"orders"},"acceptance_criteria":["GET /api/orders/export 支持 page/page_size 参数"],"test_command":"pnpm test","constraints":{"allowed_paths":["src/api/**"],"forbidden_paths":["migrations/**"]},"pr_convention":{"branch_prefix":"kaola/kt-2026-0001-","title_prefix":"[kt-2026-0001] "},"credential":{"inline":true},"priority":"P1","tags":["backend"],"poster":"kaola-admin","status":"待验收","created_at":"2026-08-31T10:27:57.000Z"},"pr_url":"https://gitea.forge.example.test/team/orders/pulls/9","summary":"不应成功"}}
+  + actual - expected
+  
+  + undefined
+  - true
+  
+      at assertToolError (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:438:10)
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:860:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-fencing.test.ts:889:5
+✖ the old claim_id cannot heartbeat the newer Claim (58.438792ms)
+  AssertionError [ERR_ASSERTION]: expected 409, got 200 {"task":{"id":"kt-2026-0001","title":"superseded-progress","description_md":"……（Markdown 详述）","source":{"type":"native"},"repo":{"forge":"gitea","base_url":"https://gitea.forge.example.test","full_name":"team/orders","base_branch":"main","suggested_dir":"orders"},"acceptance_criteria":["GET /api/orders/export 支持 page/page_size 参数"],"test_command":"pnpm test","constraints":{"allowed_paths":["src/api/**"],"forbidden_paths":["migrations/**"]},"pr_convention":{"branch_prefix":"kaola/kt-2026-0001-","title_prefix":"[kt-2026-0001] "},"credential":{"inline":true},"priority":"P1","tags":["backend"],"poster":"kaola-admin","status":"进行中","created_at":"2026-08-31T10:27:57.000Z"},"lease":{"expires_at":"2026-09-01T10:27:57.000Z","ttl_seconds":86400}}
+  
+  200 !== 409
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:898:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 200,
+    expected: 409,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-fencing.test.ts:905:5
+✖ the old claim_id cannot release the newer Claim (47.933458ms)
+  AssertionError [ERR_ASSERTION]: expected 409, got 200 {"task":{"id":"kt-2026-0001","title":"superseded-release","description_md":"……（Markdown 详述）","source":{"type":"native"},"repo":{"forge":"gitea","base_url":"https://gitea.forge.example.test","full_name":"team/orders","base_branch":"main","suggested_dir":"orders"},"acceptance_criteria":["GET /api/orders/export 支持 page/page_size 参数"],"test_command":"pnpm test","constraints":{"allowed_paths":["src/api/**"],"forbidden_paths":["migrations/**"]},"pr_convention":{"branch_prefix":"kaola/kt-2026-0001-","title_prefix":"[kt-2026-0001] "},"credential":{"inline":true},"priority":"P1","tags":["backend"],"poster":"kaola-admin","status":"待认领","created_at":"2026-08-31T10:27:57.000Z"}}
+  
+  200 !== 409
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:912:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 200,
+    expected: 409,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-fencing.test.ts:921:5
+✖ the old claim_id cannot submit a PR against the newer Claim (50.890541ms)
+  AssertionError [ERR_ASSERTION]: expected isError true, got: {"content":[{"type":"text","text":"{\"task\":{\"id\":\"kt-2026-0001\",\"title\":\"superseded-submit\",\"description_md\":\"……（Markdown 详述）\",\"source\":{\"type\":\"native\"},\"repo\":{\"forge\":\"gitea\",\"base_url\":\"https://gitea.forge.example.test\",\"full_name\":\"team/orders\",\"base_branch\":\"main\",\"suggested_dir\":\"orders\"},\"acceptance_criteria\":[\"GET /api/orders/export 支持 page/page_size 参数\"],\"test_command\":\"pnpm test\",\"constraints\":{\"allowed_paths\":[\"src/api/**\"],\"forbidden_paths\":[\"migrations/**\"]},\"pr_convention\":{\"branch_prefix\":\"kaola/kt-2026-0001-\",\"title_prefix\":\"[kt-2026-0001] \"},\"credential\":{\"inline\":true},\"priority\":\"P1\",\"tags\":[\"backend\"],\"poster\":\"kaola-admin\",\"status\":\"待验收\",\"created_at\":\"2026-08-31T10:27:57.000Z\"},\"pr_url\":\"https://gitea.forge.example.test/team/orders/pulls/11\",\"summary\":\"不应成功\"}"}],"structuredContent":{"task":{"id":"kt-2026-0001","title":"superseded-submit","description_md":"……（Markdown 详述）","source":{"type":"native"},"repo":{"forge":"gitea","base_url":"https://gitea.forge.example.test","full_name":"team/orders","base_branch":"main","suggested_dir":"orders"},"acceptance_criteria":["GET /api/orders/export 支持 page/page_size 参数"],"test_command":"pnpm test","constraints":{"allowed_paths":["src/api/**"],"forbidden_paths":["migrations/**"]},"pr_convention":{"branch_prefix":"kaola/kt-2026-0001-","title_prefix":"[kt-2026-0001] "},"credential":{"inline":true},"priority":"P1","tags":["backend"],"poster":"kaola-admin","status":"待验收","created_at":"2026-08-31T10:27:57.000Z"},"pr_url":"https://gitea.forge.example.test/team/orders/pulls/11","summary":"不应成功"}}
+  + actual - expected
+  
+  + undefined
+  - true
+  
+      at assertToolError (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:438:10)
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:933:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-fencing.test.ts:943:5
+✖ ISSUE #31 LEGACY TIGHTENING: a second device bound to the SAME owner can no longer heartbeat or release a legacy Claim it does not hold (46.607417ms)
+  AssertionError [ERR_ASSERTION]: a different device for the same owner must no longer heartbeat a Claim it does not hold, got 200 {"task":{"id":"kt-2026-0001","title":"device-fence-legacy","description_md":"……（Markdown 详述）","source":{"type":"native"},"repo":{"forge":"gitea","base_url":"https://gitea.forge.example.test","full_name":"team/orders","base_branch":"main","suggested_dir":"orders"},"acceptance_criteria":["GET /api/orders/export 支持 page/page_size 参数"],"test_command":"pnpm test","constraints":{"allowed_paths":["src/api/**"],"forbidden_paths":["migrations/**"]},"pr_convention":{"branch_prefix":"kaola/kt-2026-0001-","title_prefix":"[kt-2026-0001] "},"credential":{"inline":true},"priority":"P1","tags":["backend"],"poster":"kaola-admin","status":"进行中","created_at":"2026-08-31T10:27:57.000Z"},"lease":{"expires_at":"2026-09-01T10:27:57.000Z","ttl_seconds":86400}}
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:962:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 200,
+    expected: 200,
+    operator: 'notStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-fencing.test.ts:985:5
+✖ a different device presenting the correct (copied) claim_id for a new-style Claim is still rejected — claim_id alone is not device proof (43.923167ms)
+  AssertionError [ERR_ASSERTION]: a different device presenting the holder's own (copied) claim_id must still be rejected, got 200 {"task":{"id":"kt-2026-0001","title":"device-fence-newstyle","description_md":"……（Markdown 详述）","source":{"type":"native"},"repo":{"forge":"gitea","base_url":"https://gitea.forge.example.test","full_name":"team/orders","base_branch":"main","suggested_dir":"orders"},"acceptance_criteria":["GET /api/orders/export 支持 page/page_size 参数"],"test_command":"pnpm test","constraints":{"allowed_paths":["src/api/**"],"forbidden_paths":["migrations/**"]},"pr_convention":{"branch_prefix":"kaola/kt-2026-0001-","title_prefix":"[kt-2026-0001] "},"credential":{"inline":true},"priority":"P1","tags":["backend"],"poster":"kaola-admin","status":"待认领","created_at":"2026-08-31T10:27:57.000Z"}}
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:993:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 200,
+    expected: 200,
+    operator: 'notStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-fencing.test.ts:1007:5
+✖ new-style Claim: releasing twice with the same claim_id is idempotent, not a 409 (41.880416ms)
+  AssertionError [ERR_ASSERTION]: repeating release for the same terminal Claim must stay 200, got 409 {"error":"conflict","message":"任务未被认领。"}
+  
+  409 !== 200
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:1018:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 409,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-fencing.test.ts:1031:5
+✖ legacy Claim: releasing twice in a row (no claim_id) is idempotent, not a 409 (41.541208ms)
+  AssertionError [ERR_ASSERTION]: repeating a legacy release must stay 200, got 409 {"error":"conflict","message":"任务未被认领。"}
+  
+  409 !== 200
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:1042:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 409,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-fencing.test.ts:1053:5
+✖ failure injection: a failing 心跳 audit write leaves the lease heartbeat exactly as it was before the call (46.045417ms)
+  AssertionError [ERR_ASSERTION]: a failed 心跳 audit write must leave the lease heartbeat untouched (all-or-nothing), got before=1787284800 after=1787285300
+  + actual - expected
+  
+  + 1787285300
+  - 1787284800
+          ^
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:1078:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1787285300,
+    expected: 1787284800,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-fencing.test.ts:1089:5
+✖ failure injection: a failing 状态迁移 audit write rolls back the lease release and the task update (41.641667ms)
+  AssertionError [ERR_ASSERTION]: the task update must have rolled back alongside the failed audit write
+  
+  '待认领' !== '进行中'
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:1111:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: '待认领',
+    expected: '进行中',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-fencing.test.ts:1115:5
+✖ failure injection: a failing task-status update rolls back the lease release that preceded it (44.226042ms)
+  AssertionError [ERR_ASSERTION]: the lease release must have rolled back when the task update failed
+  
+  0 !== 1
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:1137:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-fencing.test.ts:1152:5
+✖ failure injection: a failing task-status update leaves the lease still active and the task still 进行中 (never both expired-lease + 进行中) (46.439709ms)
+  AssertionError [ERR_ASSERTION]: a 进行中 task with no active lease must be unreachable, got task.status=进行中 lease.state=expired
+  
+  true !== false
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:1172:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: false,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-fencing.test.ts:1177:5
+✖ failure injection: a failing 状态迁移 audit write leaves the lease still active and the task still 进行中 (47.728ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 'expired'
+  - 'active'
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:1200:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'expired',
+    expected: 'active',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-fencing.test.ts:1206:5
+✖ failure injection: a failing submissions insert rolls back the lease release and the task update (51.524625ms)
+  AssertionError [ERR_ASSERTION]: the task update must have rolled back alongside the failed submissions insert
+  
+  '待验收' !== '进行中'
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:1231:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: '待验收',
+    expected: '进行中',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-fencing.test.ts:1236:5
+✖ failure injection: a failing 状态迁移 audit write rolls back the lease release, the task update, and the submissions insert (49.479666ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  '待验收' !== '进行中'
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:1262:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '待验收',
+    expected: '进行中',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-fencing.test.ts:1269:5
+✖ the schema enforces a unique index on submissions.lease_id — two raw inserts with the same lease_id must conflict (1.054583ms)
+  AssertionError [ERR_ASSERTION]: Missing expected exception: submissions must have a unique index on lease_id — a second row for the same lease_id must be rejected
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:1275:14)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1325:25)
+      at Test.start (node:internal/test_runner/test:1191:17)
+      at node:internal/test_runner/test:1792:71
+      at node:internal/per_context/primordials:466:82
+      at new Promise (<anonymous>)
+      at new SafePromise (node:internal/per_context/primordials:435:3)
+      at node:internal/per_context/primordials:466:9
+      at Array.map (<anonymous>) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: /UNIQUE constraint failed/i,
+    operator: 'throws',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-fencing.test.ts:1285:5
+✖ repeating submit_pr with the same Claim and the same pr_url is idempotent — one submission row, same response (50.942625ms)
+  AssertionError [ERR_ASSERTION]: expected success tool result, got: {"content":[{"type":"text","text":"{\"error\":\"conflict\",\"message\":\"任务未被认领。\"}"}],"structuredContent":{"error":"conflict","message":"任务未被认领。"},"isError":true}
+      at assertToolOk (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:433:10)
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:1297:26)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: true,
+    operator: 'notStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-fencing.test.ts:1329:5
+✖ github: a PR URL for a different repo is rejected, task stays 进行中, no submission row (49.6765ms)
+  AssertionError [ERR_ASSERTION]: expected isError true, got: {"content":[{"type":"text","text":"{\"task\":{\"id\":\"kt-2026-0001\",\"title\":\"cross-repo-github\",\"description_md\":\"……（Markdown 详述）\",\"source\":{\"type\":\"native\"},\"repo\":{\"forge\":\"github\",\"base_url\":\"https://github.com\",\"full_name\":\"octo/widget\",\"base_branch\":\"main\",\"suggested_dir\":\"widget\"},\"acceptance_criteria\":[\"GET /api/orders/export 支持 page/page_size 参数\"],\"test_command\":\"pnpm test\",\"constraints\":{\"allowed_paths\":[\"src/api/**\"],\"forbidden_paths\":[\"migrations/**\"]},\"pr_convention\":{\"branch_prefix\":\"kaola/kt-2026-0001-\",\"title_prefix\":\"[kt-2026-0001] \"},\"credential\":{\"inline\":true},\"priority\":\"P1\",\"tags\":[\"backend\"],\"poster\":\"kaola-admin\",\"status\":\"待验收\",\"created_at\":\"2026-08-31T10:27:58.000Z\"},\"pr_url\":\"https://github.com/octo/other-widget/pull/5\",\"summary\":\"跨仓库\"}"}],"structuredContent":{"task":{"id":"kt-2026-0001","title":"cross-repo-github","description_md":"……（Markdown 详述）","source":{"type":"native"},"repo":{"forge":"github","base_url":"https://github.com","full_name":"octo/widget","base_branch":"main","suggested_dir":"widget"},"acceptance_criteria":["GET /api/orders/export 支持 page/page_size 参数"],"test_command":"pnpm test","constraints":{"allowed_paths":["src/api/**"],"forbidden_paths":["migrations/**"]},"pr_convention":{"branch_prefix":"kaola/kt-2026-0001-","title_prefix":"[kt-2026-0001] "},"credential":{"inline":true},"priority":"P1","tags":["backend"],"poster":"kaola-admin","status":"待验收","created_at":"2026-08-31T10:27:58.000Z"},"pr_url":"https://github.com/octo/other-widget/pull/5","summary":"跨仓库"}}
+  + actual - expected
+  
+  + undefined
+  - true
+  
+      at assertToolError (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:438:10)
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:1349:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-fencing.test.ts:1357:5
+✖ gitlab (subgroup repo): an MR URL for a different subgroup repo is rejected, task stays 进行中, no submission row (50.072458ms)
+  AssertionError [ERR_ASSERTION]: expected isError true, got: {"content":[{"type":"text","text":"{\"task\":{\"id\":\"kt-2026-0001\",\"title\":\"cross-repo-gitlab-subgroup\",\"description_md\":\"……（Markdown 详述）\",\"source\":{\"type\":\"native\"},\"repo\":{\"forge\":\"gitlab\",\"base_url\":\"https://gitlab.forge.example.test\",\"full_name\":\"group/subgroup/app\",\"base_branch\":\"main\",\"suggested_dir\":\"app\"},\"acceptance_criteria\":[\"GET /api/orders/export 支持 page/page_size 参数\"],\"test_command\":\"pnpm test\",\"constraints\":{\"allowed_paths\":[\"src/api/**\"],\"forbidden_paths\":[\"migrations/**\"]},\"pr_convention\":{\"branch_prefix\":\"kaola/kt-2026-0001-\",\"title_prefix\":\"[kt-2026-0001] \"},\"credential\":{\"inline\":true},\"priority\":\"P1\",\"tags\":[\"backend\"],\"poster\":\"kaola-admin\",\"status\":\"待验收\",\"created_at\":\"2026-08-31T10:27:58.000Z\"},\"pr_url\":\"https://gitlab.forge.example.test/group/subgroup/other-app/-/merge_requests/5\",\"summary\":\"跨仓库\"}"}],"structuredContent":{"task":{"id":"kt-2026-0001","title":"cross-repo-gitlab-subgroup","description_md":"……（Markdown 详述）","source":{"type":"native"},"repo":{"forge":"gitlab","base_url":"https://gitlab.forge.example.test","full_name":"group/subgroup/app","base_branch":"main","suggested_dir":"app"},"acceptance_criteria":["GET /api/orders/export 支持 page/page_size 参数"],"test_command":"pnpm test","constraints":{"allowed_paths":["src/api/**"],"forbidden_paths":["migrations/**"]},"pr_convention":{"branch_prefix":"kaola/kt-2026-0001-","title_prefix":"[kt-2026-0001] "},"credential":{"inline":true},"priority":"P1","tags":["backend"],"poster":"kaola-admin","status":"待验收","created_at":"2026-08-31T10:27:58.000Z"},"pr_url":"https://gitlab.forge.example.test/group/subgroup/other-app/-/merge_requests/5","summary":"跨仓库"}}
+  + actual - expected
+  
+  + undefined
+  - true
+  
+      at assertToolError (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:438:10)
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:1377:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-fencing.test.ts:1385:5
+✖ gitea: a PR URL for a different repo is rejected, task stays 进行中, no submission row (52.782375ms)
+  AssertionError [ERR_ASSERTION]: expected isError true, got: {"content":[{"type":"text","text":"{\"task\":{\"id\":\"kt-2026-0001\",\"title\":\"cross-repo-gitea\",\"description_md\":\"……（Markdown 详述）\",\"source\":{\"type\":\"native\"},\"repo\":{\"forge\":\"gitea\",\"base_url\":\"https://gitea.forge.example.test\",\"full_name\":\"team/orders\",\"base_branch\":\"main\",\"suggested_dir\":\"orders\"},\"acceptance_criteria\":[\"GET /api/orders/export 支持 page/page_size 参数\"],\"test_command\":\"pnpm test\",\"constraints\":{\"allowed_paths\":[\"src/api/**\"],\"forbidden_paths\":[\"migrations/**\"]},\"pr_convention\":{\"branch_prefix\":\"kaola/kt-2026-0001-\",\"title_prefix\":\"[kt-2026-0001] \"},\"credential\":{\"inline\":true},\"priority\":\"P1\",\"tags\":[\"backend\"],\"poster\":\"kaola-admin\",\"status\":\"待验收\",\"created_at\":\"2026-08-31T10:27:58.000Z\"},\"pr_url\":\"https://gitea.forge.example.test/team/other-repo/pulls/5\",\"summary\":\"跨仓库\"}"}],"structuredContent":{"task":{"id":"kt-2026-0001","title":"cross-repo-gitea","description_md":"……（Markdown 详述）","source":{"type":"native"},"repo":{"forge":"gitea","base_url":"https://gitea.forge.example.test","full_name":"team/orders","base_branch":"main","suggested_dir":"orders"},"acceptance_criteria":["GET /api/orders/export 支持 page/page_size 参数"],"test_command":"pnpm test","constraints":{"allowed_paths":["src/api/**"],"forbidden_paths":["migrations/**"]},"pr_convention":{"branch_prefix":"kaola/kt-2026-0001-","title_prefix":"[kt-2026-0001] "},"credential":{"inline":true},"priority":"P1","tags":["backend"],"poster":"kaola-admin","status":"待验收","created_at":"2026-08-31T10:27:58.000Z"},"pr_url":"https://gitea.forge.example.test/team/other-repo/pulls/5","summary":"跨仓库"}}
+  + actual - expected
+  
+  + undefined
+  - true
+  
+      at assertToolError (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:438:10)
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:1393:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-fencing.test.ts:1401:5
+✖ an unparseable pr_url is rejected before any mutation (56.53825ms)
+  AssertionError [ERR_ASSERTION]: expected isError true, got: {"content":[{"type":"text","text":"{\"task\":{\"id\":\"kt-2026-0001\",\"title\":\"unparseable-pr-url\",\"description_md\":\"……（Markdown 详述）\",\"source\":{\"type\":\"native\"},\"repo\":{\"forge\":\"gitea\",\"base_url\":\"https://gitea.forge.example.test\",\"full_name\":\"team/orders\",\"base_branch\":\"main\",\"suggested_dir\":\"orders\"},\"acceptance_criteria\":[\"GET /api/orders/export 支持 page/page_size 参数\"],\"test_command\":\"pnpm test\",\"constraints\":{\"allowed_paths\":[\"src/api/**\"],\"forbidden_paths\":[\"migrations/**\"]},\"pr_convention\":{\"branch_prefix\":\"kaola/kt-2026-0001-\",\"title_prefix\":\"[kt-2026-0001] \"},\"credential\":{\"inline\":true},\"priority\":\"P1\",\"tags\":[\"backend\"],\"poster\":\"kaola-admin\",\"status\":\"待验收\",\"created_at\":\"2026-08-31T10:27:58.000Z\"},\"pr_url\":\"not a url at all\",\"summary\":\"不合法\"}"}],"structuredContent":{"task":{"id":"kt-2026-0001","title":"unparseable-pr-url","description_md":"……（Markdown 详述）","source":{"type":"native"},"repo":{"forge":"gitea","base_url":"https://gitea.forge.example.test","full_name":"team/orders","base_branch":"main","suggested_dir":"orders"},"acceptance_criteria":["GET /api/orders/export 支持 page/page_size 参数"],"test_command":"pnpm test","constraints":{"allowed_paths":["src/api/**"],"forbidden_paths":["migrations/**"]},"pr_convention":{"branch_prefix":"kaola/kt-2026-0001-","title_prefix":"[kt-2026-0001] "},"credential":{"inline":true},"priority":"P1","tags":["backend"],"poster":"kaola-admin","status":"待验收","created_at":"2026-08-31T10:27:58.000Z"},"pr_url":"not a url at all","summary":"不合法"}}
+  + actual - expected
+  
+  + undefined
+  - true
+  
+      at assertToolError (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:438:10)
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:1408:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-fencing.test.ts:1418:5
+✖ a second task cannot submit a pr_url already held by another live (open) submission, before any state change (74.015ms)
+  AssertionError [ERR_ASSERTION]: expected isError true, got: {"content":[{"type":"text","text":"{\"task\":{\"id\":\"kt-2026-0002\",\"title\":\"duplicate-pr-second\",\"description_md\":\"……（Markdown 详述）\",\"source\":{\"type\":\"native\"},\"repo\":{\"forge\":\"gitea\",\"base_url\":\"https://gitea.forge.example.test\",\"full_name\":\"team/orders\",\"base_branch\":\"main\",\"suggested_dir\":\"orders\"},\"acceptance_criteria\":[\"GET /api/orders/export 支持 page/page_size 参数\"],\"test_command\":\"pnpm test\",\"constraints\":{\"allowed_paths\":[\"src/api/**\"],\"forbidden_paths\":[\"migrations/**\"]},\"pr_convention\":{\"branch_prefix\":\"kaola/kt-2026-0002-\",\"title_prefix\":\"[kt-2026-0002] \"},\"credential\":{\"inline\":true},\"priority\":\"P1\",\"tags\":[\"backend\"],\"poster\":\"kaola-admin\",\"status\":\"待验收\",\"created_at\":\"2026-08-31T10:27:58.000Z\"},\"pr_url\":\"https://gitea.forge.example.test/team/orders/pulls/41\",\"summary\":\"任务二冒用\"}"}],"structuredContent":{"task":{"id":"kt-2026-0002","title":"duplicate-pr-second","description_md":"……（Markdown 详述）","source":{"type":"native"},"repo":{"forge":"gitea","base_url":"https://gitea.forge.example.test","full_name":"team/orders","base_branch":"main","suggested_dir":"orders"},"acceptance_criteria":["GET /api/orders/export 支持 page/page_size 参数"],"test_command":"pnpm test","constraints":{"allowed_paths":["src/api/**"],"forbidden_paths":["migrations/**"]},"pr_convention":{"branch_prefix":"kaola/kt-2026-0002-","title_prefix":"[kt-2026-0002] "},"credential":{"inline":true},"priority":"P1","tags":["backend"],"poster":"kaola-admin","status":"待验收","created_at":"2026-08-31T10:27:58.000Z"},"pr_url":"https://gitea.forge.example.test/team/orders/pulls/41","summary":"任务二冒用"}}
+  + actual - expected
+  
+  + undefined
+  - true
+  
+      at assertToolError (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:438:10)
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:1430:20)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-fencing.test.ts:1473:5
+✖ gitea: trailing slash, query string, and a /commits suffix all resolve to the same stored canonical pr_url (65.575833ms)
+  AssertionError [ERR_ASSERTION]: expected success tool result, got: {"content":[{"type":"text","text":"{\"error\":\"conflict\",\"message\":\"任务未被认领。\"}"}],"structuredContent":{"error":"conflict","message":"任务未被认领。"},"isError":true}
+      at assertToolOk (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:433:10)
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:1482:9)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: true,
+    operator: 'notStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-fencing.test.ts:1491:5
+✖ github: trailing slash, fragment, and a /files suffix all resolve to the same stored canonical pr_url (63.098792ms)
+  AssertionError [ERR_ASSERTION]: expected success tool result, got: {"content":[{"type":"text","text":"{\"error\":\"conflict\",\"message\":\"任务未被认领。\"}"}],"structuredContent":{"error":"conflict","message":"任务未被认领。"},"isError":true}
+      at assertToolOk (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:433:10)
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:1512:9)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: true,
+    operator: 'notStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-fencing.test.ts:1521:5
+✖ gitlab (subgroup): trailing slash, query string, and fragment all resolve to the same stored canonical pr_url (55.999084ms)
+  AssertionError [ERR_ASSERTION]: expected success tool result, got: {"content":[{"type":"text","text":"{\"error\":\"conflict\",\"message\":\"任务未被认领。\"}"}],"structuredContent":{"error":"conflict","message":"任务未被认领。"},"isError":true}
+      at assertToolOk (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:433:10)
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:1542:9)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: true,
+    operator: 'notStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-fencing.test.ts:1553:5
+✖ gitea: a webhook delivery carrying the bare PR URL matches the canonical stored value and completes the task (51.971542ms)
+  AssertionError [ERR_ASSERTION]: a webhook delivering the bare (real forge) URL must match the canonical stored pr_url and complete the task
+  
+  '待验收' !== '已完成'
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:1570:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: '待验收',
+    expected: '已完成',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-fencing.test.ts:1577:5
+✖ github: a webhook delivery carrying the bare PR URL matches the canonical stored value and completes the task (48.293083ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  '待验收' !== '已完成'
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:1606:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '待验收',
+    expected: '已完成',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-fencing.test.ts:1609:5
+✖ gitlab: a webhook delivery carrying the bare MR URL matches the canonical stored value and completes the task (50.83325ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  '待验收' !== '已完成'
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:1638:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '待验收',
+    expected: '已完成',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-fencing.test.ts:1643:5
+✖ gitea: the poller resolves the stored canonical pr_url and completes a merged PR (44.919959ms)
+  AssertionError [ERR_ASSERTION]: the poller must successfully resolve the stored (canonical) pr_url against the real PR-status endpoint
+  
+  '待验收' !== '已完成'
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:1659:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: '待验收',
+    expected: '已完成',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-fencing.test.ts:1666:5
+✖ github: the poller resolves the stored canonical pr_url and completes a merged PR (42.220125ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  '待验收' !== '已完成'
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:1694:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '待验收',
+    expected: '已完成',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-fencing.test.ts:1697:5
+✖ gitlab (subgroup): the poller resolves the stored canonical MR url and completes a merged MR (39.742625ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  '待验收' !== '已完成'
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-fencing.test.ts:1725:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '待验收',
+    expected: '已完成',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+=== Existing suite (excludes claim-fencing.test.ts and apps/mcp/src/claim-receipt.test.ts) — must all still pass ===
+
+▶ @kaola/mcp package
+  ✔ package.json is @kaola/mcp ESM, Node >=22, bin kaola-mcp (8.36225ms)
+  ✔ committed mcp.json example is command plus url and contains no secrets (5.3655ms)
+✔ @kaola/mcp package (18.75725ms)
+▶ resolveKaolaUrl
+  ✔ --url wins, then KAOLA_URL, then localhost:31415; trailing slash is stripped (91.087ms)
+✔ resolveKaolaUrl (91.263542ms)
+▶ ensureDeviceIdentity
+  ✔ creates ~/.kaola-shaped dir 0700 and device.json 0600 Ed25519 PKCS8+SPKI when missing (13.230209ms)
+✔ ensureDeviceIdentity (13.382167ms)
+▶ forwardMcpRequest
+  ✔ POSTs to {url}/api/mcp with canonical device proof headers (66.532084ms)
+  ✔ HTTP 202 authorization_required becomes a JSON-RPC error, never a successful token result (9.859458ms)
+  ✔ successful claim JSON-RPC may contain token but KAOLA_HOME never stores it (4.757125ms)
+✔ forwardMcpRequest (81.545ms)
+▶ stdio bridge Streamable HTTP session
+  ✔ captures MCP-Session-Id from initialize without putting it on the JSON-RPC body (7.799708ms)
+  ▶ runStdioBridge session replay
+    ✔ replays captured mcp-session-id on the next stdin tools/list (38.631625ms)
+    ✔ omits mcp-session-id on later stdin when initialize response had no such header (20.950083ms)
+  ✔ runStdioBridge session replay (60.258208ms)
+✔ stdio bridge Streamable HTTP session (68.206209ms)
+▶ unauthenticated session agent-key routes
+  ✔ JSON Accept is 401 unauthorized without WWW-Authenticate; browser-like requests redirect to /login (148.610833ms)
+✔ unauthenticated session agent-key routes (150.844375ms)
+▶ GET /api/v1/agent/whoami device-proof failures
+  ✔ missing, leftover ktk_, and non-device credentials are 401 with WWW-Authenticate Kaola-Device (23.322208ms)
+  ✔ a session cookie does not authorize whoami; GET /api/v1/me does not accept Bearer (87.3915ms)
+✔ GET /api/v1/agent/whoami device-proof failures (110.9215ms)
+▶ leftover 待批准 GitHub cannot generate Agent Keys
+  ✔ leftover 待批准 GitHub POST /api/v1/agent-keys returns 403 with the generate-gate message (77.193833ms)
+✔ leftover 待批准 GitHub cannot generate Agent Keys (77.865041ms)
+▶ leftover GitHub claim_only session CRUD (unused-compat)
+  ✔ leftover active claim_only can generate, list without plaintext, and revoke; leftover ktk_ is not whoami (72.925916ms)
+✔ leftover GitHub claim_only session CRUD (unused-compat) (73.042833ms)
+▶ GitLab and Gitea full+active self-service
+  ✔ GitLab full+active can generate keys without VAULT_MASTER_KEY; GET / stays 考拉任务服务占位 (98.788583ms)
+  ✔ Gitea full+active can generate, list, and use device-proof whoami (94.855875ms)
+✔ GitLab and Gitea full+active self-service (194.910833ms)
+▶ list and revoke are own keys only
+  ✔ a full member cannot list or revoke another user's key; missing and not-owned DELETE are 404 not_found (125.993959ms)
+✔ list and revoke are own keys only (126.186ms)
+▶ agent_keys hashed storage
+  ✔ SQLite stores sha256 hex of plaintext utf8, never the token, unique key_hash; failed Bearer does not set last_used_at (68.87075ms)
+✔ agent_keys hashed storage (69.08475ms)
+▶ HTTPS PUBLIC_URL cookie Secure
+  ✔ POST /api/v1/setup session Set-Cookie includes Secure when PUBLIC_URL is https (177.733458ms)
+  ✔ GET /login/gitlab OAuth state Set-Cookie includes Secure when PUBLIC_URL is https (135.659333ms)
+  ✔ login callback session Set-Cookie includes Secure behind X-Forwarded-Proto https (loopback peer) (76.760875ms)
+  ✔ login callback session Set-Cookie includes Secure behind X-Forwarded-Proto https (docker-bridge peer) (83.831583ms)
+  ✔ untrusted public peer cannot mint a Secure session cookie via spoofed X-Forwarded-Proto (90.097083ms)
+  ✔ setup from untrusted public peer does not Set-Cookie sessionId (90.609625ms)
+  ✔ login from untrusted public peer does not Set-Cookie sessionId (140.269708ms)
+✔ HTTPS PUBLIC_URL cookie Secure (798.642666ms)
+▶ login start paths
+  ✔ GET /login is allowed without a session (100.061042ms)
+  ✔ GET /login/github is 404 (13.955167ms)
+  ✔ GET /login/gitlab redirects to the configured GitLab authorize URL after setup (74.557917ms)
+  ✔ GET /login/gitea redirects to the configured Gitea authorize URL after setup (79.1335ms)
+✔ login start paths (270.442459ms)
+▶ unauthenticated GET /api/v1/me
+  ✔ browser-like GET /api/v1/me redirects to /login and does not return a user (14.074375ms)
+  ✔ JSON GET /api/v1/me without a session returns 401 and does not return a user (14.227333ms)
+✔ unauthenticated GET /api/v1/me (28.772333ms)
+▶ OAuth publishers after setup
+  ✔ session Set-Cookie does not include Secure when PUBLIC_URL is http://localhost (76.169709ms)
+  ✔ GitLab after setup persists active full publisher (85.799125ms)
+  ✔ Gitea after setup persists active full publisher; display_name falls back to login (106.984833ms)
+  ✔ second GitLab callback with the same remote_id reuses the same user id (68.879875ms)
+✔ OAuth publishers after setup (338.642792ms)
+▶ leftover 待批准 via GitLab reuse; approve retired
+  ✔ seeded leftover 待批准 GitLab user cannot call retired approve (404) (69.151208ms)
+✔ leftover 待批准 via GitLab reuse; approve retired (69.402542ms)
+▶ KAOLA_ADMINS
+  ✔ empty KAOLA_ADMINS still buildApp() and GitHub login stays 404 (10.061458ms)
+  ✔ KAOLA_ADMINS github:octo-admin is ignored and does not insert github login (69.506708ms)
+✔ KAOLA_ADMINS (79.67875ms)
+▶ revoked re-login
+  ✔ revoked GitLab user re-login does not become active and does not set a session (74.160375ms)
+✔ revoked re-login (74.32025ms)
+▶ issue #16 claim-confirmation for autonomous polling agents
+  ▶ instructed claims stay MVP 认领即授权 (comment overrides the issue body)
+    ✔ no body and explicit autonomous:false both still return 201 with a token (assertClaim201 shape unchanged) (345.40275ms)
+    ✔ MCP claim_task without autonomous still returns the token envelope (221.145667ms)
+    ✔ instructed claim ignores a leftover rejected confirmation row for the same (task, user, key) (79.162792ms)
+  ✔ instructed claims stay MVP 认领即授权 (comment overrides the issue body) (646.925708ms)
+  ▶ autonomous claim gate — 待批准 first
+    ✔ 待批准 users are still 403 before the autonomous gate, even with autonomous:true (63.510542ms)
+  ✔ autonomous claim gate — 待批准 first (63.766792ms)
+  ▶ autonomous claim gate — automation off (default)
+    ✔ autonomous + off + unconfirmed → 202 confirmation_required; no token; no token 揭示; task stays 待认领; writes 认领待确认 (75.7855ms)
+    ✔ MCP claim_task autonomous:true pending is isError false, structuredContent { pending:true, error:confirmation_required }, no token (126.065792ms)
+    ✔ idempotent re-request while pending returns 202 again and reuses one pending row (100.4895ms)
+  ✔ autonomous claim gate — automation off (default) (302.774459ms)
+  ▶ settings — trusted_automation
+    ✔ GET /api/v1/me defaults trusted_automation false; PUT settings true unlocks 直通 201; PUT false again reinstates 202 (134.78125ms)
+    ✔ trusted_automation persists across a new buildApp on the same sqlite file path (128.585125ms)
+  ✔ settings — trusted_automation (263.667625ms)
+  ▶ approve / reject a pending claim confirmation (session, not Bearer)
+    ✔ approve consumes the pending row: agent retry succeeds; approve itself reveals no token, inserts no lease, flips no status (79.752208ms)
+    ✔ MCP: approve a pending confirmation then retry claim_task succeeds with a token (71.906167ms)
+    ✔ reject sets state rejected; retry of autonomous claim starts a fresh pending, still no token (101.321958ms)
+    ✔ approve/reject on another user's confirmation id is 404; GET list only shows the current user's rows (88.019375ms)
+  ✔ approve / reject a pending claim confirmation (session, not Bearer) (341.249ms)
+  ▶ authentication sanity around the new surfaces
+    ✔ an unauthenticated session cannot read or act on claim-confirmations, and Bearer alone does not authorize them (80.384625ms)
+    ✔ claimant-owned device skips #16: autonomous claim is 201 with token, no confirmation row (86.298542ms)
+  ✔ authentication sanity around the new surfaces (166.855208ms)
+✔ issue #16 claim-confirmation for autonomous polling agents (1786.224917ms)
+▶ issue #36 claim identity (request_id / claim_id)
+  ▶ claimIdForLease (apps/server/src/leases.ts) — direct unit contract
+    ✔ claimIdForLease is exported and returns a clm_-prefixed opaque string (0.784834ms)
+    ✔ claimIdForLease is stable across a heartbeat and across release (only immutable fields matter) (0.14575ms)
+    ✔ claimIdForLease differs between two different lease rows (0.184584ms)
+  ✔ claimIdForLease (apps/server/src/leases.ts) — direct unit contract (1.486375ms)
+  ▶ legacy compatibility — no request_id sent
+    ✔ REST claim without request_id stays 201 and the lease envelope is exactly { claim_id, expires_at, ttl_seconds } (160.459167ms)
+    ✔ MCP claim_task without request_id stays a success result and the lease envelope carries claim_id (118.357792ms)
+  ✔ legacy compatibility — no request_id sent (279.06625ms)
+  ▶ replay identity — same (device, request_id)
+    ✔ replaying the same request_id 100 times yields exactly one lease, one 状态迁移 to 进行中, and one claim_id (393.351417ms)
+    ✔ a single replay reuses the same claim_id and token, and audits the re-reveal as a replay without leaking the token (181.91175ms)
+    ✔ replaying a request_id after the lease is released never creates a new lease (74.126375ms)
+    ✔ a different device presenting the holder's request_id cannot replay and never sees the active token (112.028541ms)
+  ✔ replay identity — same (device, request_id) (761.65025ms)
+  ▶ replay identity — typed conflicts on a mismatched digest
+    ✔ same request_id against a different task publicId is a typed conflict and changes nothing (92.529916ms)
+    ✔ same request_id but a different autonomous flag is a typed conflict and reveals no token (81.8165ms)
+  ✔ replay identity — typed conflicts on a mismatched digest (174.590958ms)
+  ▶ autonomous 202 stability, then a single 201 after approval
+    ✔ 202 is stable while pending under the same request_id, and exactly one 201/lease follows approval even under repeated replay (128.317292ms)
+  ✔ autonomous 202 stability, then a single 201 after approval (128.554083ms)
+  ▶ credential-profile deletion is refused while referenced by a non-terminal task
+    ✔ DELETE is refused (typed error, profile retained) when referenced by a task in each of the four non-terminal statuses (85.137709ms)
+    ✔ DELETE succeeds as today when referenced only by a terminal-status task, or by no task at all (98.343458ms)
+  ✔ credential-profile deletion is refused while referenced by a non-terminal task (183.675459ms)
+  ▶ claim-transaction atomicity — no reachable 进行中 task without an active lease
+    ✔ failure injection: a failing lease insert leaves the claim exactly as it was before the attempt (84.389208ms)
+    ✔ failure injection: a failing token 揭示 audit write leaves the claim exactly as it was before the attempt (79.281458ms)
+    ✔ failure injection: a failing 状态迁移 audit write rolls back the task update and the lease insert that preceded it (87.128583ms)
+  ✔ claim-transaction atomicity — no reachable 进行中 task without an active lease (250.949667ms)
+  ▶ write-back off the response path
+    ✔ a slow forge write-back comment cannot delay the committed claim response (77.708625ms)
+    ✔ settleWritebacks lets a test observe a failed background write-back deterministically, and retryPendingWritebacks still recovers it (4002.591708ms)
+  ✔ write-back off the response path (4080.454041ms)
+  ▶ claim-transaction atomicity — the Task update predicate itself (CAS)
+    ✔ a task that flips out of 待认领 between the read and the write produces no lease, no token 揭示, and no second 状态迁移 (42.150708ms)
+  ✔ claim-transaction atomicity — the Task update predicate itself (CAS) (42.306792ms)
+  ▶ a different request_id is a new attempt only when the Task is legally claimable
+    ✔ a different request_id on the same device is rejected while the task is already claimed, and creates no second lease (43.55575ms)
+    ✔ after the holder releases, a different request_id makes a legitimate new attempt and mints a new claim_id (52.902167ms)
+  ✔ a different request_id is a new attempt only when the Task is legally claimable (96.609ms)
+  ▶ token containment — only the REST claim 201 and MCP claim_task success channels ever carry the token
+    ✔ after a successful claim and a replay, the forge token appears nowhere else: brief, list, MCP, progress/release, or any events row (71.3785ms)
+  ✔ token containment — only the REST claim 201 and MCP claim_task success channels ever carry the token (71.510708ms)
+✔ issue #36 claim identity (request_id / claim_id) (6071.821583ms)
+▶ issue #9 lease-based claiming
+  ▶ authentication — device proof
+    ✔ unauthenticated claim, progress, and release are 401 unauthorized with WWW-Authenticate Kaola-Device (228.978542ms)
+    ✔ signed unpaired device proof on claim is 202 authorization_required with no token and no lease (77.476542ms)
+    ✔ wrong and non-device credentials are 401 with WWW-Authenticate Kaola-Device (80.212083ms)
+    ✔ a session cookie without Bearer does not authorize claim, progress, or release (91.683375ms)
+    ✔ unknown publicId with a valid Bearer key is 404 not_found (101.417917ms)
+    ✔ numeric PK in the path with a valid Bearer key is 404 not_found (122.832958ms)
+  ✔ authentication — device proof (706.298542ms)
+  ▶ POST /api/v1/tasks/:publicId/claim — 201 envelope
+    ✔ claiming an inline task returns 201 with task, forge token, lease TTL, and clone guidance (104.717875ms)
+    ✔ claiming a profile task returns 201; credential stays { profile_id }; token is the profile forge plaintext (100.348167ms)
+    ✔ claiming a second publicId returns that task's token, not the first task's (93.038792ms)
+    ✔ claiming a github task returns Bearer extra_header and a web-origin remote_url, not api.github.com (86.010833ms)
+    ✔ claiming a gitlab subgroup task keeps slashes in remote_url and uses Bearer extra_header (99.483333ms)
+    ✔ claim remote_url strips trailing slashes from stored repo.base_url (74.214917ms)
+    ✔ session GET list and GET one after a successful claim still omit forge token and secret keys (100.341209ms)
+  ✔ POST /api/v1/tasks/:publicId/claim — 201 envelope (658.890458ms)
+  ▶ AuthZ
+    ✔ leftover ktk_ Bearer is 401 unauthorized, not a claim identity, and writes no token 揭示 (82.845834ms)
+    ✔ leftover claim_only session cannot bind a device, and leftover ktk_ cannot claim (92.499792ms)
+    ✔ active admin can claim via bind_to_self (68.043ms)
+  ✔ AuthZ (243.783792ms)
+  ▶ conflicts / illegal states
+    ✔ second claim while 进行中 is 409 conflict, no token, and no second reveal (94.680833ms)
+    ✔ claiming a 已取消 task is 409 illegal_transition (81.34825ms)
+    ✔ claiming a 待验收 task is 409 illegal_transition (83.684708ms)
+    ✔ progress and release by a non-holder are 403 forbidden (75.441875ms)
+    ✔ progress and release with no live lease are 409 conflict 任务未被认领 (87.218458ms)
+    ✔ progress and release after the holder released are 409 任务未被认领 (85.893666ms)
+  ✔ conflicts / illegal states (509.734792ms)
+  ▶ heartbeat
+    ✔ omitted note still renews expires_at from heartbeat time and writes 心跳 with note empty string (88.039834ms)
+    ✔ a progress note is persisted on the 心跳 event; empty note still renews (88.531875ms)
+  ✔ heartbeat (176.806584ms)
+  ▶ release
+    ✔ holder release returns 200 { task } 待认领, marks the lease released, and writes 状态迁移 without reason (75.371917ms)
+    ✔ release with reason stores reason on the 状态迁移 event (84.292042ms)
+  ✔ release (159.816791ms)
+  ▶ expiry
+    ✔ check-on-read: after TTL, session GET list and GET one show 待认领, lease expired, actor_user_id null, reveal rows unchanged (86.384667ms)
+    ✔ check-on-write: after TTL, progress sweeps then returns 409 任务未被认领 (77.951125ms)
+    ✔ after expiry a different Agent Key can claim again and writes a second token 揭示 (72.755584ms)
+  ✔ expiry (237.24475ms)
+  ▶ reveal audit
+    ✔ inline claim writes token 揭示 { task_id, device_id, credential: inline } and 状态迁移 待认领→进行中 (81.393917ms)
+    ✔ profile claim writes token 揭示 with credential profile and integer profile_id; no plaintext or ciphertext (78.396125ms)
+  ✔ reveal audit (160.052083ms)
+  ▶ leases table
+    ✔ successful claim inserts one active lease keyed by tasks.id PK; at most one active row per task (70.244209ms)
+  ✔ leases table (70.326083ms)
+✔ issue #9 lease-based claiming (2924.59875ms)
+▶ issue #19 GET /api/v1/credential-profiles/:id/issues
+  ▶ authentication and permission gate (same as credential-profile CRUD)
+    ✔ unauthenticated JSON GET returns 401 unauthorized (same oracle as GET /api/v1/me) (106.986792ms)
+    ✔ browser-like GET without a session redirects to /login (18.298708ms)
+    ✔ leftover 待批准 GitHub user gets 403 forbidden with no message (44.54175ms)
+    ✔ leftover active GitHub claim_only still gets 403 forbidden with no message (87.761791ms)
+  ✔ authentication and permission gate (same as credential-profile CRUD) (258.537167ms)
+  ▶ missing profile or bad :id
+    ✔ missing row is 404 not_found (89.576209ms)
+    ✔ non-positive / non-integer :id (abc, 0, -1) is 404 not_found (76.415125ms)
+  ✔ missing profile or bad :id (166.305042ms)
+  ▶ success lists open issues from the profile row
+    ✔ Gitea 200 maps number/title, constructs issue_url, pins list URL, omits secrets, does not write token 揭示 (66.9255ms)
+    ✔ GitLab 200 maps iid not id and constructs /-/issues/{iid} on the profile base_url (121.739542ms)
+  ✔ success lists open issues from the profile row (189.055875ms)
+  ▶ error mapping
+    ✔ unset or invalid VAULT_MASTER_KEY after profile exists is 500 vault_unconfigured (80.61525ms)
+    ✔ forge HTTP 401 is 422 token_check_failed with missing 读 (81.263459ms)
+    ✔ forge HTTP 500 is 502 forge_unreachable with 列出 Issue copy (79.9595ms)
+    ✔ fetch/network throw is 502 forge_unreachable with 列出 Issue copy (74.2625ms)
+    ✔ forge HTTP 404 (and 410) is 502 列出, not issue_not_found (73.03975ms)
+  ✔ error mapping (389.578541ms)
+✔ issue #19 GET /api/v1/credential-profiles/:id/issues (1006.014ms)
+▶ device proof canonical string
+  ✔ canonical payload is five newline-separated lines with no trailing newline after the hash (6.120667ms)
+✔ device proof canonical string (9.33325ms)
+▶ issue #23 device proof + admin bind
+  ✔ signed unknown device on MCP initialize is 202 authorization_required, no token, creates pending (226.457667ms)
+  ✔ signed unknown device on REST claim is 202 authorization_required, no token, no lease (84.58325ms)
+  ✔ retry of the same pending device does not extend pending expires_at (94.299708ms)
+  ✔ missing device headers on MCP is 401 unauthorized, not 202 (29.187083ms)
+  ✔ bad signature on an otherwise complete proof is 401 unauthorized, not 202 (55.612625ms)
+  ✔ leftover ktk_ Bearer is not MCP identity: 401, not 202 (14.139375ms)
+  ✔ full session lists pending; bind { claimant_display_name } does not claim and does not return a forge token (94.013834ms)
+  ✔ after bind, the same keypair claim is 201 with a forge token (79.714958ms)
+  ✔ bind { bind_to_self: true } works (49.075875ms)
+  ✔ bind to existing claimant_id (112.045375ms)
+  ✔ non-full leftover claim_only session cannot bind (403) (76.527667ms)
+  ✔ revoke claimant → next proof is 403, no token (81.7505ms)
+  ✔ revoke device → next proof is 403 (77.051167ms)
+  ✔ max_devices 409; PATCH max age does not rewrite existing expires_at (105.618959ms)
+  ✔ GET /api/v1/agent/whoami after bind_to_self returns the device owner, never a forge token (75.547209ms)
+  ✔ pending whoami is the same 202 authorization_required as MCP (26.013542ms)
+  ✔ pending device MCP list_tasks is HTTP 202 authorization_required, not a successful tool result (78.323ms)
+✔ issue #23 device proof + admin bind (1361.182375ms)
+▶ issue #15 audit log HTTP + team stats
+  ▶ authentication — session cookie, same mechanism as GET /api/v1/tasks
+    ✔ unauthenticated GET /api/v1/events and GET /api/v1/stats are 401 unauthorized (155.526625ms)
+    ✔ 待批准 GitHub user is 401 on events and stats (never sees the member workbench) (116.248542ms)
+    ✔ approved claim_only user can read events and stats, same as the board (97.852ms)
+  ✔ authentication — session cookie, same mechanism as GET /api/v1/tasks (371.228584ms)
+  ▶ GET /api/v1/events
+    ✔ envelope is { events: [] } with newest-first EventRow shape; no query string needed (105.810166ms)
+    ✔ list carries real writers rows with parsed details and actor_username resolved via left-join (87.945958ms)
+    ✔ system-driven rows (actor_user_id null) still appear, with actor_username null (65.575458ms)
+  ✔ GET /api/v1/events (259.581208ms)
+  ▶ GET /api/v1/stats
+    ✔ empty DB returns { completed_count: 0, completed_by_username: {} } (63.557917ms)
+    ✔ completed_count counts 状态迁移 rows with details.to === 已完成; null actor groups under 系统 (63.540166ms)
+    ✔ a 已完成 task row with no matching event does not inflate stats (near-miss vs COUNT(*) FROM tasks) (82.481667ms)
+  ✔ GET /api/v1/stats (209.83225ms)
+✔ issue #15 audit log HTTP + team stats (841.96475ms)
+▶ issue #17 single-port 31415 hosting
+  ✔ omitted hosting options keep GET / as 考拉任务服务占位 with text/plain; webDist serves index.html at / (221.6905ms)
+  ✔ webDist SPA-fallbacks unmatched GET, serves assets, and does not swallow /api or /login (37.800583ms)
+  ✔ when webDist and viteDevTarget are both set, webDist wins (11.671ms)
+  ✔ index.ts PORT default is 31415 (source pin; does not import index.ts) (1.521709ms)
+  ✔ auth.ts PUBLIC_URL default is http://localhost:31415 (source pin) (0.194ms)
+  ✔ vite.config.ts proxies /api and /login to http://127.0.0.1:31415 (0.814542ms)
+  ✔ docker-compose binds 127.0.0.1:31415:31415, sets PORT 31415, and injects SQLITE_PATH plus secrets (0.507791ms)
+  ✔ Dockerfile EXPOSE 31415, ENV PORT=31415, and image build includes web dist (0.591625ms)
+  ✔ root package.json has a non-empty dev script (0.484125ms)
+✔ issue #17 single-port 31415 hosting (276.738917ms)
+▶ users schema after createDb
+  ✔ new sqlite has nullable password_hash, local provider, and admin permission_level (13.609584ms)
+  ✔ two local rows with the same trimmed username fail; OAuth usernames may collide across providers (7.217ms)
+✔ users schema after createDb (22.114458ms)
+▶ legacy sqlite migration
+  ✔ createDb promotes only the earliest gitlab/gitea/local full to admin; github full stays full (157.268833ms)
+  ✔ old file with only github active+full still has zero loginable admins (15.876791ms)
+✔ legacy sqlite migration (173.330667ms)
+▶ GET /api/v1/setup
+  ✔ unauthenticated probe is 200 { setup_complete: boolean }; empty DB is false (36.630833ms)
+✔ GET /api/v1/setup (36.735334ms)
+▶ POST /api/v1/setup
+  ✔ creates local admin session; me has no hash fields; display_name defaults to trimmed username (66.839042ms)
+  ✔ second setup is 409 setup_complete; concurrent setups leave at most one admin (122.521625ms)
+  ✔ missing/empty username or empty password is 400 (13.402167ms)
+✔ POST /api/v1/setup (203.269042ms)
+▶ POST /api/v1/login
+  ✔ correct password is 200; wrong, unknown, and empty are all 401 with the same shape (240.724416ms)
+✔ POST /api/v1/login (240.869625ms)
+▶ GET /login HTML
+  ✔ before setup the page is a username/password wizard, not OAuth as the way in (11.826125ms)
+  ✔ after setup: GitLab + Gitea links, local login affordance, no GitHub (78.319834ms)
+✔ GET /login HTML (90.313125ms)
+▶ OAuth after identity split
+  ✔ empty DB GitLab callback does not insert a user or set a session (21.0625ms)
+  ✔ empty DB Gitea callback does not insert a user or set a session (21.166916ms)
+  ✔ GET /login/github and callback are 404 (7.431166ms)
+  ✔ after setup, GitLab and Gitea OAuth insert active+full publishers and set a session (74.134917ms)
+✔ OAuth after identity split (124.267708ms)
+▶ KAOLA_ADMINS is ignored
+  ✔ malformed KAOLA_ADMINS still buildApp and does not grant GitHub login or extra admin (16.819042ms)
+✔ KAOLA_ADMINS is ignored (16.923375ms)
+▶ users list, promote, retired approve
+  ✔ GET /api/v1/users: unauth 401, publisher 403, admin 200 without hash fields (64.625125ms)
+  ✔ admin promotes gitlab/gitea full; already admin is 200; local/github/missing are 404 or 400; publisher 403 (99.029083ms)
+  ✔ POST /api/v1/users/:id/approve is retired 404 (61.689875ms)
+✔ users list, promote, retired approve (225.84025ms)
+▶ admin vs publisher HTTP gates
+  ✔ publisher can post tasks; cannot list devices, users, promote, settings, or claim-confirmations (94.671125ms)
+  ✔ leftover claim_only via GitLab reuse cannot publish or manage devices (92.297333ms)
+✔ admin vs publisher HTTP gates (187.182333ms)
+▶ issue #12 POST /api/v1/tasks/import
+  ▶ authentication (same gate as POST /api/v1/tasks)
+    ✔ unauthenticated JSON POST returns 401 unauthorized (214.202292ms)
+    ✔ leftover 待批准 GitHub user gets 403 forbidden (61.347959ms)
+    ✔ leftover active claim_only GitHub user gets 403 forbidden (80.442541ms)
+  ✔ authentication (same gate as POST /api/v1/tasks) (357.707375ms)
+  ▶ success is a pre-publish draft (200, no tasks row, no token)
+    ✔ inline credential returns 200 mapped fields and does not insert a tasks row (62.530875ms)
+    ✔ optional repo.full_name matching the parsed name still 200 (57.924167ms)
+    ✔ trailing slash on issue_url is stripped in source.issue_url (52.014625ms)
+    ✔ gitea constructor baseUrl is used, not the pasted issue host (SSRF) (68.591291ms)
+  ✔ success is a pre-publish draft (200, no tasks row, no token) (241.35ms)
+  ▶ error mapping
+    ✔ generic parse / missing issue_url / missing forge is 400 invalid_body with no message (95.878791ms)
+    ✔ unparseable issue_url is 400 with 无法解析 Issue 地址 and does not fetch (70.009417ms)
+    ✔ repo.full_name that does not equal the parsed name is 400 Issue 地址与仓库不匹配 (70.020916ms)
+    ✔ repo.base_url that is not http(s)+host uses the publish Chinese message (64.275542ms)
+    ✔ forge 404 is 404 issue_not_found (68.325416ms)
+    ✔ forge 410 is 404 issue_not_found (82.984083ms)
+    ✔ forge 401 is 422 token_check_failed with missing 读 (70.862916ms)
+    ✔ other non-OK forge status is 502 forge_unreachable (58.893667ms)
+    ✔ fetch/network throw is 502 forge_unreachable (60.971792ms)
+  ✔ error mapping (642.696208ms)
+  ▶ profile credential bind, decrypt, and token 揭示
+    ✔ matching profile 200 writes token 揭示 outcome ok; no tasks row; no token in JSON (74.735458ms)
+    ✔ profile-path 404 still writes token 揭示 with outcome issue_not_found (79.3975ms)
+    ✔ profile-path 401 still writes token 揭示 with outcome token_check_failed (78.545708ms)
+    ✔ profile-path 502 still writes token 揭示 with outcome forge_unreachable (64.185ms)
+    ✔ unparseable issue_url with profile_id does not decrypt (no token 揭示, no fetch) (172.744666ms)
+    ✔ missing profile is 400 所选凭证档案不存在 (64.996583ms)
+    ✔ profile bind is exact forge/base_url/parsed full_name (mismatch does not decrypt) (75.430834ms)
+    ✔ profile path without VAULT_MASTER_KEY returns 500 vault_unconfigured (75.227958ms)
+  ✔ profile credential bind, decrypt, and token 揭示 (686.145417ms)
+✔ issue #12 POST /api/v1/tasks/import (1928.521666ms)
+▶ issue #10 MCP server
+  ▶ authentication — device proof, HTTP 401 before JSON-RPC
+    ✔ unauthenticated POST /api/mcp (missing device headers) is 401 unauthorized with WWW-Authenticate Kaola-Device (206.738917ms)
+    ✔ Token scheme, Basic, leftover ktk_, and wrong device proof on POST /api/mcp are 401 with WWW-Authenticate Kaola-Device (102.435ms)
+    ✔ a session cookie without device proof does not authorize POST /api/mcp (78.267708ms)
+    ✔ authenticated tools/list includes the six tools and claim_task describes token hygiene (95.960417ms)
+  ✔ authentication — device proof, HTTP 401 before JSON-RPC (485.29125ms)
+  ▶ list_tasks / get_task_brief
+    ✔ list_tasks returns { tasks } briefs that parse and never contain forge secrets (100.005417ms)
+    ✔ list_tasks filters by exact status, tag membership of one tag, and exact repo.forge (114.046042ms)
+    ✔ list_tasks and get_task_brief apply sweepExpiredLeases so an expired 进行中 task shows as 待认领 (84.004417ms)
+    ✔ a leftover ktk_ Bearer cannot list_tasks: 401 unauthorized, not a successful tool result (58.346541ms)
+    ✔ get_task_brief returns a top-level brief; missing and numeric ids are isError not_found (89.0635ms)
+  ✔ list_tasks / get_task_brief (445.78ms)
+  ▶ claim_task
+    ✔ claim_task success envelope keys are exactly task, token, lease, clone with the REST clone pin (78.552958ms)
+    ✔ claim_task on a second task_id returns that task's token, not the first task's (83.844042ms)
+    ✔ claim_task on a github task returns Bearer extra_header and github.com remote_url, not api.github.com (85.468292ms)
+    ✔ claim_task on a gitlab task returns Bearer extra_header and keeps slashes in remote_url (85.223916ms)
+    ✔ leftover ktk_ Bearer cannot claim_task: 401 unauthorized, no token 揭示 (71.144583ms)
+    ✔ second claim_task is conflict; list_tasks and get_task_brief still omit the forge token (147.019333ms)
+  ✔ claim_task (551.603958ms)
+  ▶ report_progress / release_task
+    ✔ report_progress wraps REST: optional note (omit → empty string), envelope { task, lease }, no token (118.681125ms)
+    ✔ release_task wraps REST: optional reason, envelope { task } 待认领, no token (91.60625ms)
+    ✔ non-holder report_progress and release_task are isError forbidden with no message (97.827667ms)
+    ✔ report_progress and release_task with no live lease are isError 任务未被认领 (108.318959ms)
+  ✔ report_progress / release_task (416.741166ms)
+  ▶ submit_pr
+    ✔ submit_pr success is { task, pr_url, summary } 待验收, persists submissions, clears the lease, writes 状态迁移 (104.427792ms)
+    ✔ submit_pr fails for non-holder, no lease, and not 进行中 (96.602416ms)
+  ✔ submit_pr (201.375208ms)
+✔ issue #10 MCP server (2102.185125ms)
+▶ password hasher
+  ✔ correct password verifies; wrong password does not (124.123709ms)
+  ✔ hash is not the plaintext and never equals the password string (39.757875ms)
+  ✔ hashPassword rejects an empty password (0.581542ms)
+✔ password hasher (166.588083ms)
+✔ getPlaceholderBody returns the pinned non-empty placeholder HTTP body (0.616541ms)
+▶ issue #11 poller (pollPendingReviews)
+  ▶ getPullRequest-driven terminal transitions
+    ✔ merged PR: 待验收 → 已完成, submissions.pr_state → merged, system 状态迁移 (actor_user_id null) (302.184875ms)
+    ✔ closed (unmerged) PR: 待验收 → 已退回, submissions.pr_state → closed (115.117041ms)
+    ✔ open PR: task stays 待验收, pr_state stays open (101.324375ms)
+  ✔ getPullRequest-driven terminal transitions (521.247708ms)
+  ▶ scope: only 待验收 tasks are ever fetched
+    ✔ 待认领/进行中/已完成/已取消/已退回 tasks are never fetched as PRs and are left untouched (188.449833ms)
+  ✔ scope: only 待验收 tasks are ever fetched (188.622ms)
+  ▶ resilience
+    ✔ a fetch failure on one 待验收 task is skipped, and a sibling 待验收 task still completes (100.370708ms)
+  ✔ resilience (100.492791ms)
+  ▶ reopen after a poller-driven 已退回
+    ✔ poster PATCH { status: 待认领 } succeeds after 已退回, and prior events + the submissions row remain (112.830083ms)
+  ✔ reopen after a poller-driven 已退回 (112.988167ms)
+  ▶ buildApp({ pollIntervalMs }) frequency contract
+    ✔ omitted pollIntervalMs registers no interval (11.1205ms)
+    ✔ pollIntervalMs: 0 registers no interval (14.791542ms)
+    ✔ pollIntervalMs: 1234 registers setInterval with delay 1234 (20.30575ms)
+  ✔ buildApp({ pollIntervalMs }) frequency contract (46.538333ms)
+✔ issue #11 poller (pollPendingReviews) (972.286709ms)
+▶ issue #13: per-instance webhook-vs-poll config (pollPendingReviews honors forgeInstances)
+  ✔ a syncMode: "webhook" instance matching (repoForge, repoBaseUrl) is skipped: zero getPullRequest fetches, task stays 待验收 (112.023458ms)
+  ✔ an unlisted/mismatched instance (wrong base_url, or right base_url with the wrong forge) is still polled as before (76.370375ms)
+  ✔ a syncMode: "poll" instance matching (repoForge, repoBaseUrl) is still polled (87.142333ms)
+  ✔ an explicit empty forgeInstances array polls every 待验收 task exactly as omitting the argument does (90.372708ms)
+✔ issue #13: per-instance webhook-vs-poll config (pollPendingReviews honors forgeInstances) (366.097083ms)
+▶ issue #7 tasks HTTP surface
+  ▶ authentication and DESIGN §11 permissions
+    ✔ unauthenticated JSON GET/POST/PATCH return 401 unauthorized (87.970333ms)
+    ✔ browser-like GET /api/v1/tasks redirects to /login (12.230834ms)
+    ✔ leftover 待批准 GitHub user may read the board (§11 查看任务板 ✓) but not post (40.301708ms)
+    ✔ leftover active GitHub claim_only user may read the board but not post or patch (110.598959ms)
+    ✔ only the 发布者 may cancel — another active full member gets 403 (65.181625ms)
+  ✔ authentication and DESIGN §11 permissions (317.425292ms)
+  ▶ POST /api/v1/tasks — 凭证档案下拉选择 path
+    ✔ profile path creates a 待认领 task whose credential is { profile_id } (70.709542ms)
+    ✔ profile_id is accepted as a number and as a numeric string (95.784833ms)
+    ✔ an unknown profile_id is refused with 400 invalid_body and a Chinese message (138.252375ms)
+  ✔ POST /api/v1/tasks — 凭证档案下拉选择 path (305.089375ms)
+  ▶ POST /api/v1/tasks — 单任务临时 token path
+    ✔ inline token path creates a 待认领 task whose credential is { inline: true } (67.097583ms)
+    ✔ inline token is stored as ciphertext and recoverable through the vault (70.307042ms)
+    ✔ both credential paths return 500 vault_unconfigured without VAULT_MASTER_KEY (67.799958ms)
+  ✔ POST /api/v1/tasks — 单任务临时 token path (206.043083ms)
+  ▶ 发布即校验 — DESIGN §5
+    ✔ a token missing 推 and PR is refused with 422 and names both capabilities (65.102667ms)
+    ✔ a token that can push but cannot open PRs is refused naming only PR (61.136959ms)
+    ✔ a 401 token is refused with the token-invalid message, not the 权限不足 one (67.940083ms)
+    ✔ a token with no access to the repo is refused with the token-invalid message (74.073583ms)
+    ✔ an unreachable forge is a DIFFERENT outcome: 502 with its own Chinese message (94.489833ms)
+    ✔ the profile path is validated too — an under-scoped profile token is refused (81.963833ms)
+  ✔ 发布即校验 — DESIGN §5 (445.716584ms)
+  ▶ 任务卡字段完整符合 §6 schema
+    ✔ a full request body round-trips every DESIGN §6 field (80.555167ms)
+    ✔ pr_convention is derived from the public id, per DESIGN §6 (99.747584ms)
+    ✔ a client-supplied pr_convention or id or status is ignored — the server owns them (75.892708ms)
+    ✔ an imported source round-trips issue_url; a native source carries only type (82.709916ms)
+    ✔ a minimal request body is completed with the documented defaults (55.154334ms)
+    ✔ created_at is ISO-8601 with offset and matches the stored unix seconds (52.807125ms)
+    ✔ POST with no title returns 400 invalid_body (40.607375ms)
+    ✔ POST with an empty title returns 400 invalid_body (37.850958ms)
+    ✔ POST with no repo returns 400 invalid_body (34.377792ms)
+    ✔ POST with an unknown forge returns 400 invalid_body (34.787958ms)
+    ✔ POST with no repo.full_name returns 400 invalid_body (35.016333ms)
+    ✔ POST with an unknown priority returns 400 invalid_body (33.638542ms)
+    ✔ POST with an unknown source type returns 400 invalid_body (34.875042ms)
+    ✔ POST with an imported source without issue_url returns 400 invalid_body (34.374792ms)
+    ✔ POST with no credential returns 400 invalid_body (34.807125ms)
+    ✔ POST with an empty credential returns 400 invalid_body (34.89675ms)
+    ✔ POST with both credential forms at once returns 400 invalid_body (39.211334ms)
+    ✔ POST with a bare inline marker and no token returns 400 invalid_body (32.278875ms)
+    ✔ POST with an empty inline token returns 400 invalid_body (32.342208ms)
+  ✔ 任务卡字段完整符合 §6 schema (906.883917ms)
+  ▶ public_id — kt-YYYY-NNNN
+    ✔ public_id has the kt-YYYY-NNNN form and carries the current year (31.878ms)
+    ✔ public ids are distinct and their sequence increases (32.639709ms)
+    ✔ public_id is UNIQUE in SQLite (37.322167ms)
+  ✔ public_id — kt-YYYY-NNNN (101.993125ms)
+  ▶ token secrecy — DESIGN §7
+    ✔ no create/list/get response carries the inline token in any field (30.381208ms)
+    ✔ no create/list/get response carries the profile token in any field (32.446792ms)
+  ✔ token secrecy — DESIGN §7 (62.924291ms)
+  ▶ GET /api/v1/tasks and GET /api/v1/tasks/:public_id
+    ✔ list returns every task under a tasks key, each a §6 brief (33.779084ms)
+    ✔ get by public_id returns exactly the brief that create returned (32.226167ms)
+    ✔ an unknown public_id returns 404 not_found (31.921583ms)
+    ✔ a numeric-looking id returns 404 not_found — tasks are addressed by public_id only (40.185917ms)
+  ✔ GET /api/v1/tasks and GET /api/v1/tasks/:public_id (138.268334ms)
+  ▶ PATCH /api/v1/tasks/:public_id — 取消 / 重新开放
+    ✔ 待认领 → 已取消 by the poster returns the updated brief (35.447708ms)
+    ✔ 已退回 → 待认领 reopens the task (41.574458ms)
+    ✔ 已退回 → 已取消 by the poster (47.31625ms)
+    ✔ an illegal transition 待认领 → 已完成 returns 409 with a Chinese message (36.170208ms)
+    ✔ 待认领 → 进行中 is claim territory, not a poster edit: 409 illegal_transition (40.24375ms)
+    ✔ 已取消 is terminal — 已取消 → 待认领 returns 409 (33.307958ms)
+    ✔ an unknown status value returns 400 invalid_body (32.632041ms)
+    ✔ PATCH on an unknown public_id returns 404 not_found (31.492667ms)
+  ✔ PATCH /api/v1/tasks/:public_id — 取消 / 重新开放 (298.463167ms)
+  ▶ audit — 状态迁移 events (DESIGN §10)
+    ✔ cancelling writes one 状态迁移 event naming the task, from, to and actor (38.0745ms)
+    ✔ reopening writes a 状态迁移 event from 已退回 to 待认领 (38.297625ms)
+    ✔ a refused transition writes no 状态迁移 event (40.802083ms)
+  ✔ audit — 状态迁移 events (DESIGN §10) (117.298208ms)
+  ▶ tasks table invariants (DESIGN §10: credential_profile_id / inline_token_encrypted 二选一)
+    ✔ the profile path stores credential_profile_id and leaves inline_token_encrypted NULL (37.025958ms)
+    ✔ SQLite refuses a row with BOTH credential columns set (36.721416ms)
+    ✔ SQLite refuses a row with NEITHER credential column set (37.372167ms)
+  ✔ tasks table invariants (DESIGN §10: credential_profile_id / inline_token_encrypted 二选一) (111.22825ms)
+  ▶ POST /api/v1/tasks — security-review repair (profile binding / base_url / audit)
+    ▶ F1 — profile-to-repo binding (exact forge + base_url + full_name)
+      ✔ gitlab profile + gitea request is 400 before decrypt and never sends the plaintext token (37.457917ms)
+      ✔ matching forge and full_name with an attacker base_url is 400 before decrypt (36.264042ms)
+      ✔ matching forge and base_url with a different full_name is 400 before decrypt (36.728541ms)
+    ✔ F1 — profile-to-repo binding (exact forge + base_url + full_name) (110.558125ms)
+    ▶ F2 — repo.base_url must be http(s) with a non-empty host
+      ✔ POST with repo.base_url a file: URL returns 400 invalid_body before any forge fetch (31.104083ms)
+      ✔ POST with repo.base_url a javascript: URL returns 400 invalid_body before any forge fetch (31.889917ms)
+      ✔ POST with repo.base_url a missing scheme returns 400 invalid_body before any forge fetch (31.463792ms)
+      ✔ POST with repo.base_url an empty host returns 400 invalid_body before any forge fetch (31.410125ms)
+    ✔ F2 — repo.base_url must be http(s) with a non-empty host (125.993875ms)
+    ▶ F3 — decrypting a stored profile for 发布即校验 writes token 揭示
+      ✔ a matching profile 201 writes token 揭示 with pinned details; an inline token does not (39.278916ms)
+      ✔ a profile-path 422 still writes token 揭示 (plaintext already left the process) (40.75075ms)
+      ✔ a profile-path 502 still writes token 揭示 (plaintext already left the process) (35.790958ms)
+    ✔ F3 — decrypting a stored profile for 发布即校验 writes token 揭示 (115.945333ms)
+  ✔ POST /api/v1/tasks — security-review repair (profile binding / base_url / audit) (352.561958ms)
+✔ issue #7 tasks HTTP surface (3369.548208ms)
+▶ issue #5 credential vault
+  ▶ placeholder pin
+    ✔ GET / still returns 考拉任务服务占位 (168.741375ms)
+  ✔ placeholder pin (170.201083ms)
+  ▶ unauthenticated credential-profile routes
+    ✔ JSON GET/POST/DELETE without a session return 401 unauthorized (21.934167ms)
+    ✔ browser-like GET /api/v1/credential-profiles redirects to /login (12.810625ms)
+  ✔ unauthenticated credential-profile routes (35.151208ms)
+  ▶ credential profile CRUD (session, active full)
+    ✔ GitLab POST returns 201 public fields and GET lists them without secrets (87.743ms)
+    ✔ Gitea active full member can POST a credential profile (79.819833ms)
+    ✔ duplicate (forge, base_url, repo_full_name) returns 409 conflict (75.449542ms)
+    ✔ DELETE returns forge-revoke copy; missing id is 404 not_found (67.512625ms)
+    ✔ any active full member lists and deletes team-shared profiles (79.30725ms)
+  ✔ credential profile CRUD (session, active full) (390.836166ms)
+  ▶ permission gate (profiles are active+full only)
+    ✔ leftover 待批准 GitHub user gets 403 forbidden on POST/GET/DELETE (18.8565ms)
+    ✔ leftover active GitHub claim_only still gets 403 forbidden on POST/GET/DELETE (88.856125ms)
+  ✔ permission gate (profiles are active+full only) (107.946375ms)
+  ▶ SQLite: no plaintext token; 变更 events
+    ✔ token_encrypted TEXT omits plaintext and create writes 变更 (78.047416ms)
+    ✔ DELETE writes 变更 action delete (73.850875ms)
+  ✔ SQLite: no plaintext token; 变更 events (152.207958ms)
+  ▶ vault_unconfigured
+    ✔ HTTP POST without VAULT_MASTER_KEY returns 500 vault_unconfigured (65.298667ms)
+  ✔ vault_unconfigured (65.424083ms)
+  ▶ encryptToken / decryptToken (dynamic import ./vault.ts)
+    ✔ round-trips a one-off token string and ciphertext omits plaintext (0.9485ms)
+    ✔ encryptToken throws when VAULT_MASTER_KEY is missing (0.329667ms)
+  ✔ encryptToken / decryptToken (dynamic import ./vault.ts) (1.327542ms)
+  ▶ revealCredentialProfile (dynamic import ./vault.ts)
+    ✔ returns plaintext, writes token 揭示 audit, and throws after DELETE (67.494541ms)
+  ✔ revealCredentialProfile (dynamic import ./vault.ts) (67.677542ms)
+✔ issue #5 credential vault (991.711459ms)
+▶ issue #13 webhook receiver (POST /api/v1/webhooks/:publicId)
+  ✔ unknown publicId (no matching forgeInstances entry) → 404 { error: "not_found" }, no signature required (108.200458ms)
+  ✔ bad signature (wrong secret) → 401 { error: "invalid_signature" }, and the response never leaks the secret (23.455708ms)
+  ✔ bad signature (missing signature header) → 401 { error: "invalid_signature" } (22.578417ms)
+  ✔ ping/irrelevant event with a correct signature → 204 empty body (20.532667ms)
+  ✔ merge event with a matching 待验收 submission → 204, task 已完成, submissions.pr_state merged, system 状态迁移 event (160.304208ms)
+  ✔ closed-unmerged event with a matching 待验收 submission → 204, task 已退回, submissions.pr_state closed (88.890709ms)
+  ✔ a delivery whose pr_url matches no 待验收 submission → 204 no-op, no task/event changes (88.488125ms)
+  ✔ a syncMode: "poll" instance webhook still completes the task (mode gates the poller, not this receiver) (95.872125ms)
+  ✔ no session cookie and no Bearer token are required or accepted as auth — the signature alone gates the request (86.930625ms)
+  ✔ cross-forge dispatch: a github forgeInstances entry is verified with X-Hub-Signature-256, not the gitea scheme (12.77225ms)
+  ✔ confused deputy: a correctly-signed github delivery must not complete an unrelated gitea instance's task merely because pr_url matches (74.816625ms)
+✔ issue #13 webhook receiver (POST /api/v1/webhooks/:publicId) (784.618375ms)
+▶ issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成)
+  ▶ 认领 (claim) write-back
+    ✔ imported gitea task: REST claim posts a write-back comment with the task credential, not the agent key (265.031333ms)
+    ✔ native task: REST claim never posts a write-back comment and writes no 回写 event (78.648625ms)
+    ✔ imported github task: claim posts to the GitHub Issues API with a Bearer task-credential header (89.550875ms)
+    ✔ imported gitlab task: claim posts a note with a PRIVATE-TOKEN task-credential header (93.440958ms)
+    ✔ a forge 5xx on the claim comment never blocks the claim, and no successful 回写 is recorded (85.033042ms)
+  ✔ 认领 (claim) write-back (612.641708ms)
+  ▶ 提交 PR (submit_pr) write-back
+    ✔ imported gitea task: MCP submit_pr posts a write-back comment containing publicId, PUBLIC_URL, and pr_url (91.998375ms)
+    ✔ a forge network failure on the submit_pr comment never blocks submit_pr, and no successful 回写 is recorded (67.840583ms)
+  ✔ 提交 PR (submit_pr) write-back (160.036666ms)
+  ▶ 完成 (complete) write-back
+    ✔ imported gitea task: pollPendingReviews posts a write-back comment on 已完成 (merged) (57.069417ms)
+    ✔ imported gitea task: a webhook merged delivery posts a write-back comment on 已完成 (50.513917ms)
+    ✔ imported gitea task: a closed (unmerged) PR via pollPendingReviews (已退回) never posts a completion write-back comment (50.64325ms)
+    ✔ a forge 5xx on the completion comment never blocks reaching 已完成, and no successful 回写 is recorded (49.364458ms)
+  ✔ 完成 (complete) write-back (207.809625ms)
+  ▶ native task: no write-back at any of the three hooks
+    ✔ a native task never posts a write-back comment across claim, submit_pr, and completion (53.558292ms)
+  ✔ native task: no write-back at any of the three hooks (53.67275ms)
+  ▶ retry (retryPendingWritebacks, exported from apps/server/src/poller.ts)
+    ✔ re-posts a write-back comment that failed on 认领, and does not duplicate once it has succeeded (43.677416ms)
+    ✔ re-posts a write-back comment that failed on 完成 (via pollPendingReviews) (50.249333ms)
+    ✔ is a safe no-op when there is nothing pending (9.008416ms)
+  ✔ retry (retryPendingWritebacks, exported from apps/server/src/poller.ts) (103.088458ms)
+✔ issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成) (1137.90425ms)
+▶ commentOnIssue shared spec
+  ▶ github
+    ✔ POSTs { body } to the comment endpoint with the same per-kind auth headers as the sibling methods (69.340667ms)
+    ✔ treats any res.ok (2xx) response as success, not only a hard-coded 201 (1.095416ms)
+    ✔ non-OK HTTP response rejects with "commentOnIssue: <kind> responded <status>", after exactly one fetch (1.47675ms)
+    ✔ an unparseable issue_url rejects without calling fetch (not merely notImplemented) (0.630042ms)
+    ✔ a pull/MR web path in issue_url is unparseable and must not fetch (0.490583ms)
+  ✔ github (74.76125ms)
+  ▶ gitlab
+    ✔ POSTs { body } to the comment endpoint with the same per-kind auth headers as the sibling methods (2.228917ms)
+    ✔ treats any res.ok (2xx) response as success, not only a hard-coded 201 (0.651625ms)
+    ✔ non-OK HTTP response rejects with "commentOnIssue: <kind> responded <status>", after exactly one fetch (3.326709ms)
+    ✔ an unparseable issue_url rejects without calling fetch (not merely notImplemented) (0.399541ms)
+    ✔ a pull/MR web path in issue_url is unparseable and must not fetch (1.09025ms)
+  ✔ gitlab (8.231209ms)
+  ▶ gitea
+    ✔ POSTs { body } to the comment endpoint with the same per-kind auth headers as the sibling methods (1.346041ms)
+    ✔ treats any res.ok (2xx) response as success, not only a hard-coded 201 (0.629334ms)
+    ✔ non-OK HTTP response rejects with "commentOnIssue: <kind> responded <status>", after exactly one fetch (3.1835ms)
+    ✔ an unparseable issue_url rejects without calling fetch (not merely notImplemented) (0.206375ms)
+    ✔ a pull/MR web path in issue_url is unparseable and must not fetch (0.134541ms)
+  ✔ gitea (5.918584ms)
+  ✔ github: always POSTs to api.github.com regardless of a custom baseUrl option or the pasted issue host (1.954583ms)
+  ✔ gitlab/gitea: the API origin comes from the constructor baseUrl option, never from the issue_url host (SSRF) (2.577291ms)
+  ✔ gitlab: a nested-group namespace is encodeURIComponent-ed as a single :id segment in the notes URL (4.211375ms)
+  ✔ the same body string is sent verbatim as the JSON { body } field for every kind (2.132541ms)
+✔ commentOnIssue shared spec (104.703083ms)
+▶ getPullRequest shared spec
+  ▶ github
+    ✔ GETs the pull/merge-request endpoint with validateToken-style auth headers (49.935958ms)
+    ✔ merged → { state: "merged" } (0.612917ms)
+    ✔ closed and not merged → { state: "closed" } (0.512875ms)
+    ✔ open → { state: "open" } (0.774708ms)
+    ✔ trailing slash on the pasted URL is stripped before parsing (0.655959ms)
+    ✔ non-OK HTTP response rejects (after actually calling fetch, not merely throwing) (0.613875ms)
+    ✔ an unparseable prUrl rejects without calling fetch, while a valid URL from the same adapter succeeds (0.774208ms)
+  ✔ github (55.0555ms)
+  ▶ gitlab
+    ✔ GETs the pull/merge-request endpoint with validateToken-style auth headers (0.707667ms)
+    ✔ merged → { state: "merged" } (0.774208ms)
+    ✔ closed and not merged → { state: "closed" } (0.613917ms)
+    ✔ open → { state: "open" } (0.802334ms)
+    ✔ trailing slash on the pasted URL is stripped before parsing (0.412875ms)
+    ✔ non-OK HTTP response rejects (after actually calling fetch, not merely throwing) (0.129083ms)
+    ✔ an unparseable prUrl rejects without calling fetch, while a valid URL from the same adapter succeeds (0.762583ms)
+  ✔ gitlab (4.639459ms)
+  ▶ gitea
+    ✔ GETs the pull/merge-request endpoint with validateToken-style auth headers (0.736042ms)
+    ✔ merged → { state: "merged" } (0.986542ms)
+    ✔ closed and not merged → { state: "closed" } (0.295292ms)
+    ✔ open → { state: "open" } (0.242583ms)
+    ✔ trailing slash on the pasted URL is stripped before parsing (1.259416ms)
+    ✔ non-OK HTTP response rejects (after actually calling fetch, not merely throwing) (0.384625ms)
+    ✔ an unparseable prUrl rejects without calling fetch, while a valid URL from the same adapter succeeds (0.514042ms)
+  ✔ gitea (4.677ms)
+  ✔ github: .diff and .patch suffixes on the pasted URL are stripped before parsing (1.974667ms)
+  ✔ github: always calls api.github.com regardless of a custom baseUrl option (1.410292ms)
+  ✔ gitlab: opened → open (verified 4-valued vendor enum mapped down to 3) (1.205041ms)
+  ✔ gitlab: locked (transient, en route to merged) → open, not merged and not closed (0.385ms)
+  ✔ gitlab: a namespace path with subgroup slashes is encodeURIComponent-ed as a single :id segment (0.636167ms)
+  ✔ gitlab/gitea: the API origin comes from the constructor baseUrl option, not from the prUrl host (0.558125ms)
+✔ getPullRequest shared spec (72.569292ms)
+▶ importIssue shared spec
+  ▶ github
+    ✔ GETs the issue endpoint with validateToken-style auth headers and returns ImportedIssue (100.182708ms)
+    ✔ trailing slash on the pasted URL is stripped before parsing and from returned issue_url (0.565333ms)
+    ✔ query and hash on the pasted URL are dropped by pathname when building the REST URL (0.556125ms)
+    ✔ null issue body/description maps to an empty description_md (0.241708ms)
+    ✔ missing issue body/description maps to an empty description_md (0.201209ms)
+    ✔ returned issue_url is the pasted web URL, not html_url / web_url from JSON (0.170916ms)
+    ✔ missing or non-string title rejects after fetch (0.457875ms)
+    ✔ non-OK HTTP response rejects after actually calling fetch, with status in the message (0.358916ms)
+    ✔ an unparseable issueUrl rejects without calling fetch (not merely notImplemented) (0.434625ms)
+    ✔ a pull/MR/work-item web path is unparseable and must not fetch (0.424417ms)
+  ✔ github (104.496583ms)
+  ▶ gitlab
+    ✔ GETs the issue endpoint with validateToken-style auth headers and returns ImportedIssue (0.428833ms)
+    ✔ trailing slash on the pasted URL is stripped before parsing and from returned issue_url (0.445625ms)
+    ✔ query and hash on the pasted URL are dropped by pathname when building the REST URL (0.373375ms)
+    ✔ null issue body/description maps to an empty description_md (1.251625ms)
+    ✔ missing issue body/description maps to an empty description_md (1.539583ms)
+    ✔ returned issue_url is the pasted web URL, not html_url / web_url from JSON (0.486666ms)
+    ✔ missing or non-string title rejects after fetch (0.3765ms)
+    ✔ non-OK HTTP response rejects after actually calling fetch, with status in the message (0.25525ms)
+    ✔ an unparseable issueUrl rejects without calling fetch (not merely notImplemented) (0.520292ms)
+    ✔ a pull/MR/work-item web path is unparseable and must not fetch (0.15575ms)
+  ✔ gitlab (7.36775ms)
+  ▶ gitea
+    ✔ GETs the issue endpoint with validateToken-style auth headers and returns ImportedIssue (1.556291ms)
+    ✔ trailing slash on the pasted URL is stripped before parsing and from returned issue_url (1.3325ms)
+    ✔ query and hash on the pasted URL are dropped by pathname when building the REST URL (0.113958ms)
+    ✔ null issue body/description maps to an empty description_md (0.130625ms)
+    ✔ missing issue body/description maps to an empty description_md (0.292792ms)
+    ✔ returned issue_url is the pasted web URL, not html_url / web_url from JSON (4.732417ms)
+    ✔ missing or non-string title rejects after fetch (0.724667ms)
+    ✔ non-OK HTTP response rejects after actually calling fetch, with status in the message (0.60875ms)
+    ✔ an unparseable issueUrl rejects without calling fetch (not merely notImplemented) (0.585167ms)
+    ✔ a pull/MR/work-item web path is unparseable and must not fetch (0.1375ms)
+  ✔ gitea (10.680125ms)
+  ✔ github: always calls api.github.com regardless of a custom baseUrl option or pasted host (0.893542ms)
+  ✔ github/gitea: a GET /issues/{n} payload that includes pull_request is still accepted (2.600583ms)
+  ✔ gitlab: description_md comes from JSON description, not body (0.321375ms)
+  ✔ github/gitea: description_md comes from JSON body, not description (0.165417ms)
+  ✔ gitlab: a nested-group namespace is encodeURIComponent-ed as a single :id segment (0.119167ms)
+  ✔ gitlab: canonical /-/issues/ is not parsed as a legacy namespace ending in /- (1.119667ms)
+  ✔ gitlab: the legacy /issues/ web_url (no /-/) is also accepted (0.493208ms)
+  ✔ gitlab: /-/work_items/ is unparseable (zero fetch) (0.709084ms)
+  ✔ gitlab/gitea: the API origin comes from the constructor baseUrl option, not from the issueUrl host (6.944791ms)
+✔ importIssue shared spec (138.621042ms)
+✔ getForgeAdaptersHealth returns the pinned non-empty forge-adapters package health string (0.873208ms)
+▶ listIssues shared spec
+  ▶ github
+    ✔ GETs the open-issues list with importIssue-style auth headers and returns ListedIssue[] (56.734666ms)
+    ✔ trailing slash on repo.base_url is stripped when constructing issue_url (0.543875ms)
+    ✔ non-OK HTTP 401 rejects after fetch with listIssues: github responded 401 (0.596167ms)
+    ✔ non-OK HTTP 500 rejects after fetch with listIssues: github responded 500 (0.235333ms)
+    ✔ a network rejection from fetch rejects the listIssues promise (0.35575ms)
+    ✔ keeps JSON array order and does not re-sort (0.304459ms)
+  ✔ github (59.672708ms)
+  ▶ gitlab
+    ✔ GETs the open-issues list with importIssue-style auth headers and returns ListedIssue[] (0.709042ms)
+    ✔ trailing slash on repo.base_url is stripped when constructing issue_url (0.538875ms)
+    ✔ non-OK HTTP 401 rejects after fetch with listIssues: gitlab responded 401 (0.343375ms)
+    ✔ non-OK HTTP 500 rejects after fetch with listIssues: gitlab responded 500 (0.474042ms)
+    ✔ a network rejection from fetch rejects the listIssues promise (0.246ms)
+    ✔ keeps JSON array order and does not re-sort (0.53ms)
+  ✔ gitlab (3.170625ms)
+  ▶ gitea
+    ✔ GETs the open-issues list with importIssue-style auth headers and returns ListedIssue[] (1.05575ms)
+    ✔ trailing slash on repo.base_url is stripped when constructing issue_url (0.653209ms)
+    ✔ non-OK HTTP 401 rejects after fetch with listIssues: gitea responded 401 (0.602125ms)
+    ✔ non-OK HTTP 500 rejects after fetch with listIssues: gitea responded 500 (0.369958ms)
+    ✔ a network rejection from fetch rejects the listIssues promise (0.868208ms)
+    ✔ keeps JSON array order and does not re-sort (0.588667ms)
+  ✔ gitea (4.397958ms)
+  ✔ github: always calls api.github.com even with constructor baseUrl and a different repo.base_url (4.567958ms)
+  ✔ github: drops an item with a pull_request object; a following real issue remains; html_url is not copied (2.056375ms)
+  ✔ gitlab: API origin is constructor baseUrl, never repo.base_url, never JSON web_url host (0.692917ms)
+  ✔ gitlab: maps iid not id; constructs canonical /-/issues/; parseIssueUrl round-trip; does not copy work_items web_url (7.840958ms)
+  ✔ gitlab: a nested-group namespace is encodeURIComponent-ed as a single :id segment (6.603875ms)
+  ✔ gitea: API origin is constructor baseUrl, never repo.base_url (1.517875ms)
+  ✔ gitea: maps number not id; does not copy html_url; query uses type=issues and limit not per_page (1.91075ms)
+✔ listIssues shared spec (94.477542ms)
+▶ validateToken shared spec
+  ▶ github
+    ✔ all ok: GET user + push-capable repo → missing [] (same-repo, no /forks) (49.715833ms)
+    ✔ cannot read: repo/project GET 404 → missing includes 读 (0.69775ms)
+    ✔ dead token: user GET 401 → missing includes 读, 推, and PR (0.577917ms)
+    ✔ read but cannot push (Reporter / push:false / access_level 20) → missing 推, not 读 (1.346417ms)
+    ✔ cannot open PR/MR while readable → missing includes PR (1.747875ms)
+    ✔ custom baseUrl: GitLab/Gitea keep subpath; GitHub always api.github.com (0.633167ms)
+  ✔ github (55.784958ms)
+  ▶ gitlab
+    ✔ all ok: GET user + push-capable repo → missing [] (same-repo, no /forks) (0.8565ms)
+    ✔ cannot read: repo/project GET 404 → missing includes 读 (0.18525ms)
+    ✔ dead token: user GET 401 → missing includes 读, 推, and PR (0.173333ms)
+    ✔ read but cannot push (Reporter / push:false / access_level 20) → missing 推, not 读 (0.223375ms)
+    ✔ cannot open PR/MR while readable → missing includes PR (0.381125ms)
+    ✔ custom baseUrl: GitLab/Gitea keep subpath; GitHub always api.github.com (0.468666ms)
+  ✔ gitlab (2.53675ms)
+  ▶ gitea
+    ✔ all ok: GET user + push-capable repo → missing [] (same-repo, no /forks) (0.753208ms)
+    ✔ cannot read: repo/project GET 404 → missing includes 读 (0.292583ms)
+    ✔ dead token: user GET 401 → missing includes 读, 推, and PR (0.283583ms)
+    ✔ read but cannot push (Reporter / push:false / access_level 20) → missing 推, not 读 (0.163709ms)
+    ✔ cannot open PR/MR while readable → missing includes PR (0.483542ms)
+    ✔ custom baseUrl: GitLab/Gitea keep subpath; GitHub always api.github.com (0.357833ms)
+  ✔ gitea (2.568125ms)
+  ✔ github classic PAT without repo scope cannot push or open PR (0.524708ms)
+✔ validateToken shared spec (62.23925ms)
+▶ parseWebhook shared spec
+  ▶ github
+    ✔ valid signature + merged terminal event → concrete ForgeEvent with state "merged" (41.367667ms)
+    ✔ valid signature + closed-unmerged terminal event → concrete ForgeEvent with state "closed" (0.592292ms)
+    ✔ valid signature + non-terminal action/state (still open) → null, not throw (0.349125ms)
+    ✔ valid signature + irrelevant event type (push) → null, not throw (0.267875ms)
+    ✔ wrong-secret signature → throws WebhookSignatureError (not the notImplemented placeholder) (0.326334ms)
+    ✔ missing signature header entirely → throws WebhookSignatureError (0.103166ms)
+    ✔ adapter created without a webhookSecret (undefined or empty) → parse fails the same as a bad signature (0.100042ms)
+  ✔ github (43.816167ms)
+  ▶ gitlab
+    ✔ valid signature + merged terminal event → concrete ForgeEvent with state "merged" (0.189708ms)
+    ✔ valid signature + closed-unmerged terminal event → concrete ForgeEvent with state "closed" (0.095125ms)
+    ✔ valid signature + non-terminal action/state (still open) → null, not throw (0.09475ms)
+    ✔ valid signature + irrelevant event type (push) → null, not throw (0.066209ms)
+    ✔ wrong-secret signature → throws WebhookSignatureError (not the notImplemented placeholder) (0.061417ms)
+    ✔ missing signature header entirely → throws WebhookSignatureError (0.042334ms)
+    ✔ adapter created without a webhookSecret (undefined or empty) → parse fails the same as a bad signature (0.041792ms)
+  ✔ gitlab (0.749167ms)
+  ▶ gitea
+    ✔ valid signature + merged terminal event → concrete ForgeEvent with state "merged" (0.306625ms)
+    ✔ valid signature + closed-unmerged terminal event → concrete ForgeEvent with state "closed" (0.265042ms)
+    ✔ valid signature + non-terminal action/state (still open) → null, not throw (0.154583ms)
+    ✔ valid signature + irrelevant event type (push) → null, not throw (0.132583ms)
+    ✔ wrong-secret signature → throws WebhookSignatureError (not the notImplemented placeholder) (0.105083ms)
+    ✔ missing signature header entirely → throws WebhookSignatureError (0.058083ms)
+    ✔ adapter created without a webhookSecret (undefined or empty) → parse fails the same as a bad signature (0.06425ms)
+  ✔ gitea (1.2495ms)
+  ✔ body may be passed as a Buffer (raw bytes), not only a string, for every kind (0.158208ms)
+  ✔ github: ping event with a valid signature → null, must not throw (hook setup must not fail) (0.056625ms)
+  ✔ gitea: a tampered body (bytes differ from what was signed) → throws WebhookSignatureError (0.106542ms)
+  ✔ gitlab: irrelevant event type with a correct token is still null, not an error (token alone is not "terminal") (0.034083ms)
+✔ parseWebhook shared spec (47.171334ms)
+▶ registerWebhook shared spec
+  ▶ github
+    ✔ non-OK HTTP response rejects with a message containing "<kind> responded <status>", after exactly one fetch (1.738709ms)
+  ✔ github (1.866708ms)
+  ▶ gitlab
+    ✔ non-OK HTTP response rejects with a message containing "<kind> responded <status>", after exactly one fetch (0.205875ms)
+  ✔ gitlab (0.236042ms)
+  ▶ gitea
+    ✔ non-OK HTTP response rejects with a message containing "<kind> responded <status>", after exactly one fetch (0.193208ms)
+  ✔ gitea (0.302208ms)
+  ✔ github: POST https://api.github.com/repos/{owner}/{repo}/hooks with pull_request events + secret, GitHub auth (0.549167ms)
+  ✔ github: registerWebhook always targets api.github.com regardless of a custom baseUrl option (0.324ms)
+  ✔ gitlab: POST {baseUrl}/api/v4/projects/{id}/hooks with merge_requests_events + token, PRIVATE-TOKEN auth (0.215583ms)
+  ✔ gitlab: registerWebhook uses the constructor baseUrl, not repo.base_url, and encodes nested-group namespaces (0.207541ms)
+  ✔ gitea: POST {baseUrl}/api/v1/repos/{owner}/{repo}/hooks with type gitea + pull_request events + config, token auth (0.129584ms)
+  ✔ gitea: registerWebhook uses the constructor baseUrl, not repo.base_url (0.126125ms)
+✔ registerWebhook shared spec (4.249125ms)
+✔ getSharedHealth returns the pinned non-empty shared package health string (0.9725ms)
+▶ parseTaskBrief
+  ✔ parseTaskBrief accepts the DESIGN.md §6 Task Brief example including Chinese ellipsis description (3.869875ms)
+  ✔ parseTaskBrief accepts a valid brief whose source is native with no issue_url (0.592042ms)
+  ✔ parseTaskBrief accepts status 待认领 (0.220625ms)
+  ✔ parseTaskBrief accepts status 进行中 (0.108667ms)
+  ✔ parseTaskBrief accepts status 待验收 (0.085375ms)
+  ✔ parseTaskBrief accepts status 已完成 (0.088917ms)
+  ✔ parseTaskBrief accepts status 已退回 (0.404084ms)
+  ✔ parseTaskBrief accepts status 已取消 (0.144791ms)
+  ✔ parseTaskBrief accepts repo.forge github (0.195042ms)
+  ✔ parseTaskBrief accepts repo.forge gitlab (0.475625ms)
+  ✔ parseTaskBrief accepts repo.forge gitea (0.226875ms)
+  ✔ parseTaskBrief accepts priority P0 (0.222208ms)
+  ✔ parseTaskBrief accepts priority P1 (0.133792ms)
+  ✔ parseTaskBrief accepts priority P2 (0.124667ms)
+  ✔ parseTaskBrief accepts priority P3 (0.196916ms)
+  ✔ parseTaskBrief rejects a brief missing required field id (0.423875ms)
+  ✔ parseTaskBrief rejects a brief missing required field title (0.179625ms)
+  ✔ parseTaskBrief rejects a brief missing required field description_md (0.133584ms)
+  ✔ parseTaskBrief rejects a brief missing required field source (0.294625ms)
+  ✔ parseTaskBrief rejects a brief missing required field repo (0.112708ms)
+  ✔ parseTaskBrief rejects a brief missing required field acceptance_criteria (0.083833ms)
+  ✔ parseTaskBrief rejects a brief missing required field test_command (0.082708ms)
+  ✔ parseTaskBrief rejects a brief missing required field constraints (0.065041ms)
+  ✔ parseTaskBrief rejects a brief missing required field pr_convention (0.105958ms)
+  ✔ parseTaskBrief rejects a brief missing required field credential (0.476916ms)
+  ✔ parseTaskBrief rejects a brief missing required field priority (0.152583ms)
+  ✔ parseTaskBrief rejects a brief missing required field tags (0.06925ms)
+  ✔ parseTaskBrief rejects a brief missing required field poster (0.099584ms)
+  ✔ parseTaskBrief rejects a brief missing required field status (0.077583ms)
+  ✔ parseTaskBrief rejects a brief missing required field created_at (0.220792ms)
+  ✔ parseTaskBrief rejects a brief missing repo.forge (0.444292ms)
+  ✔ parseTaskBrief rejects a brief missing repo.base_url (0.121ms)
+  ✔ parseTaskBrief rejects a brief missing repo.full_name (0.1185ms)
+  ✔ parseTaskBrief rejects a brief missing repo.base_branch (0.059625ms)
+  ✔ parseTaskBrief rejects a brief missing repo.suggested_dir (0.053667ms)
+  ✔ parseTaskBrief rejects a brief missing constraints.allowed_paths (0.054209ms)
+  ✔ parseTaskBrief rejects a brief missing constraints.forbidden_paths (0.047042ms)
+  ✔ parseTaskBrief rejects a brief missing pr_convention.branch_prefix (0.057333ms)
+  ✔ parseTaskBrief rejects a brief missing pr_convention.title_prefix (0.047125ms)
+  ✔ parseTaskBrief rejects status that is not one of the six Chinese labels (0.273375ms)
+  ✔ parseTaskBrief rejects repo.forge outside github | gitlab | gitea (0.075958ms)
+  ✔ parseTaskBrief rejects imported source without issue_url (0.072333ms)
+  ✔ parseTaskBrief rejects native source that includes issue_url (0.118ms)
+  ✔ parseTaskBrief rejects priority outside P0|P1|P2|P3 (0.314375ms)
+  ✔ parseTaskBrief rejects a raw token field on the brief (0.236416ms)
+  ✔ parseTaskBrief rejects credential that has no profile_id (0.189625ms)
+  ✔ parseTaskBrief rejects a raw token field inside credential (0.110583ms)
+  ✔ parseTaskBrief rejects credential that includes both profile_id and a raw token (0.099ms)
+✔ parseTaskBrief (14.843ms)
+▶ parseTaskBrief credential union
+  ✔ parseTaskBrief accepts credential { profile_id } — the shared credential profile form (0.164542ms)
+  ✔ parseTaskBrief accepts credential { inline: true } — the single-task temporary token form (0.06225ms)
+  ✔ parseTaskBrief round-trips credential { inline: true } without adding or dropping keys (0.059625ms)
+  ✔ parseTaskBrief accepts the DESIGN.md §6 example when its credential row is the inline form (0.092875ms)
+  ✔ parseTaskBrief rejects credential { inline: false } — inline is a marker, only true is legal (0.085291ms)
+  ✔ parseTaskBrief rejects credential carrying both profile_id and inline (二选一, exactly one form) (0.286417ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type "yes" (0.264208ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type "true" (0.077291ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type 1 (0.068875ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type 0 (0.052958ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type null (0.048167ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type [] (0.045625ms)
+  ✔ parseTaskBrief rejects credential inline of non-boolean type {} (0.042ms)
+  ✔ parseTaskBrief rejects credential {} — neither form is present (0.058584ms)
+  ✔ parseTaskBrief rejects a credential shape that is neither profile_id nor inline (0.192042ms)
+  ✔ parseTaskBrief rejects an unknown extra key alongside profile_id (0.066625ms)
+  ✔ parseTaskBrief rejects an unknown extra key alongside inline: true (0.116459ms)
+  ✔ parseTaskBrief rejects a raw token alongside inline: true (0.067333ms)
+  ✔ parseTaskBrief rejects a ciphertext-bearing credential even in the inline form (0.101584ms)
+  ✔ parseTaskBrief rejects profile_id that is not a string (0.106584ms)
+  ✔ parseTaskBrief rejects credential that is not an object: "cp-gitea-orders" (0.053125ms)
+  ✔ parseTaskBrief rejects credential that is not an object: 42 (0.054291ms)
+  ✔ parseTaskBrief rejects credential that is not an object: true (0.039666ms)
+  ✔ parseTaskBrief rejects credential that is not an object: null (0.047916ms)
+  ✔ parseTaskBrief rejects credential that is not an object: [] (0.040667ms)
+✔ parseTaskBrief credential union (2.577958ms)
+▶ transitionTaskStatus
+  ✔ transitionTaskStatus rejects 待认领 → 待认领 (0.142709ms)
+  ✔ transitionTaskStatus allows 待认领 → 进行中 (0.034958ms)
+  ✔ transitionTaskStatus rejects 待认领 → 待验收 (0.02525ms)
+  ✔ transitionTaskStatus rejects 待认领 → 已完成 (0.027125ms)
+  ✔ transitionTaskStatus rejects 待认领 → 已退回 (0.024083ms)
+  ✔ transitionTaskStatus allows 待认领 → 已取消 (0.021375ms)
+  ✔ transitionTaskStatus allows 进行中 → 待认领 (0.021625ms)
+  ✔ transitionTaskStatus rejects 进行中 → 进行中 (0.032917ms)
+  ✔ transitionTaskStatus allows 进行中 → 待验收 (0.021584ms)
+  ✔ transitionTaskStatus rejects 进行中 → 已完成 (0.022458ms)
+  ✔ transitionTaskStatus rejects 进行中 → 已退回 (0.022208ms)
+  ✔ transitionTaskStatus rejects 进行中 → 已取消 (0.030042ms)
+  ✔ transitionTaskStatus rejects 待验收 → 待认领 (0.024ms)
+  ✔ transitionTaskStatus rejects 待验收 → 进行中 (0.02275ms)
+  ✔ transitionTaskStatus rejects 待验收 → 待验收 (0.022625ms)
+  ✔ transitionTaskStatus allows 待验收 → 已完成 (0.022791ms)
+  ✔ transitionTaskStatus allows 待验收 → 已退回 (0.020292ms)
+  ✔ transitionTaskStatus rejects 待验收 → 已取消 (0.022333ms)
+  ✔ transitionTaskStatus rejects 已完成 → 待认领 (0.023334ms)
+  ✔ transitionTaskStatus rejects 已完成 → 进行中 (0.026375ms)
+  ✔ transitionTaskStatus rejects 已完成 → 待验收 (0.024417ms)
+  ✔ transitionTaskStatus rejects 已完成 → 已完成 (0.02325ms)
+  ✔ transitionTaskStatus rejects 已完成 → 已退回 (0.23975ms)
+  ✔ transitionTaskStatus rejects 已完成 → 已取消 (0.090666ms)
+  ✔ transitionTaskStatus allows 已退回 → 待认领 (0.072333ms)
+  ✔ transitionTaskStatus rejects 已退回 → 进行中 (0.063166ms)
+  ✔ transitionTaskStatus rejects 已退回 → 待验收 (0.035292ms)
+  ✔ transitionTaskStatus rejects 已退回 → 已完成 (0.027709ms)
+  ✔ transitionTaskStatus rejects 已退回 → 已退回 (0.025541ms)
+  ✔ transitionTaskStatus allows 已退回 → 已取消 (0.025ms)
+  ✔ transitionTaskStatus rejects 已取消 → 待认领 (0.024625ms)
+  ✔ transitionTaskStatus rejects 已取消 → 进行中 (0.023791ms)
+  ✔ transitionTaskStatus rejects 已取消 → 待验收 (0.023666ms)
+  ✔ transitionTaskStatus rejects 已取消 → 已完成 (0.022875ms)
+  ✔ transitionTaskStatus rejects 已取消 → 已退回 (0.024792ms)
+  ✔ transitionTaskStatus rejects 已取消 → 已取消 (0.022583ms)
+  ✔ transitionTaskStatus rejects an unknown from status (0.0465ms)
+  ✔ transitionTaskStatus rejects an unknown to status (0.075791ms)
+✔ transitionTaskStatus (1.819792ms)
+ℹ tests 629
+ℹ suites 153
+ℹ pass 629
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 8700.558042

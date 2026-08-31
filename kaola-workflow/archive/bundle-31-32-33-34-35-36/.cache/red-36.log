@@ -1,0 +1,1021 @@
+▶ issue #36 claim identity (request_id / claim_id)
+  ▶ claimIdForLease (apps/server/src/leases.ts) — direct unit contract
+    ✖ claimIdForLease is exported and returns a clm_-prefixed opaque string (1.028417ms)
+    ✖ claimIdForLease is stable across a heartbeat and across release (only immutable fields matter) (0.109666ms)
+    ✖ claimIdForLease differs between two different lease rows (0.087625ms)
+  ✖ claimIdForLease (apps/server/src/leases.ts) — direct unit contract (1.547042ms)
+  ▶ legacy compatibility — no request_id sent
+    ✖ REST claim without request_id stays 201 and the lease envelope is exactly { claim_id, expires_at, ttl_seconds } (95.606042ms)
+    ✖ MCP claim_task without request_id stays a success result and the lease envelope carries claim_id (45.086875ms)
+  ✖ legacy compatibility — no request_id sent (140.887625ms)
+  ▶ replay identity — same (device, request_id)
+    ✖ replaying the same request_id 100 times yields exactly one lease, one 状态迁移 to 进行中, and one claim_id (40.480458ms)
+    ✖ a single replay reuses the same claim_id and token, and audits the re-reveal as a replay without leaking the token (39.487208ms)
+    ✖ replaying a request_id after the lease is released never creates a new lease (47.660583ms)
+    ✔ a different device presenting the holder's request_id cannot replay and never sees the active token (42.599583ms)
+  ✖ replay identity — same (device, request_id) (170.446917ms)
+  ▶ replay identity — typed conflicts on a mismatched digest
+    ✖ same request_id against a different task publicId is a typed conflict and changes nothing (42.355833ms)
+    ✖ same request_id but a different autonomous flag is a typed conflict and reveals no token (47.70675ms)
+  ✖ replay identity — typed conflicts on a mismatched digest (90.250709ms)
+  ▶ autonomous 202 stability, then a single 201 after approval
+    ✖ 202 is stable while pending under the same request_id, and exactly one 201/lease follows approval even under repeated replay (44.686667ms)
+  ✖ autonomous 202 stability, then a single 201 after approval (44.81475ms)
+  ▶ credential-profile deletion is refused while referenced by a non-terminal task
+    ✖ DELETE is refused (typed error, profile retained) when referenced by a task in each of the four non-terminal statuses (36.268ms)
+    ✔ DELETE succeeds as today when referenced only by a terminal-status task, or by no task at all (39.161916ms)
+  ✖ credential-profile deletion is refused while referenced by a non-terminal task (75.53525ms)
+  ▶ claim-transaction atomicity — no reachable 进行中 task without an active lease
+    ✖ failure injection: a failing lease insert leaves the claim exactly as it was before the attempt (41.86875ms)
+    ✖ failure injection: a failing token 揭示 audit write leaves the claim exactly as it was before the attempt (40.6665ms)
+    ✖ failure injection: a failing 状态迁移 audit write rolls back the task update and the lease insert that preceded it (38.583791ms)
+  ✖ claim-transaction atomicity — no reachable 进行中 task without an active lease (121.286667ms)
+  ▶ write-back off the response path
+    ✖ a slow forge write-back comment cannot delay the committed claim response (1537.92025ms)
+    ✖ settleWritebacks lets a test observe a failed background write-back deterministically, and retryPendingWritebacks still recovers it (38.339584ms)
+  ✖ write-back off the response path (1576.419333ms)
+✖ issue #36 claim identity (request_id / claim_id) (2221.720084ms)
+ℹ tests 19
+ℹ suites 9
+ℹ pass 2
+ℹ fail 17
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 5299.854417
+
+✖ failing tests:
+
+test at apps/server/src/claim-identity.test.ts:628:5
+✖ claimIdForLease is exported and returns a clm_-prefixed opaque string (1.028417ms)
+  AssertionError [ERR_ASSERTION]: apps/server/src/leases.ts must export claimIdForLease(lease)
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:630:14)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:385:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:652:5
+✖ claimIdForLease is stable across a heartbeat and across release (only immutable fields matter) (0.109666ms)
+  TypeError: claimIdForLease is not a function
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:667:20)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7)
+
+test at apps/server/src/claim-identity.test.ts:672:5
+✖ claimIdForLease differs between two different lease rows (0.087625ms)
+  TypeError: claimIdForLease is not a function
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:688:23)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7)
+
+test at apps/server/src/claim-identity.test.ts:694:5
+✖ REST claim without request_id stays 201 and the lease envelope is exactly { claim_id, expires_at, ttl_seconds } (95.606042ms)
+  AssertionError [ERR_ASSERTION]: lease envelope must gain claim_id alongside the existing fields, got ["expires_at","ttl_seconds"]
+  + actual - expected
+  
+    [
+  -   'claim_id',
+      'expires_at',
+      'ttl_seconds'
+    ]
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:703:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: [ 'expires_at', 'ttl_seconds' ],
+    expected: [ 'claim_id', 'expires_at', 'ttl_seconds' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:713:5
+✖ MCP claim_task without request_id stays a success result and the lease envelope carries claim_id (45.086875ms)
+  AssertionError [ERR_ASSERTION]: MCP lease envelope must gain claim_id, got ["expires_at","ttl_seconds"]
+  + actual - expected
+  
+    [
+  -   'claim_id',
+      'expires_at',
+      'ttl_seconds'
+    ]
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:722:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: [ 'expires_at', 'ttl_seconds' ],
+    expected: [ 'claim_id', 'expires_at', 'ttl_seconds' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:733:5
+✖ replaying the same request_id 100 times yields exactly one lease, one 状态迁移 to 进行中, and one claim_id (40.480458ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 'undefined'
+  - 'string'
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:745:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'string',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:767:5
+✖ a single replay reuses the same claim_id and token, and audits the re-reveal as a replay without leaking the token (39.487208ms)
+  AssertionError [ERR_ASSERTION]: replay must still be 201, got 409 {"error":"conflict","message":"任务已被认领。"}
+  
+  409 !== 201
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:780:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 409,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:795:5
+✖ replaying a request_id after the lease is released never creates a new lease (47.660583ms)
+  AssertionError [ERR_ASSERTION]: replaying a request_id whose lease is now terminal must never insert a new lease row, got [{"id":1,"task_id":1,"claimer_user_id":1,"device_id":1,"claimed_at":1788168222,"expires_at":1788254622,"last_heartbeat":1788168222,"state":"released"},{"id":2,"task_id":1,"claimer_user_id":1,"device_id":1,"claimed_at":1788168222,"expires_at":1788254622,"last_heartbeat":1788168222,"state":"active"}]
+  
+  2 !== 1
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:817:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 2,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:850:5
+✖ same request_id against a different task publicId is a typed conflict and changes nothing (42.355833ms)
+  AssertionError [ERR_ASSERTION]: same request_id against a different task publicId must be a typed conflict, got 201 {"task":{"id":"kt-2026-0002","title":"task B for request_id conflict","description_md":"……（Markdown 详述）","source":{"type":"native"},"repo":{"forge":"gitea","base_url":"https://gitea.forge.example.test","full_name":"team/orders","base_branch":"main","suggested_dir":"orders"},"acceptance_criteria":["GET /api/orders/export 支持 page/page_size 参数"],"test_command":"pnpm test","constraints":{"allowed_paths":["src/api/**"],"forbidden_paths":["migrations/**"]},"pr_convention":{"branch_prefix":"kaola/kt-2026-0002-","title_prefix":"[kt-2026-0002] "},"credential":{"inline":true},"priority":"P1","tags":["backend"],"poster":"kaola-admin","status":"进行中","created_at":"2026-08-31T09:23:42.000Z"},"token":"gitea-PROFILE-SHARED-TOKEN-vv31","lease":{"expires_at":"2026-09-01T09:23:42.000Z","ttl_seconds":86400},"clone":{"suggested_dir":"orders","token_usage":"token 请通过环境变量或 git -c http.extraHeader 按次传递，不要写入 remote URL（会落盘到 .git/config）。","remote_url":"https://gitea.forge.example.test/team/orders.git","extra_header":{"name":"Authorization","value_pattern":"token ${token}"}}}
+  
+  201 !== 409
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:867:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 201,
+    expected: 409,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:885:5
+✖ same request_id but a different autonomous flag is a typed conflict and reveals no token (47.70675ms)
+  AssertionError [ERR_ASSERTION]: same request_id with a different autonomous flag must be a typed conflict, got 201 {"task":{"id":"kt-2026-0001","title":"为订单导出接口增加分页","description_md":"……（Markdown 详述）","source":{"type":"native"},"repo":{"forge":"gitea","base_url":"https://gitea.forge.example.test","full_name":"team/orders","base_branch":"main","suggested_dir":"orders"},"acceptance_criteria":["GET /api/orders/export 支持 page/page_size 参数"],"test_command":"pnpm test","constraints":{"allowed_paths":["src/api/**"],"forbidden_paths":["migrations/**"]},"pr_convention":{"branch_prefix":"kaola/kt-2026-0001-","title_prefix":"[kt-2026-0001] "},"credential":{"inline":true},"priority":"P1","tags":["backend"],"poster":"kaola-admin","status":"进行中","created_at":"2026-08-31T09:23:42.000Z"},"token":"gitea-INLINE-ONE-OFF-TOKEN-zzq7","lease":{"expires_at":"2026-09-01T09:23:42.000Z","ttl_seconds":86400},"clone":{"suggested_dir":"orders","token_usage":"token 请通过环境变量或 git -c http.extraHeader 按次传递，不要写入 remote URL（会落盘到 .git/config）。","remote_url":"https://gitea.forge.example.test/team/orders.git","extra_header":{"name":"Authorization","value_pattern":"token ${token}"}}}
+  
+  201 !== 409
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:905:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 201,
+    expected: 409,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:923:5
+✖ 202 is stable while pending under the same request_id, and exactly one 201/lease follows approval even under repeated replay (44.686667ms)
+  AssertionError [ERR_ASSERTION]: replay #0 after approval must stay 201, got 409 {"error":"conflict","message":"任务已被认领。"}
+  
+  409 !== 201
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:966:16)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 409,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:978:5
+✖ DELETE is refused (typed error, profile retained) when referenced by a task in each of the four non-terminal statuses (36.268ms)
+  AssertionError [ERR_ASSERTION]: deleting a profile referenced by a 待认领 task must be refused, got 200 {"ok":true,"message":"请同时到 forge 侧撤销该 token。"}
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:994:16)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 200,
+    expected: 200,
+    operator: 'notStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:1035:5
+✖ failure injection: a failing lease insert leaves the claim exactly as it was before the attempt (41.86875ms)
+  AssertionError [ERR_ASSERTION]: a failed claim-transaction write must leave the task exactly as it was (待认领), never partially committed to 进行中, got 进行中
+  
+  '进行中' !== '待认领'
+  
+      at assertClaimAllOrNothing (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:475:10)
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:1053:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: '进行中',
+    expected: '待认领',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:1056:5
+✖ failure injection: a failing token 揭示 audit write leaves the claim exactly as it was before the attempt (40.6665ms)
+  AssertionError [ERR_ASSERTION]: a failed claim-transaction write must leave the task exactly as it was (待认领), never partially committed to 进行中, got 进行中
+  
+  '进行中' !== '待认领'
+  
+      at assertClaimAllOrNothing (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:475:10)
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:1074:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: '进行中',
+    expected: '待认领',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:1077:5
+✖ failure injection: a failing 状态迁移 audit write rolls back the task update and the lease insert that preceded it (38.583791ms)
+  AssertionError [ERR_ASSERTION]: a failed claim-transaction write must leave the task exactly as it was (待认领), never partially committed to 进行中, got 进行中
+  
+  '进行中' !== '待认领'
+  
+      at assertClaimAllOrNothing (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:475:10)
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:1097:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: '进行中',
+    expected: '待认领',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:1102:5
+✖ a slow forge write-back comment cannot delay the committed claim response (1537.92025ms)
+  Error: claim did not resolve within 1500ms; a slow forge write-back comment must not block/delay the claim response
+      at Timeout._onTimeout (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:1114:24)
+      at listOnTimeout (node:internal/timers:605:17)
+      at process.processTimers (node:internal/timers:541:7)
+
+test at apps/server/src/claim-identity.test.ts:1129:5
+✖ settleWritebacks lets a test observe a failed background write-back deterministically, and retryPendingWritebacks still recovers it (38.339584ms)
+  AssertionError [ERR_ASSERTION]: apps/server/src/writeback.ts must export settleWritebacks(): Promise<void>
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:1141:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+==================================================================
+Full `pnpm test` run (node suite tail + web suite tail) — confirms
+no previously-passing test was broken; only the new claim-identity
+tests fail as intended.
+==================================================================
+--- node suite summary (pnpm test node portion) ---
+: false,
+    code: 'ERR_ASSERTION',
+    actual: '进行中',
+    expected: '待认领',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:1056:5
+✖ failure injection: a failing token 揭示 audit write leaves the claim exactly as it was before the attempt (83.648833ms)
+  AssertionError [ERR_ASSERTION]: a failed claim-transaction write must leave the task exactly as it was (待认领), never partially committed to 进行中, got 进行中
+  
+  '进行中' !== '待认领'
+  
+      at assertClaimAllOrNothing (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:475:10)
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:1074:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: '进行中',
+    expected: '待认领',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:1077:5
+✖ failure injection: a failing 状态迁移 audit write rolls back the task update and the lease insert that preceded it (87.189875ms)
+  AssertionError [ERR_ASSERTION]: a failed claim-transaction write must leave the task exactly as it was (待认领), never partially committed to 进行中, got 进行中
+  
+  '进行中' !== '待认领'
+  
+      at assertClaimAllOrNothing (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:475:10)
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:1097:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: '进行中',
+    expected: '待认领',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:1102:5
+✖ a slow forge write-back comment cannot delay the committed claim response (1568.807584ms)
+  Error: claim did not resolve within 1500ms; a slow forge write-back comment must not block/delay the claim response
+      at Timeout._onTimeout (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:1114:24)
+      at listOnTimeout (node:internal/timers:605:17)
+      at process.processTimers (node:internal/timers:541:7)
+
+test at apps/server/src/claim-identity.test.ts:1129:5
+✖ settleWritebacks lets a test observe a failed background write-back deterministically, and retryPendingWritebacks still recovers it (79.796125ms)
+  AssertionError [ERR_ASSERTION]: apps/server/src/writeback.ts must export settleWritebacks(): Promise<void>
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:1141:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+[ELIFECYCLE] Test failed. See above for more details.
+
+--- web suite (pnpm --filter @kaola/web test) ---
+$ vitest run
+
+ RUN  v4.1.11 /Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/web
+
+
+ Test Files  6 passed (6)
+      Tests  117 passed (117)
+   Start at  17:24:30
+   Duration  6.94s (transform 569ms, setup 0ms, import 4.41s, tests 20.08s, environment 1.23s)
+
+
+==================================================================
+Round 2: added CAS predicate test, request_id-claimability tests,
+and the cross-surface token-containment test. Re-run of
+`node --experimental-strip-types --test apps/server/src/claim-identity.test.ts`
+against the same baseline df98907cd39128c1c565fe823e8c72974801bc92.
+==================================================================
+▶ issue #36 claim identity (request_id / claim_id)
+  ▶ claimIdForLease (apps/server/src/leases.ts) — direct unit contract
+    ✖ claimIdForLease is exported and returns a clm_-prefixed opaque string (1.01625ms)
+    ✖ claimIdForLease is stable across a heartbeat and across release (only immutable fields matter) (0.117375ms)
+    ✖ claimIdForLease differs between two different lease rows (0.081875ms)
+  ✖ claimIdForLease (apps/server/src/leases.ts) — direct unit contract (1.542792ms)
+  ▶ legacy compatibility — no request_id sent
+    ✖ REST claim without request_id stays 201 and the lease envelope is exactly { claim_id, expires_at, ttl_seconds } (89.451458ms)
+    ✖ MCP claim_task without request_id stays a success result and the lease envelope carries claim_id (44.45075ms)
+  ✖ legacy compatibility — no request_id sent (134.079292ms)
+  ▶ replay identity — same (device, request_id)
+    ✖ replaying the same request_id 100 times yields exactly one lease, one 状态迁移 to 进行中, and one claim_id (42.28125ms)
+    ✖ a single replay reuses the same claim_id and token, and audits the re-reveal as a replay without leaking the token (39.369708ms)
+    ✖ replaying a request_id after the lease is released never creates a new lease (41.951792ms)
+    ✔ a different device presenting the holder's request_id cannot replay and never sees the active token (44.238917ms)
+  ✖ replay identity — same (device, request_id) (168.056333ms)
+  ▶ replay identity — typed conflicts on a mismatched digest
+    ✖ same request_id against a different task publicId is a typed conflict and changes nothing (42.816708ms)
+    ✖ same request_id but a different autonomous flag is a typed conflict and reveals no token (39.981584ms)
+  ✖ replay identity — typed conflicts on a mismatched digest (82.967792ms)
+  ▶ autonomous 202 stability, then a single 201 after approval
+    ✖ 202 is stable while pending under the same request_id, and exactly one 201/lease follows approval even under repeated replay (41.747417ms)
+  ✖ autonomous 202 stability, then a single 201 after approval (41.867583ms)
+  ▶ credential-profile deletion is refused while referenced by a non-terminal task
+    ✖ DELETE is refused (typed error, profile retained) when referenced by a task in each of the four non-terminal statuses (36.042041ms)
+    ✔ DELETE succeeds as today when referenced only by a terminal-status task, or by no task at all (39.76275ms)
+  ✖ credential-profile deletion is refused while referenced by a non-terminal task (75.904083ms)
+  ▶ claim-transaction atomicity — no reachable 进行中 task without an active lease
+    ✖ failure injection: a failing lease insert leaves the claim exactly as it was before the attempt (37.692959ms)
+    ✖ failure injection: a failing token 揭示 audit write leaves the claim exactly as it was before the attempt (40.477ms)
+    ✖ failure injection: a failing 状态迁移 audit write rolls back the task update and the lease insert that preceded it (36.998542ms)
+  ✖ claim-transaction atomicity — no reachable 进行中 task without an active lease (115.318ms)
+  ▶ write-back off the response path
+    ✖ a slow forge write-back comment cannot delay the committed claim response (1537.915792ms)
+    ✖ settleWritebacks lets a test observe a failed background write-back deterministically, and retryPendingWritebacks still recovers it (38.670709ms)
+  ✖ write-back off the response path (1576.74025ms)
+  ▶ claim-transaction atomicity — the Task update predicate itself (CAS)
+    ✖ a task that flips out of 待认领 between the read and the write produces no lease, no token 揭示, and no second 状态迁移 (36.393667ms)
+  ✖ claim-transaction atomicity — the Task update predicate itself (CAS) (36.519667ms)
+  ▶ a different request_id is a new attempt only when the Task is legally claimable
+    ✔ a different request_id on the same device is rejected while the task is already claimed, and creates no second lease (38.369708ms)
+    ✖ after the holder releases, a different request_id makes a legitimate new attempt and mints a new claim_id (38.717ms)
+  ✖ a different request_id is a new attempt only when the Task is legally claimable (77.227833ms)
+  ▶ token containment — only the REST claim 201 and MCP claim_task success channels ever carry the token
+    ✖ after a successful claim and a replay, the forge token appears nowhere else: brief, list, MCP, progress/release, or any events row (36.666125ms)
+  ✖ token containment — only the REST claim 201 and MCP claim_task success channels ever carry the token (36.781916ms)
+✖ issue #36 claim identity (request_id / claim_id) (2347.634875ms)
+ℹ tests 23
+ℹ suites 12
+ℹ pass 3
+ℹ fail 20
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 5226.694458
+
+✖ failing tests:
+
+test at apps/server/src/claim-identity.test.ts:652:5
+✖ claimIdForLease is exported and returns a clm_-prefixed opaque string (1.01625ms)
+  AssertionError [ERR_ASSERTION]: apps/server/src/leases.ts must export claimIdForLease(lease)
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:654:14)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:385:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:676:5
+✖ claimIdForLease is stable across a heartbeat and across release (only immutable fields matter) (0.117375ms)
+  TypeError: claimIdForLease is not a function
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:691:20)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7)
+
+test at apps/server/src/claim-identity.test.ts:696:5
+✖ claimIdForLease differs between two different lease rows (0.081875ms)
+  TypeError: claimIdForLease is not a function
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:712:23)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7)
+
+test at apps/server/src/claim-identity.test.ts:718:5
+✖ REST claim without request_id stays 201 and the lease envelope is exactly { claim_id, expires_at, ttl_seconds } (89.451458ms)
+  AssertionError [ERR_ASSERTION]: lease envelope must gain claim_id alongside the existing fields, got ["expires_at","ttl_seconds"]
+  + actual - expected
+  
+    [
+  -   'claim_id',
+      'expires_at',
+      'ttl_seconds'
+    ]
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:727:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: [ 'expires_at', 'ttl_seconds' ],
+    expected: [ 'claim_id', 'expires_at', 'ttl_seconds' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:737:5
+✖ MCP claim_task without request_id stays a success result and the lease envelope carries claim_id (44.45075ms)
+  AssertionError [ERR_ASSERTION]: MCP lease envelope must gain claim_id, got ["expires_at","ttl_seconds"]
+  + actual - expected
+  
+    [
+  -   'claim_id',
+      'expires_at',
+      'ttl_seconds'
+    ]
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:746:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: [ 'expires_at', 'ttl_seconds' ],
+    expected: [ 'claim_id', 'expires_at', 'ttl_seconds' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:757:5
+✖ replaying the same request_id 100 times yields exactly one lease, one 状态迁移 to 进行中, and one claim_id (42.28125ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 'undefined'
+  - 'string'
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:769:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'string',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:791:5
+✖ a single replay reuses the same claim_id and token, and audits the re-reveal as a replay without leaking the token (39.369708ms)
+  AssertionError [ERR_ASSERTION]: replay must still be 201, got 409 {"error":"conflict","message":"任务已被认领。"}
+  
+  409 !== 201
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:804:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 409,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:819:5
+✖ replaying a request_id after the lease is released never creates a new lease (41.951792ms)
+  AssertionError [ERR_ASSERTION]: replaying a request_id whose lease is now terminal must never insert a new lease row, got [{"id":1,"task_id":1,"claimer_user_id":1,"device_id":1,"claimed_at":1788168552,"expires_at":1788254952,"last_heartbeat":1788168552,"state":"released"},{"id":2,"task_id":1,"claimer_user_id":1,"device_id":1,"claimed_at":1788168552,"expires_at":1788254952,"last_heartbeat":1788168552,"state":"active"}]
+  
+  2 !== 1
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:841:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 2,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:874:5
+✖ same request_id against a different task publicId is a typed conflict and changes nothing (42.816708ms)
+  AssertionError [ERR_ASSERTION]: same request_id against a different task publicId must be a typed conflict, got 201 {"task":{"id":"kt-2026-0002","title":"task B for request_id conflict","description_md":"……（Markdown 详述）","source":{"type":"native"},"repo":{"forge":"gitea","base_url":"https://gitea.forge.example.test","full_name":"team/orders","base_branch":"main","suggested_dir":"orders"},"acceptance_criteria":["GET /api/orders/export 支持 page/page_size 参数"],"test_command":"pnpm test","constraints":{"allowed_paths":["src/api/**"],"forbidden_paths":["migrations/**"]},"pr_convention":{"branch_prefix":"kaola/kt-2026-0002-","title_prefix":"[kt-2026-0002] "},"credential":{"inline":true},"priority":"P1","tags":["backend"],"poster":"kaola-admin","status":"进行中","created_at":"2026-08-31T09:29:12.000Z"},"token":"gitea-PROFILE-SHARED-TOKEN-vv31","lease":{"expires_at":"2026-09-01T09:29:12.000Z","ttl_seconds":86400},"clone":{"suggested_dir":"orders","token_usage":"token 请通过环境变量或 git -c http.extraHeader 按次传递，不要写入 remote URL（会落盘到 .git/config）。","remote_url":"https://gitea.forge.example.test/team/orders.git","extra_header":{"name":"Authorization","value_pattern":"token ${token}"}}}
+  
+  201 !== 409
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:891:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 201,
+    expected: 409,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:909:5
+✖ same request_id but a different autonomous flag is a typed conflict and reveals no token (39.981584ms)
+  AssertionError [ERR_ASSERTION]: same request_id with a different autonomous flag must be a typed conflict, got 201 {"task":{"id":"kt-2026-0001","title":"为订单导出接口增加分页","description_md":"……（Markdown 详述）","source":{"type":"native"},"repo":{"forge":"gitea","base_url":"https://gitea.forge.example.test","full_name":"team/orders","base_branch":"main","suggested_dir":"orders"},"acceptance_criteria":["GET /api/orders/export 支持 page/page_size 参数"],"test_command":"pnpm test","constraints":{"allowed_paths":["src/api/**"],"forbidden_paths":["migrations/**"]},"pr_convention":{"branch_prefix":"kaola/kt-2026-0001-","title_prefix":"[kt-2026-0001] "},"credential":{"inline":true},"priority":"P1","tags":["backend"],"poster":"kaola-admin","status":"进行中","created_at":"2026-08-31T09:29:12.000Z"},"token":"gitea-INLINE-ONE-OFF-TOKEN-zzq7","lease":{"expires_at":"2026-09-01T09:29:12.000Z","ttl_seconds":86400},"clone":{"suggested_dir":"orders","token_usage":"token 请通过环境变量或 git -c http.extraHeader 按次传递，不要写入 remote URL（会落盘到 .git/config）。","remote_url":"https://gitea.forge.example.test/team/orders.git","extra_header":{"name":"Authorization","value_pattern":"token ${token}"}}}
+  
+  201 !== 409
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:929:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 201,
+    expected: 409,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:947:5
+✖ 202 is stable while pending under the same request_id, and exactly one 201/lease follows approval even under repeated replay (41.747417ms)
+  AssertionError [ERR_ASSERTION]: replay #0 after approval must stay 201, got 409 {"error":"conflict","message":"任务已被认领。"}
+  
+  409 !== 201
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:990:16)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 409,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:1002:5
+✖ DELETE is refused (typed error, profile retained) when referenced by a task in each of the four non-terminal statuses (36.042041ms)
+  AssertionError [ERR_ASSERTION]: deleting a profile referenced by a 待认领 task must be refused, got 200 {"ok":true,"message":"请同时到 forge 侧撤销该 token。"}
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:1018:16)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 200,
+    expected: 200,
+    operator: 'notStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:1059:5
+✖ failure injection: a failing lease insert leaves the claim exactly as it was before the attempt (37.692959ms)
+  AssertionError [ERR_ASSERTION]: a failed claim-transaction write must leave the task exactly as it was (待认领), never partially committed to 进行中, got 进行中
+  
+  '进行中' !== '待认领'
+  
+      at assertClaimAllOrNothing (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:499:10)
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:1077:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: '进行中',
+    expected: '待认领',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:1080:5
+✖ failure injection: a failing token 揭示 audit write leaves the claim exactly as it was before the attempt (40.477ms)
+  AssertionError [ERR_ASSERTION]: a failed claim-transaction write must leave the task exactly as it was (待认领), never partially committed to 进行中, got 进行中
+  
+  '进行中' !== '待认领'
+  
+      at assertClaimAllOrNothing (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:499:10)
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:1098:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: '进行中',
+    expected: '待认领',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:1101:5
+✖ failure injection: a failing 状态迁移 audit write rolls back the task update and the lease insert that preceded it (36.998542ms)
+  AssertionError [ERR_ASSERTION]: a failed claim-transaction write must leave the task exactly as it was (待认领), never partially committed to 进行中, got 进行中
+  
+  '进行中' !== '待认领'
+  
+      at assertClaimAllOrNothing (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:499:10)
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:1121:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: '进行中',
+    expected: '待认领',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:1126:5
+✖ a slow forge write-back comment cannot delay the committed claim response (1537.915792ms)
+  Error: claim did not resolve within 1500ms; a slow forge write-back comment must not block/delay the claim response
+      at Timeout._onTimeout (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:1138:24)
+      at listOnTimeout (node:internal/timers:605:17)
+      at process.processTimers (node:internal/timers:541:7)
+
+test at apps/server/src/claim-identity.test.ts:1153:5
+✖ settleWritebacks lets a test observe a failed background write-back deterministically, and retryPendingWritebacks still recovers it (38.670709ms)
+  AssertionError [ERR_ASSERTION]: apps/server/src/writeback.ts must export settleWritebacks(): Promise<void>
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:1165:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:1206:5
+✖ a task that flips out of 待认领 between the read and the write produces no lease, no token 揭示, and no second 状态迁移 (36.393667ms)
+  AssertionError [ERR_ASSERTION]: a task update that lost the CAS race (status no longer 待认领 at write time) must never insert a lease
+  
+  1 !== 0
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:1240:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:1292:5
+✖ after the holder releases, a different request_id makes a legitimate new attempt and mints a new claim_id (38.717ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 'undefined'
+  - 'string'
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:1321:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'string',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/server/src/claim-identity.test.ts:1333:5
+✖ after a successful claim and a replay, the forge token appears nowhere else: brief, list, MCP, progress/release, or any events row (36.666125ms)
+  AssertionError [ERR_ASSERTION]: replay: 409 {"error":"conflict","message":"任务已被认领。"}
+  
+  409 !== 201
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/server/src/claim-identity.test.ts:1348:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 409,
+    expected: 201,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+==================================================================
+Full node suite re-run (all files, round 2): 629 tests, 609 pass,
+20 fail — all 20 failures are in claim-identity.test.ts; every
+previously-passing test elsewhere still passes.
+==================================================================
+
+==================================================================
+Round 3: harness repair per coordinator review — no assertion
+weakened, no production file touched.
+
+Defect 1 & 2: assertNoForgeSecretMaterial was scanning the whole
+REST claim 201 body (which must legitimately carry body.token).
+Replaced with assertClaimRevealToken(body, forgeToken) — asserts
+body.token === forgeToken and scans only body.task / body.lease /
+body.clone for leaks — in:
+  - 'REST claim without request_id stays 201 and the lease
+     envelope is exactly { claim_id, expires_at, ttl_seconds }'
+  - 'a single replay reuses the same claim_id and token, and
+     audits the re-reveal as a replay without leaking the token'
+Audited every other assertNoForgeSecretMaterial call site: the
+remaining ones (intruder/conflict/second responses, and the
+token-containment test's restList/restDetail/progressed/released)
+all scan non-201 or non-claim bodies and were already correct —
+left unchanged.
+
+Defect 3: the four-non-terminal-statuses retention test reused one
+credential-profile identity across all four loop iterations,
+colliding with credential_profiles' UNIQUE (forge, base_url,
+repo_full_name) once the first iteration's delete was (correctly)
+refused. Gave each status its own profile identity
+(repo_full_name suffixed by NON_TERMINAL_STATUS_SLUG[status]) and
+matched the referencing task's repo.full_name to it (publish
+enforces PROFILE_REPO_MISMATCH_MESSAGE otherwise). Assertion
+content (refused for 待认领/进行中/待验收/已退回, allowed for
+已完成/已取消) unchanged.
+==================================================================
+--- node --experimental-strip-types --test apps/server/src/claim-identity.test.ts ---
+▶ issue #36 claim identity (request_id / claim_id)
+  ▶ claimIdForLease (apps/server/src/leases.ts) — direct unit contract
+    ✔ claimIdForLease is exported and returns a clm_-prefixed opaque string (0.725458ms)
+    ✔ claimIdForLease is stable across a heartbeat and across release (only immutable fields matter) (0.203208ms)
+    ✔ claimIdForLease differs between two different lease rows (0.134375ms)
+  ✔ claimIdForLease (apps/server/src/leases.ts) — direct unit contract (1.441458ms)
+  ▶ legacy compatibility — no request_id sent
+    ✔ REST claim without request_id stays 201 and the lease envelope is exactly { claim_id, expires_at, ttl_seconds } (103.34075ms)
+    ✔ MCP claim_task without request_id stays a success result and the lease envelope carries claim_id (49.450458ms)
+  ✔ legacy compatibility — no request_id sent (152.943708ms)
+  ▶ replay identity — same (device, request_id)
+    ✔ replaying the same request_id 100 times yields exactly one lease, one 状态迁移 to 进行中, and one claim_id (166.056833ms)
+    ✔ a single replay reuses the same claim_id and token, and audits the re-reveal as a replay without leaking the token (44.508375ms)
+    ✔ replaying a request_id after the lease is released never creates a new lease (46.76275ms)
+    ✔ a different device presenting the holder's request_id cannot replay and never sees the active token (44.307708ms)
+  ✔ replay identity — same (device, request_id) (301.859334ms)
+  ▶ replay identity — typed conflicts on a mismatched digest
+    ✔ same request_id against a different task publicId is a typed conflict and changes nothing (44.717ms)
+    ✔ same request_id but a different autonomous flag is a typed conflict and reveals no token (44.447375ms)
+  ✔ replay identity — typed conflicts on a mismatched digest (89.274041ms)
+  ▶ autonomous 202 stability, then a single 201 after approval
+    ✔ 202 is stable while pending under the same request_id, and exactly one 201/lease follows approval even under repeated replay (56.257708ms)
+  ✔ autonomous 202 stability, then a single 201 after approval (56.344458ms)
+  ▶ credential-profile deletion is refused while referenced by a non-terminal task
+    ✔ DELETE is refused (typed error, profile retained) when referenced by a task in each of the four non-terminal statuses (50.007917ms)
+    ✔ DELETE succeeds as today when referenced only by a terminal-status task, or by no task at all (43.474833ms)
+  ✔ credential-profile deletion is refused while referenced by a non-terminal task (93.673625ms)
+  ▶ claim-transaction atomicity — no reachable 进行中 task without an active lease
+    ✔ failure injection: a failing lease insert leaves the claim exactly as it was before the attempt (41.564209ms)
+    ✔ failure injection: a failing token 揭示 audit write leaves the claim exactly as it was before the attempt (40.999834ms)
+    ✔ failure injection: a failing 状态迁移 audit write rolls back the task update and the lease insert that preceded it (45.852458ms)
+  ✔ claim-transaction atomicity — no reachable 进行中 task without an active lease (128.5565ms)
+  ▶ write-back off the response path
+    ✔ a slow forge write-back comment cannot delay the committed claim response (50.929917ms)
+    ✔ settleWritebacks lets a test observe a failed background write-back deterministically, and retryPendingWritebacks still recovers it (4002.514584ms)
+  ✔ write-back off the response path (4053.592167ms)
+  ▶ claim-transaction atomicity — the Task update predicate itself (CAS)
+    ✔ a task that flips out of 待认领 between the read and the write produces no lease, no token 揭示, and no second 状态迁移 (40.274375ms)
+  ✔ claim-transaction atomicity — the Task update predicate itself (CAS) (40.356833ms)
+  ▶ a different request_id is a new attempt only when the Task is legally claimable
+    ✔ a different request_id on the same device is rejected while the task is already claimed, and creates no second lease (41.285417ms)
+    ✔ after the holder releases, a different request_id makes a legitimate new attempt and mints a new claim_id (42.131625ms)
+  ✔ a different request_id is a new attempt only when the Task is legally claimable (83.519041ms)
+  ▶ token containment — only the REST claim 201 and MCP claim_task success channels ever carry the token
+    ✔ after a successful claim and a replay, the forge token appears nowhere else: brief, list, MCP, progress/release, or any events row (49.1315ms)
+  ✔ token containment — only the REST claim 201 and MCP claim_task success channels ever carry the token (49.248792ms)
+✔ issue #36 claim identity (request_id / claim_id) (5051.468ms)
+ℹ tests 23
+ℹ suites 12
+ℹ pass 23
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 5677.467291
+
+--- full `pnpm test` (all node suites + web suite) ---
+�认领 → 待验收 (0.170375ms)
+  ✔ transitionTaskStatus rejects 待认领 → 已完成 (0.059208ms)
+  ✔ transitionTaskStatus rejects 待认领 → 已退回 (0.069084ms)
+  ✔ transitionTaskStatus allows 待认领 → 已取消 (0.056292ms)
+  ✔ transitionTaskStatus allows 进行中 → 待认领 (0.07975ms)
+  ✔ transitionTaskStatus rejects 进行中 → 进行中 (0.076041ms)
+  ✔ transitionTaskStatus allows 进行中 → 待验收 (0.033ms)
+  ✔ transitionTaskStatus rejects 进行中 → 已完成 (0.061709ms)
+  ✔ transitionTaskStatus rejects 进行中 → 已退回 (0.031541ms)
+  ✔ transitionTaskStatus rejects 进行中 → 已取消 (0.053459ms)
+  ✔ transitionTaskStatus rejects 待验收 → 待认领 (0.036583ms)
+  ✔ transitionTaskStatus rejects 待验收 → 进行中 (0.02925ms)
+  ✔ transitionTaskStatus rejects 待验收 → 待验收 (0.07375ms)
+  ✔ transitionTaskStatus allows 待验收 → 已完成 (0.044083ms)
+  ✔ transitionTaskStatus allows 待验收 → 已退回 (0.053417ms)
+  ✔ transitionTaskStatus rejects 待验收 → 已取消 (0.028417ms)
+  ✔ transitionTaskStatus rejects 已完成 → 待认领 (0.078083ms)
+  ✔ transitionTaskStatus rejects 已完成 → 进行中 (0.035584ms)
+  ✔ transitionTaskStatus rejects 已完成 → 待验收 (0.037583ms)
+  ✔ transitionTaskStatus rejects 已完成 → 已完成 (0.024667ms)
+  ✔ transitionTaskStatus rejects 已完成 → 已退回 (0.127209ms)
+  ✔ transitionTaskStatus rejects 已完成 → 已取消 (0.152625ms)
+  ✔ transitionTaskStatus allows 已退回 → 待认领 (0.088875ms)
+  ✔ transitionTaskStatus rejects 已退回 → 进行中 (0.035833ms)
+  ✔ transitionTaskStatus rejects 已退回 → 待验收 (0.0255ms)
+  ✔ transitionTaskStatus rejects 已退回 → 已完成 (0.033709ms)
+  ✔ transitionTaskStatus rejects 已退回 → 已退回 (0.081959ms)
+  ✔ transitionTaskStatus allows 已退回 → 已取消 (0.030666ms)
+  ✔ transitionTaskStatus rejects 已取消 → 待认领 (0.160416ms)
+  ✔ transitionTaskStatus rejects 已取消 → 进行中 (0.093834ms)
+  ✔ transitionTaskStatus rejects 已取消 → 待验收 (0.057167ms)
+  ✔ transitionTaskStatus rejects 已取消 → 已完成 (0.027375ms)
+  ✔ transitionTaskStatus rejects 已取消 → 已退回 (0.02575ms)
+  ✔ transitionTaskStatus rejects 已取消 → 已取消 (0.02525ms)
+  ✔ transitionTaskStatus rejects an unknown from status (0.047375ms)
+  ✔ transitionTaskStatus rejects an unknown to status (0.037125ms)
+✔ transitionTaskStatus (3.096667ms)
+ℹ tests 629
+ℹ suites 153
+ℹ pass 629
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 8714.921417
+$ vitest run
+
+ RUN  v4.1.11 /Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/web
+
+
+ Test Files  6 passed (6)
+      Tests  117 passed (117)
+   Start at  17:57:04
+   Duration  9.73s (transform 880ms, setup 0ms, import 5.29s, tests 32.03s, environment 1.48s)
+

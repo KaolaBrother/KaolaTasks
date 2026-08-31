@@ -1,0 +1,176 @@
+=== Issue #32 -- kaola-mcp Claim recovery receipts -- final verification ===
+Date: 2026-08-31
+Worktree: /Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36 (branch workflow/bundle-31-32-33-34-35-36)
+Files changed: apps/mcp/src/main.ts (only)
+
+--- FINDING: apps/mcp/src/claim-receipt.test.ts has a pre-existing authoring bug ---
+Every test body under the outer describe('kaola-mcp Claim recovery receipt (Issue #32)', ...)
+references a module-level identifier 'mod' (e.g. mod.receiptFilePath, mod.runStdioBridge)
+that is NEVER declared anywhere in the file. loadBridge() (which performs the dynamic
+import) is called and its result discarded at line 813; no 'const mod = await loadBridge()'
+exists at any scope. This throws 'ReferenceError: mod is not defined' regardless of what
+apps/mcp/src/main.ts exports -- confirmed unchanged (still 1 pass / 25 fail) against my
+completed implementation. This is a test-authoring defect, not a production gap; per my
+role I have not edited the test file. See 'AS-IS RUN' below for the unmodified suite, and
+'PATCHED VERIFICATION RUN' for evidence the production code is otherwise fully correct.
+
+A second, independent test bug was found only visible once the first is patched: the
+'boundary: receipt written but request never reached the server' test (around line 664)
+calls writeFileSync(receiptPathBefore, ...) directly without first creating the parent
+receipts/<origin-hash>/ directory, unlike the corruption tests a few hundred lines later
+which correctly call mkdirSync(dirname(path), { recursive: true }) first. Against a fresh
+tmpKaolaHome (no prior receipts dir for that origin) this throws ENOENT from the test's own
+setup code, not from apps/mcp/src/main.ts. Also reported as a finding, not edited.
+
+--- AS-IS RUN: node --experimental-strip-types --test apps/mcp/src/claim-receipt.test.ts ---
+  ReferenceError: mod is not defined
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/mcp/src/claim-receipt.test.ts:1030:23)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7)
+
+test at apps/mcp/src/claim-receipt.test.ts:1050:5
+✖ an unknown tool name inside tools/call is forwarded with its arguments unmodified (0.451167ms)
+  ReferenceError: mod is not defined
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/mcp/src/claim-receipt.test.ts:1056:23)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7)
+
+--- main.test.ts (must stay green; production-code-only change) ---
+▶ forwardMcpRequest
+  ✔ POSTs to {url}/api/mcp with canonical device proof headers (21.181958ms)
+  ✔ HTTP 202 authorization_required becomes a JSON-RPC error, never a successful token result (7.135167ms)
+  ✔ successful claim JSON-RPC may contain token but KAOLA_HOME never stores it (2.927292ms)
+✔ forwardMcpRequest (31.449333ms)
+▶ stdio bridge Streamable HTTP session
+  ✔ captures MCP-Session-Id from initialize without putting it on the JSON-RPC body (4.535542ms)
+  ▶ runStdioBridge session replay
+    ✔ replays captured mcp-session-id on the next stdin tools/list (7.004459ms)
+    ✔ omits mcp-session-id on later stdin when initialize response had no such header (4.454583ms)
+  ✔ runStdioBridge session replay (11.567333ms)
+✔ stdio bridge Streamable HTTP session (16.171958ms)
+ℹ tests 10
+ℹ suites 6
+ℹ pass 10
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 248.878167
+
+--- npx eslint apps/mcp/src/main.ts ---
+eslint: clean (exit 0)
+
+--- pnpm typecheck (workspace-wide) ---
+$ pnpm -r --if-present typecheck
+Scope: 5 of 6 workspace projects
+apps/web typecheck$ vue-tsc --noEmit -p tsconfig.json
+packages/forge-adapters typecheck$ tsc --noEmit -p tsconfig.json
+packages/shared typecheck$ tsc --noEmit -p tsconfig.json
+packages/forge-adapters typecheck: Done
+packages/shared typecheck: Done
+apps/web typecheck: Done
+apps/mcp typecheck$ tsc --noEmit -p tsconfig.json
+apps/server typecheck$ tsc --noEmit -p tsconfig.json
+apps/mcp typecheck: Done
+apps/server typecheck: Done
+
+--- pnpm build (workspace-wide) ---
+packages/forge-adapters build$ tsc --noEmit -p tsconfig.json
+packages/shared build$ tsc --noEmit -p tsconfig.json
+apps/web build: vite v7.3.6 building client environment for production...
+apps/web build: transforming...
+packages/forge-adapters build: Done
+packages/shared build: Done
+apps/web build: ✓ 2568 modules transformed.
+apps/web build: rendering chunks...
+apps/web build: computing gzip size...
+apps/web build: dist/index.html                     0.75 kB │ gzip:   0.43 kB
+apps/web build: dist/assets/index-BNddLdPW.css      9.32 kB │ gzip:   2.70 kB
+apps/web build: dist/assets/index-CWmjcWNy.js   1,491.15 kB │ gzip: 410.22 kB
+apps/web build: (!) Some chunks are larger than 500 kB after minification. Consider:
+apps/web build: - Using dynamic import() to code-split the application
+apps/web build: - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+apps/web build: - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+apps/web build: ✓ built in 2.48s
+apps/web build: Done
+apps/server build$ tsc --noEmit -p tsconfig.json
+apps/server build: Done
+
+AS-IS summary (against completed apps/mcp/src/main.ts): tests 26, pass 2, fail 24
+(pass count improved from the recorded 1/25 baseline in red-32.log to 2/25 because the
+ one test that never references the undefined 'mod' -- the two-process cross-lock test,
+ which spawns real child processes -- now passes end-to-end against this implementation.)
+
+--- PATCHED VERIFICATION RUN (scratch only, not committed, not part of the deliverable) ---
+To confirm the production implementation is otherwise fully correct, I copied
+claim-receipt.test.ts to a scratch file and inserted only the missing declaration
+(  let mod; before(async () => { mod = await loadBridge() })  ) -- no assertion, fixture,
+or test intent was touched. Ran against the exact same apps/mcp/src/main.ts:
+
+  ✔ mutation claim_id auto-attach (13.659666ms)
+  ▶ legacy server compatibility (lease without claim_id)
+    ✔ claim still succeeds and mutations omit claim_id rather than injecting an undefined/null value (5.686834ms)
+  ✔ legacy server compatibility (lease without claim_id) (5.748584ms)
+  ▶ kill/restart boundaries converge to exactly one Claim
+    ✔ boundary: killed before any receipt write — restart claims cleanly with one request_id/claim_id (3.508458ms)
+    ✖ boundary: receipt written but request never reached the server — restart reuses the recorded request_id and creates exactly one claim (2.009167ms)
+    ✔ boundary: server committed the claim but the response was lost — restart replays and the server never creates a second claim (6.336792ms)
+    ✔ boundary: receipt already carried claim_id (full completion) — a repeat claim never creates a second server-side claim (6.93175ms)
+  ✖ kill/restart boundaries converge to exactly one Claim (18.925916ms)
+  ▶ stale mcp-session-id recovery
+    ✔ re-initializes exactly once and replays the pending claim exactly once (no second lease) (7.151708ms)
+    ✔ a second consecutive stale session surfaces an error instead of looping forever (8.136709ms)
+  ✔ stale mcp-session-id recovery (15.394125ms)
+  ▶ two bridge processes sharing one KAOLA_HOME
+    ✔ claiming the same task from two processes serializes on the receipt: exactly one server-side claim (366.750041ms)
+  ✔ two bridge processes sharing one KAOLA_HOME (366.857958ms)
+  ▶ different tasks and different server origins coexist without interference
+    ✔ separate receipt files with correct isolated content, no cross-contamination (10.803083ms)
+  ✔ different tasks and different server origins coexist without interference (10.8865ms)
+  ▶ receipt corruption and mismatch fail safely
+    ✔ truncated JSON at the receipt path does not crash the bridge and leaves unrelated receipts untouched (8.26375ms)
+    ✔ garbage bytes at the receipt path does not crash the bridge and leaves unrelated receipts untouched (7.559166ms)
+    ✔ wrong shape (array) at the receipt path does not crash the bridge and leaves unrelated receipts untouched (7.483625ms)
+    ✔ wrong shape (missing fields) at the receipt path does not crash the bridge and leaves unrelated receipts untouched (8.789917ms)
+    ✔ a receipt whose internal server/task_id do not match the lookup key is treated as unusable, not blindly trusted (3.142875ms)
+  ✔ receipt corruption and mismatch fail safely (35.4835ms)
+  ▶ secret scan across a full claim + report_progress + submit_pr cycle
+    ✔ KAOLA_HOME files, stderr, and the receipt field allowlist have zero hits of forge token / auth-shaped value / device private key / task description / decoy prompt fields (7.197333ms)
+  ✔ secret scan across a full claim + report_progress + submit_pr cycle (7.269041ms)
+  ▶ non-tool JSON-RPC methods and unknown tools pass through unmodified
+    ✔ initialize, tools/list, ping, a notification, and an unknown method are forwarded and returned structurally unmodified (8.704375ms)
+    ✔ an unknown tool name inside tools/call is forwarded with its arguments unmodified (1.592375ms)
+  ✔ non-tool JSON-RPC methods and unknown tools pass through unmodified (10.375917ms)
+✖ kaola-mcp Claim recovery receipt (Issue #32) (571.344584ms)
+ℹ tests 26
+ℹ suites 13
+ℹ pass 25
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 722.645333
+
+✖ failing tests:
+
+test at apps/mcp/src/_verify-claim-receipt.test.ts:649:5
+✖ boundary: receipt written but request never reached the server — restart reuses the recorded request_id and creates exactly one claim (2.009167ms)
+  Error: ENOENT: no such file or directory, open '/var/folders/8s/y93yqng93xb4__nl4jlh_g9c0000gn/T/kaola-receipt-home-hRpHih/receipts/08deeff6f6054b3cc973cbc16422284dce2a8705f68714d245b3cbae8be8ae46/dc997433c918cc35923df32dac582920a0ac0ed79ec8e4f15dfd8719fe0f6c66.json'
+      at Object.openSync (node:fs:561:18)
+      at writeFileSync (node:fs:2436:35)
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/mcp/src/_verify-claim-receipt.test.ts:669:7)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    errno: -2,
+    code: 'ENOENT',
+    syscall: 'open',
+    path: '/var/folders/8s/y93yqng93xb4__nl4jlh_g9c0000gn/T/kaola-receipt-home-hRpHih/receipts/08deeff6f6054b3cc973cbc16422284dce2a8705f68714d245b3cbae8be8ae46/dc997433c918cc35923df32dac582920a0ac0ed79ec8e4f15dfd8719fe0f6c66.json'
+  }
+
+Result: 25/26 pass. The single remaining failure is the second finding above (ENOENT from
+the test's own writeFileSync missing a prior mkdirSync), independent of my production code.

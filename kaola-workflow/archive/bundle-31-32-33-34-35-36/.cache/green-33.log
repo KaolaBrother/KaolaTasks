@@ -1,0 +1,83 @@
+=== Issue #33 focused suite: node --experimental-strip-types --test apps/server/src/workflow-default.test.ts ===
+  ✔ docs/workflow-default.md must document the measured issue-less-project fallback, citing the measured reason and snapshot identity rather than assuming support (0.111417ms)
+  ✔ docs/workflow-default.md contains no token-shaped text (0.11575ms)
+✔ Issue #33 docs/workflow-default.md — client guidance the implementer must add (0.741625ms)
+▶ Issue #33 token scan — fixtures this suite adds carry no token-shaped material
+  ✔ every workflow-target fixture brief (imported/native across github, gitlab-subgroup, gitea) is token-free (0.068834ms)
+  ✔ every computed WorkflowTarget for those fixtures is token-free (0.087333ms)
+✔ Issue #33 token scan — fixtures this suite adds carry no token-shaped material (0.183416ms)
+ℹ tests 18
+ℹ suites 4
+ℹ pass 18
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 682.265416
+
+=== Full suite: pnpm test ===
+  ✔ transitionTaskStatus rejects an unknown to status (0.033083ms)
+✔ transitionTaskStatus (1.378834ms)
+ℹ tests 702
+ℹ suites 184
+ℹ pass 702
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 7798.303584
+$ vitest run
+
+ RUN  v4.1.11 /Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/web
+
+
+ Test Files  6 passed (6)
+      Tests  117 passed (117)
+   Start at  19:09:10
+   Duration  7.22s (transform 513ms, setup 0ms, import 4.18s, tests 20.49s, environment 1.47s)
+
+
+=== pnpm lint ===
+$ eslint .
+lint exit: 0
+
+=== pnpm typecheck ===
+$ pnpm -r --if-present typecheck
+Scope: 5 of 6 workspace projects
+apps/web typecheck$ vue-tsc --noEmit -p tsconfig.json
+packages/shared typecheck$ tsc --noEmit -p tsconfig.json
+packages/forge-adapters typecheck$ tsc --noEmit -p tsconfig.json
+packages/forge-adapters typecheck: Done
+packages/shared typecheck: Done
+apps/web typecheck: Done
+apps/server typecheck$ tsc --noEmit -p tsconfig.json
+apps/mcp typecheck$ tsc --noEmit -p tsconfig.json
+apps/mcp typecheck: Done
+apps/server typecheck: Done
+typecheck exit: 0
+
+=== pnpm build ===
+$ pnpm -r --if-present build
+Scope: 5 of 6 workspace projects
+apps/web build$ vite build
+packages/forge-adapters build$ tsc --noEmit -p tsconfig.json
+packages/shared build$ tsc --noEmit -p tsconfig.json
+apps/web build: vite v7.3.6 building client environment for production...
+apps/web build: transforming...
+packages/forge-adapters build: Done
+packages/shared build: Done
+apps/web build: ✓ 2568 modules transformed.
+apps/web build: rendering chunks...
+apps/web build: computing gzip size...
+apps/web build: dist/index.html                     0.75 kB │ gzip:   0.43 kB
+apps/web build: dist/assets/index-BNddLdPW.css      9.32 kB │ gzip:   2.70 kB
+apps/web build: dist/assets/index-CWmjcWNy.js   1,491.15 kB │ gzip: 410.22 kB
+apps/web build: ✓ built in 2.79s
+apps/web build: (!) Some chunks are larger than 500 kB after minification. Consider:
+apps/web build: - Using dynamic import() to code-split the application
+apps/web build: - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+apps/web build: - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+apps/web build: Done
+apps/server build$ tsc --noEmit -p tsconfig.json
+apps/server build: Done
+build exit: 0

@@ -1,0 +1,361 @@
+▶ kaola-mcp Claim recovery receipt (Issue #32)
+  ▶ receiptFilePath path safety
+    ✖ is a pure function exported from main.ts (33.905917ms)
+    ✖ a legitimate task id resolves to a path strictly inside kaolaHome (0.586084ms)
+    ✔ hostile task ids either throw or stay strictly inside kaolaHome (no traversal escape) (0.397542ms)
+    ✖ different task ids produce different receipt files for the same origin (0.482ms)
+  ✖ receiptFilePath path safety (35.814375ms)
+  ▶ originDigest
+    ✖ is deterministic and distinguishes different origins (0.089583ms)
+  ✖ originDigest (0.178792ms)
+  ▶ claim receipt happy path
+    ✖ writes an atomic pre-claim receipt with request_id BEFORE the request, then records claim_id after success (25.518167ms)
+    ✖ directory is 0700 and the receipt file is 0600 (9.492125ms)
+    ✖ a later claim for the same (origin, task) reuses the recorded request_id and never creates a second server-side claim (16.721125ms)
+  ✖ claim receipt happy path (51.963083ms)
+  ▶ mutation claim_id auto-attach
+    ✖ report_progress, release_task and submit_pr get claim_id injected from a persisted receipt, even from a fresh process with no in-memory state (12.597625ms)
+  ✖ mutation claim_id auto-attach (12.707583ms)
+  ▶ legacy server compatibility (lease without claim_id)
+    ✔ claim still succeeds and mutations omit claim_id rather than injecting an undefined/null value (4.850041ms)
+  ✔ legacy server compatibility (lease without claim_id) (4.912833ms)
+  ▶ kill/restart boundaries converge to exactly one Claim
+    ✖ boundary: killed before any receipt write — restart claims cleanly with one request_id/claim_id (0.949875ms)
+    ✖ boundary: receipt written but request never reached the server — restart reuses the recorded request_id and creates exactly one claim (2.52925ms)
+    ✖ boundary: server committed the claim but the response was lost — restart replays and the server never creates a second claim (5.47475ms)
+    ✖ boundary: receipt already carried claim_id (full completion) — a repeat claim never creates a second server-side claim (6.6075ms)
+  ✖ kill/restart boundaries converge to exactly one Claim (15.710625ms)
+  ▶ stale mcp-session-id recovery
+    ✖ re-initializes exactly once and replays the pending claim exactly once (no second lease) (2.591375ms)
+    ✔ a second consecutive stale session surfaces an error instead of looping forever (2.494208ms)
+  ✖ stale mcp-session-id recovery (5.160541ms)
+  ▶ two bridge processes sharing one KAOLA_HOME
+    ✖ claiming the same task from two processes serializes on the receipt: exactly one server-side claim (386.159125ms)
+  ✖ two bridge processes sharing one KAOLA_HOME (386.319084ms)
+  ▶ different tasks and different server origins coexist without interference
+    ✖ separate receipt files with correct isolated content, no cross-contamination (9.225042ms)
+  ✖ different tasks and different server origins coexist without interference (9.346208ms)
+  ▶ receipt corruption and mismatch fail safely
+    ✖ truncated JSON at the receipt path does not crash the bridge and leaves unrelated receipts untouched (2.82875ms)
+    ✖ garbage bytes at the receipt path does not crash the bridge and leaves unrelated receipts untouched (2.346958ms)
+    ✖ wrong shape (array) at the receipt path does not crash the bridge and leaves unrelated receipts untouched (2.404625ms)
+    ✖ wrong shape (missing fields) at the receipt path does not crash the bridge and leaves unrelated receipts untouched (2.404625ms)
+    ✖ a receipt whose internal server/task_id do not match the lookup key is treated as unusable, not blindly trusted (0.466333ms)
+  ✖ receipt corruption and mismatch fail safely (10.597291ms)
+  ▶ secret scan across a full claim + report_progress + submit_pr cycle
+    ✖ KAOLA_HOME files, stderr, and the receipt field allowlist have zero hits of forge token / auth-shaped value / device private key / task description / decoy prompt fields (6.401791ms)
+  ✖ secret scan across a full claim + report_progress + submit_pr cycle (6.541875ms)
+  ▶ non-tool JSON-RPC methods and unknown tools pass through unmodified
+    ✔ initialize, tools/list, ping, a notification, and an unknown method are forwarded and returned structurally unmodified (10.500375ms)
+    ✔ an unknown tool name inside tools/call is forwarded with its arguments unmodified (1.856541ms)
+  ✔ non-tool JSON-RPC methods and unknown tools pass through unmodified (12.4765ms)
+✖ kaola-mcp Claim recovery receipt (Issue #32) (552.399917ms)
+ℹ tests 26
+ℹ suites 13
+ℹ pass 5
+ℹ fail 21
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 713.540958
+
+✖ failing tests:
+
+test at apps/mcp/src/claim-receipt.test.ts:417:5
+✖ is a pure function exported from main.ts (33.905917ms)
+  AssertionError [ERR_ASSERTION]: main.ts must export receiptFilePath(kaolaHome, url, taskId)
+  + actual - expected
+  
+  + 'undefined'
+  - 'function'
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/mcp/src/claim-receipt.test.ts:419:14)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:385:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'undefined',
+    expected: 'function',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/mcp/src/claim-receipt.test.ts:423:5
+✖ a legitimate task id resolves to a path strictly inside kaolaHome (0.586084ms)
+  TypeError: mod.receiptFilePath is not a function
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/mcp/src/claim-receipt.test.ts:426:24)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7)
+
+test at apps/mcp/src/claim-receipt.test.ts:468:5
+✖ different task ids produce different receipt files for the same origin (0.482ms)
+  TypeError: mod.receiptFilePath is not a function
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/mcp/src/claim-receipt.test.ts:471:21)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7)
+
+test at apps/mcp/src/claim-receipt.test.ts:478:5
+✖ is deterministic and distinguishes different origins (0.089583ms)
+  TypeError: mod.originDigest is not a function
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/mcp/src/claim-receipt.test.ts:480:22)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7)
+
+test at apps/mcp/src/claim-receipt.test.ts:491:5
+✖ writes an atomic pre-claim receipt with request_id BEFORE the request, then records claim_id after success (25.518167ms)
+  TypeError: mod.receiptFilePath is not a function
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/mcp/src/claim-receipt.test.ts:509:31)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7)
+
+test at apps/mcp/src/claim-receipt.test.ts:525:5
+✖ directory is 0700 and the receipt file is 0600 (9.492125ms)
+  TypeError: mod.receiptFilePath is not a function
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/mcp/src/claim-receipt.test.ts:540:31)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7)
+
+test at apps/mcp/src/claim-receipt.test.ts:546:5
+✖ a later claim for the same (origin, task) reuses the recorded request_id and never creates a second server-side claim (16.721125ms)
+  AssertionError [ERR_ASSERTION]: exactly one claim must ever be created server-side
+  
+  2 !== 1
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/mcp/src/claim-receipt.test.ts:560:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 2,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/mcp/src/claim-receipt.test.ts:571:5
+✖ report_progress, release_task and submit_pr get claim_id injected from a persisted receipt, even from a fresh process with no in-memory state (12.597625ms)
+  AssertionError [ERR_ASSERTION]: report_progress must carry the recorded claim_id
+  + actual - expected
+  
+  + undefined
+  - 'clm_1_kt-mutate'
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/mcp/src/claim-receipt.test.ts:599:16)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: 'clm_1_kt-mutate',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/mcp/src/claim-receipt.test.ts:631:5
+✖ boundary: killed before any receipt write — restart claims cleanly with one request_id/claim_id (0.949875ms)
+  TypeError: mod.receiptFilePath is not a function
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/mcp/src/claim-receipt.test.ts:641:35)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7)
+
+test at apps/mcp/src/claim-receipt.test.ts:655:5
+✖ boundary: receipt written but request never reached the server — restart reuses the recorded request_id and creates exactly one claim (2.52925ms)
+  TypeError: mod.receiptFilePath is not a function
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/mcp/src/claim-receipt.test.ts:672:37)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7)
+
+test at apps/mcp/src/claim-receipt.test.ts:709:5
+✖ boundary: server committed the claim but the response was lost — restart replays and the server never creates a second claim (5.47475ms)
+  AssertionError [ERR_ASSERTION]: restart must never create a second claim
+  
+  2 !== 1
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/mcp/src/claim-receipt.test.ts:740:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 2,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/mcp/src/claim-receipt.test.ts:746:5
+✖ boundary: receipt already carried claim_id (full completion) — a repeat claim never creates a second server-side claim (6.6075ms)
+  AssertionError [ERR_ASSERTION]: repeat claim must return the same claim_id
+  + actual - expected
+  
+  + 'clm_2_kt-boundary-d'
+  - 'clm_1_kt-boundary-d'
+         ^
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/mcp/src/claim-receipt.test.ts:763:21)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'clm_2_kt-boundary-d',
+    expected: 'clm_1_kt-boundary-d',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/mcp/src/claim-receipt.test.ts:771:5
+✖ re-initializes exactly once and replays the pending claim exactly once (no second lease) (2.591375ms)
+  AssertionError [ERR_ASSERTION]: must re-initialize exactly once after the stale session
+  
+  1 !== 2
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/mcp/src/claim-receipt.test.ts:793:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 2,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/mcp/src/claim-receipt.test.ts:828:5
+✖ claiming the same task from two processes serializes on the receipt: exactly one server-side claim (386.159125ms)
+  AssertionError [ERR_ASSERTION]: every successful claim result must share one claim_id, got ["clm_2_kt-two-proc","clm_1_kt-two-proc"]
+  
+  2 !== 1
+  
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/mcp/src/claim-receipt.test.ts:854:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 2,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/mcp/src/claim-receipt.test.ts:860:5
+✖ separate receipt files with correct isolated content, no cross-contamination (9.225042ms)
+  TypeError: mod.receiptFilePath is not a function
+      at file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/mcp/src/claim-receipt.test.ts:884:61
+      at Array.map (<anonymous>)
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/mcp/src/claim-receipt.test.ts:884:28)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7)
+
+test at apps/mcp/src/claim-receipt.test.ts:919:7
+✖ truncated JSON at the receipt path does not crash the bridge and leaves unrelated receipts untouched (2.82875ms)
+  TypeError: mod.receiptFilePath is not a function
+      at seedUnrelatedReceipt (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/mcp/src/claim-receipt.test.ts:907:24)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/mcp/src/claim-receipt.test.ts:923:25)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7)
+
+test at apps/mcp/src/claim-receipt.test.ts:919:7
+✖ garbage bytes at the receipt path does not crash the bridge and leaves unrelated receipts untouched (2.346958ms)
+  TypeError: mod.receiptFilePath is not a function
+      at seedUnrelatedReceipt (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/mcp/src/claim-receipt.test.ts:907:24)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/mcp/src/claim-receipt.test.ts:923:25)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7)
+
+test at apps/mcp/src/claim-receipt.test.ts:919:7
+✖ wrong shape (array) at the receipt path does not crash the bridge and leaves unrelated receipts untouched (2.404625ms)
+  TypeError: mod.receiptFilePath is not a function
+      at seedUnrelatedReceipt (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/mcp/src/claim-receipt.test.ts:907:24)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/mcp/src/claim-receipt.test.ts:923:25)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7)
+
+test at apps/mcp/src/claim-receipt.test.ts:919:7
+✖ wrong shape (missing fields) at the receipt path does not crash the bridge and leaves unrelated receipts untouched (2.404625ms)
+  TypeError: mod.receiptFilePath is not a function
+      at seedUnrelatedReceipt (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/mcp/src/claim-receipt.test.ts:907:24)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/mcp/src/claim-receipt.test.ts:923:25)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7)
+
+test at apps/mcp/src/claim-receipt.test.ts:944:5
+✖ a receipt whose internal server/task_id do not match the lookup key is treated as unusable, not blindly trusted (0.466333ms)
+  TypeError: mod.receiptFilePath is not a function
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/mcp/src/claim-receipt.test.ts:948:24)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7)
+
+test at apps/mcp/src/claim-receipt.test.ts:984:5
+✖ KAOLA_HOME files, stderr, and the receipt field allowlist have zero hits of forge token / auth-shaped value / device private key / task description / decoy prompt fields (6.401791ms)
+  TypeError: mod.receiptFilePath is not a function
+      at TestContext.<anonymous> (file:///Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/mcp/src/claim-receipt.test.ts:1020:31)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1794:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:911:7)
+▶ @kaola/mcp package
+  ✔ package.json is @kaola/mcp ESM, Node >=22, bin kaola-mcp (0.757625ms)
+  ✔ committed mcp.json example is command plus url and contains no secrets (1.054084ms)
+✔ @kaola/mcp package (2.551375ms)
+▶ resolveKaolaUrl
+  ✔ --url wins, then KAOLA_URL, then localhost:31415; trailing slash is stripped (35.48675ms)
+✔ resolveKaolaUrl (35.602ms)
+▶ ensureDeviceIdentity
+  ✔ creates ~/.kaola-shaped dir 0700 and device.json 0600 Ed25519 PKCS8+SPKI when missing (4.075167ms)
+✔ ensureDeviceIdentity (4.156542ms)
+▶ forwardMcpRequest
+  ✔ POSTs to {url}/api/mcp with canonical device proof headers (25.749625ms)
+  ✔ HTTP 202 authorization_required becomes a JSON-RPC error, never a successful token result (7.592125ms)
+  ✔ successful claim JSON-RPC may contain token but KAOLA_HOME never stores it (3.031917ms)
+✔ forwardMcpRequest (36.612958ms)
+▶ stdio bridge Streamable HTTP session
+  ✔ captures MCP-Session-Id from initialize without putting it on the JSON-RPC body (3.730708ms)
+  ▶ runStdioBridge session replay
+    ✔ replays captured mcp-session-id on the next stdin tools/list (4.887125ms)
+    ✔ omits mcp-session-id on later stdin when initialize response had no such header (3.420167ms)
+  ✔ runStdioBridge session replay (8.42025ms)
+✔ stdio bridge Streamable HTTP session (12.218916ms)
+ℹ tests 10
+ℹ suites 6
+ℹ pass 10
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 284.470417

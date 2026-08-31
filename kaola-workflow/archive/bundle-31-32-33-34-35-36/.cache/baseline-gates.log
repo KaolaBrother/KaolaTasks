@@ -1,0 +1,14 @@
+$ eslint .
+LINT_RC=0
+apps/web typecheck: Done
+apps/mcp typecheck$ tsc --noEmit -p tsconfig.json
+apps/server typecheck$ tsc --noEmit -p tsconfig.json
+apps/mcp typecheck: Done
+apps/server typecheck: Done
+TYPECHECK_RC=0
+apps/web build: - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+apps/web build: ✓ built in 2.01s
+apps/web build: Done
+apps/server build$ tsc --noEmit -p tsconfig.json
+apps/server build: Done
+BUILD_RC=0

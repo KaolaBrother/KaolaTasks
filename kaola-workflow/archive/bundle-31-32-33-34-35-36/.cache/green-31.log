@@ -1,0 +1,97 @@
+=== Issue #31 green run — 2026-08-31T10:46:01Z ===
+
+--- focused: node --experimental-strip-types --test apps/server/src/claim-fencing.test.ts ---
+  ✔ canonicalization — the stored pr_url absorbs decoration, proven via idempotent matching across variants (235.071125ms)
+  ▶ canonicalization round trip — webhook delivery of a real forge-shaped (bare) URL still matches the stored value
+    ✔ gitea: a webhook delivery carrying the bare PR URL matches the canonical stored value and completes the task (68.939625ms)
+    ✔ github: a webhook delivery carrying the bare PR URL matches the canonical stored value and completes the task (73.804292ms)
+    ✔ gitlab: a webhook delivery carrying the bare MR URL matches the canonical stored value and completes the task (63.738709ms)
+  ✔ canonicalization round trip — webhook delivery of a real forge-shaped (bare) URL still matches the stored value (206.63175ms)
+  ▶ canonicalization round trip — the poller resolves the canonical stored value against the real PR/MR API
+    ✔ gitea: the poller resolves the stored canonical pr_url and completes a merged PR (59.502208ms)
+    ✔ github: the poller resolves the stored canonical pr_url and completes a merged PR (66.284041ms)
+    ✔ gitlab (subgroup): the poller resolves the stored canonical MR url and completes a merged MR (65.22325ms)
+  ✔ canonicalization round trip — the poller resolves the canonical stored value against the real PR/MR API (191.435083ms)
+✔ issue #31 claim fencing (3020.661792ms)
+ℹ tests 47
+ℹ suites 18
+ℹ pass 47
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4040.089417
+
+--- full: pnpm test ---
+  ✔ transitionTaskStatus rejects 已退回 → 已完成 (0.035584ms)
+  ✔ transitionTaskStatus rejects 已退回 → 已退回 (0.029167ms)
+  ✔ transitionTaskStatus allows 已退回 → 已取消 (0.021125ms)
+  ✔ transitionTaskStatus rejects 已取消 → 待认领 (1.492666ms)
+  ✔ transitionTaskStatus rejects 已取消 → 进行中 (0.070791ms)
+  ✔ transitionTaskStatus rejects 已取消 → 待验收 (0.410959ms)
+  ✔ transitionTaskStatus rejects 已取消 → 已完成 (0.030708ms)
+  ✔ transitionTaskStatus rejects 已取消 → 已退回 (0.035042ms)
+  ✔ transitionTaskStatus rejects 已取消 → 已取消 (0.022792ms)
+  ✔ transitionTaskStatus rejects an unknown from status (0.323416ms)
+  ✔ transitionTaskStatus rejects an unknown to status (0.151625ms)
+✔ transitionTaskStatus (5.587667ms)
+ℹ tests 655
+ℹ suites 166
+ℹ pass 655
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 11219.136334
+$ vitest run
+
+ RUN  v4.1.11 /Volumes/WorkspaceA/ylminiserver/workspace/KaolaTasks/.kw/worktrees/bundle-31-32-33-34-35-36/apps/web
+
+
+ Test Files  6 passed (6)
+      Tests  117 passed (117)
+   Start at  18:46:18
+   Duration  14.16s (transform 450ms, setup 0ms, import 7.28s, tests 42.51s, environment 2.61s)
+
+
+--- pnpm lint ---
+$ eslint .
+
+--- pnpm typecheck ---
+$ pnpm -r --if-present typecheck
+Scope: 5 of 6 workspace projects
+apps/web typecheck$ vue-tsc --noEmit -p tsconfig.json
+packages/forge-adapters typecheck$ tsc --noEmit -p tsconfig.json
+packages/shared typecheck$ tsc --noEmit -p tsconfig.json
+packages/forge-adapters typecheck: Done
+packages/shared typecheck: Done
+apps/web typecheck: Done
+apps/mcp typecheck$ tsc --noEmit -p tsconfig.json
+apps/server typecheck$ tsc --noEmit -p tsconfig.json
+apps/mcp typecheck: Done
+apps/server typecheck: Done
+
+--- pnpm build ---
+$ pnpm -r --if-present build
+Scope: 5 of 6 workspace projects
+apps/web build$ vite build
+packages/forge-adapters build$ tsc --noEmit -p tsconfig.json
+packages/shared build$ tsc --noEmit -p tsconfig.json
+apps/web build: vite v7.3.6 building client environment for production...
+apps/web build: transforming...
+packages/forge-adapters build: Done
+packages/shared build: Done
+apps/web build: ✓ 2568 modules transformed.
+apps/web build: rendering chunks...
+apps/web build: computing gzip size...
+apps/web build: dist/index.html                     0.75 kB │ gzip:   0.43 kB
+apps/web build: dist/assets/index-BNddLdPW.css      9.32 kB │ gzip:   2.70 kB
+apps/web build: dist/assets/index-CWmjcWNy.js   1,491.15 kB │ gzip: 410.22 kB
+apps/web build: ✓ built in 3.60s
+apps/web build: (!) Some chunks are larger than 500 kB after minification. Consider:
+apps/web build: - Using dynamic import() to code-split the application
+apps/web build: - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+apps/web build: - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+apps/web build: Done
+apps/server build$ tsc --noEmit -p tsconfig.json
+apps/server build: Done
