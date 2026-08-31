@@ -229,6 +229,17 @@ function beginFetch(t) {
       return jsonResponse(override?.status ?? 201, { id: commentRequests.length })
     }
 
+    // Issue #40 R1: a 5xx/408/429 comment POST is now AMBIGUOUS (writeback.ts's
+    // `isDefiniteFailure`), so `retryPendingWritebacks` resolves it via a `listIssueComments` GET
+    // to this same collection before ever reposting. None of the scenarios in this file's retry
+    // tests actually land a comment forge-side on that failing attempt, so the listing here always
+    // comes back empty — the same "not found, fall through and post" branch `attemptWriteback`
+    // already exercises, keeping every existing assertion (POST counts, successful 回写 counts)
+    // unchanged.
+    if (method === 'GET' && isCommentEndpoint(url)) {
+      return jsonResponse(200, [])
+    }
+
     if (isPrEndpoint(url)) {
       const number = prNumberFromUrl(url)
       const stub = number == null ? undefined : pr.get(number)

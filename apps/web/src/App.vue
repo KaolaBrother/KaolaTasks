@@ -1428,6 +1428,21 @@ async function readJson(res: Response): Promise<Record<string, unknown> | null> 
   }
 }
 
+// A failure response's `message` is only trustworthy when `error` is one of this app's own
+// typed, snake_case machine codes (e.g. `not_found`, `credential_profile_in_use`). There is no
+// setErrorHandler in apps/server/src, so an unhandled route throw falls through to Fastify's own
+// default envelope, and the one place this app asks Fastify to synthesize a body itself
+// (setNotFoundHandler) does the same — both come out as a capitalized, space-containing `error`
+// like "Not Found" / "Internal Server Error" with an English `message` that must never reach this
+// Chinese-only admin UI (AGENTS.md「用户界面使用中文」, issue #45).
+const TYPED_ERROR_CODE_PATTERN = /^[a-z][a-z0-9_]*$/
+
+function typedErrorMessage(body: Record<string, unknown> | null): string | null {
+  if (body == null) return null
+  if (typeof body.error !== 'string' || !TYPED_ERROR_CODE_PATTERN.test(body.error)) return null
+  return typeof body.message === 'string' ? body.message : null
+}
+
 onMounted(async () => {
   try {
     const res = await fetch('/api/v1/me', {
@@ -1825,7 +1840,7 @@ async function patchTaskStatus(status: '已取消' | '待认领') {
     const body = await readJson(res)
     if (!res.ok) {
       boardDetailActionMessage.value =
-        typeof body?.message === 'string' ? body.message : `操作失败（${res.status}）`
+        typedErrorMessage(body) ?? `操作失败（${res.status}）`
       return
     }
     if (body != null) applyBriefUpdate(body)
@@ -1885,7 +1900,7 @@ async function deleteProfile(id: number) {
     if (!res.ok) {
       profileOk.value = false
       profileMessage.value =
-        typeof body?.message === 'string' ? body.message : `删除失败（${res.status}）`
+        typedErrorMessage(body) ?? `删除失败（${res.status}）`
       return
     }
     profileOk.value = true
@@ -1966,7 +1981,7 @@ async function createTask() {
         return
       }
       taskMessage.value =
-        typeof body?.message === 'string' ? body.message : `发布失败（${res.status}）`
+        typedErrorMessage(body) ?? `发布失败（${res.status}）`
       return
     }
     const id = typeof body?.id === 'string' ? body.id : ''
@@ -2013,7 +2028,7 @@ async function importTask() {
     const body = await readJson(res)
     if (!res.ok) {
       taskMessage.value =
-        typeof body?.message === 'string' ? body.message : `导入失败（${res.status}）`
+        typedErrorMessage(body) ?? `导入失败（${res.status}）`
       return
     }
     if (typeof body?.title === 'string') taskTitle.value = body.title

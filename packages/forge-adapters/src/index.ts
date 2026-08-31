@@ -65,6 +65,7 @@ export interface ForgeAdapter {
   registerWebhook(cred: Credential, repo: RepoRef, callback: string): Promise<void>
   parseWebhook(headers: Headers, body: unknown): ForgeEvent | null
   commentOnIssue(cred: Credential, issueRef: IssueRef, body: string): Promise<void>
+  listIssueComments(cred: Credential, issueRef: IssueRef): Promise<string[]>
 }
 
 export type CreateForgeAdapterOptions = {
@@ -99,6 +100,7 @@ export function createForgeAdapter(
     registerWebhook: (cred, repo, callback) => registerWebhook(kind, options, cred, repo, callback),
     parseWebhook: (headers, body) => parseWebhook(kind, options, headers, body),
     commentOnIssue: (cred, issueRef, body) => commentOnIssue(kind, options, cred, issueRef, body),
+    listIssueComments: (cred, issueRef) => listIssueComments(kind, options, cred, issueRef),
   }
 }
 
@@ -616,6 +618,54 @@ async function commentOnIssue(
   if (!res.ok) {
     throw new Error(`commentOnIssue: ${kind} responded ${res.status}`)
   }
+}
+
+// Issue #40: read back the same comment/note collection `commentOnIssue` posts to, so a caller can
+// scan for an idempotency marker before deciding whether an ack-loss failure already landed
+// forge-side. Same URL, same host/SSRF rule, same auth — just a GET instead of a POST.
+//
+// R2 follow-up (independent review, same issue #40): GitHub defaults to 30 comments/page (max
+// 100) and GitLab notes default to 20/page (max 100), both in ascending creation order — so on a
+// busy imported Issue an unpaginated GET can miss the marker just-committed comment entirely,
+// because it landed past the small default first page. Both request `per_page=100` explicitly.
+// Gitea's comment-listing endpoint accepts no page/limit params at all (measured), so it gets no
+// query string — UNKNOWN and not claimed either way: whether Gitea's endpoint returns every
+// comment unbounded or applies some undocumented server-side cap could not be established.
+function commentBodyField(kind: ForgeKind, item: unknown): string | undefined {
+  const obj = asObject(item)
+  if (obj == null) return undefined
+  // github/gitea comments and gitlab notes all carry their text in a top-level `body` field.
+  const raw = obj.body
+  return typeof raw === 'string' ? raw : undefined
+}
+
+function listIssueCommentsUrl(kind: ForgeKind, apiUrl: string): string {
+  const collection = kind === 'gitlab' ? `${apiUrl}/notes` : `${apiUrl}/comments`
+  return kind === 'gitea' ? collection : `${collection}?per_page=100`
+}
+
+async function listIssueComments(
+  kind: ForgeKind,
+  options: CreateForgeAdapterOptions | undefined,
+  cred: Credential,
+  issueRef: IssueRef,
+): Promise<string[]> {
+  const resolved = resolveImportedIssue(kind, options, issueRef.issue_url)
+  const url = listIssueCommentsUrl(kind, resolved.apiUrl)
+  const res = await forgeGet(kind, url, cred.token, options)
+  if (!res.ok) {
+    throw new Error(`listIssueComments: ${kind} responded ${res.status}`)
+  }
+  const payload: unknown = await res.json()
+  if (!Array.isArray(payload)) {
+    throw new Error(`listIssueComments: ${kind} response is not an array`)
+  }
+  const bodies: string[] = []
+  for (const item of payload) {
+    const body = commentBodyField(kind, item)
+    if (body != null) bodies.push(body)
+  }
+  return bodies
 }
 
 function userPath(): string {

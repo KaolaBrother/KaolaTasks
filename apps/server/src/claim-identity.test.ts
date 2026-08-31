@@ -178,6 +178,16 @@ function beginFetch(t) {
       return jsonResponse(override?.status ?? 201, { id: commentRequests.length })
     }
 
+    // Issue #40: `listIssueComments` GETs the same collection `commentOnIssue` POSTs to, to resolve
+    // an ambiguous (no-status) write-back failure before ever reposting. This stub never actually
+    // commits a comment server-side on any POST path exercised in this file (a stubbed non-2xx
+    // status or a thrown `TypeError('fetch failed')` both fail before anything would be persisted
+    // by a real forge), so an empty list is the correct, honest response — it lets the dedupe
+    // check conclude "not found" and fall through to reposting exactly as before this issue.
+    if (method === 'GET' && isCommentEndpoint(url)) {
+      return jsonResponse(200, [])
+    }
+
     const token = stubbedToken(input, init)
     const forgeStub = token == null ? undefined : forge.get(token)
     if (forgeStub != null) {
