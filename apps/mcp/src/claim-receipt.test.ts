@@ -43,7 +43,7 @@
 //      implementer; this suite pins only the safety invariants explicitly required by the brief:
 //      no crash, no secret exposure, and unrelated receipt files are neither read nor deleted.
 
-import { describe, test } from 'node:test'
+import { before, describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { spawn } from 'node:child_process'
@@ -91,6 +91,13 @@ async function loadBridge() {
     assert.fail(`apps/mcp/src/main.ts must export the claim-receipt seams (got ${code || String(err)})`)
   }
 }
+
+// Loaded once for the whole file (mirrors apps/mcp/src/main.test.ts's own `loadBridge` pattern),
+// then referenced by every test below.
+let mod
+before(async () => {
+  mod = await loadBridge()
+})
 
 function tmpKaolaHome(t) {
   const dir = mkdtempSync(join(tmpdir(), 'kaola-receipt-home-'))
@@ -661,6 +668,7 @@ describe('kaola-mcp Claim recovery receipt (Issue #32)', () => {
       // The receipt is addressed by (origin, task); a dead port and the live backend are
       // different origins, so re-point at the live backend for the restart, as an Agent would
       // after the operator brings the real server back on the configured URL.
+      mkdirSync(dirname(receiptPathBefore), { recursive: true })
       writeFileSync(
         receiptPathBefore,
         `${JSON.stringify({
@@ -810,7 +818,6 @@ describe('kaola-mcp Claim recovery receipt (Issue #32)', () => {
 
   describe('two bridge processes sharing one KAOLA_HOME', () => {
     test('claiming the same task from two processes serializes on the receipt: exactly one server-side claim', { timeout: 25000 }, async (t) => {
-      await loadBridge()
       const home = tmpKaolaHome(t)
       const backend = await makeClaimBackend(t, { delayMs: 150 })
 
@@ -900,7 +907,7 @@ describe('kaola-mcp Claim recovery receipt (Issue #32)', () => {
 
     for (const [label, contents] of corruptionCases) {
       test(`${label} at the receipt path does not crash the bridge and leaves unrelated receipts untouched`, async (t) => {
-          const home = tmpKaolaHome(t)
+        const home = tmpKaolaHome(t)
         const backend = await makeClaimBackend(t, {})
         const control = await seedUnrelatedReceipt(mod, home, backend)
 
