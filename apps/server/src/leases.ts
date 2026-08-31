@@ -109,7 +109,12 @@ export function claimIdForLease(lease: ClaimIdentityFields): string {
   return `${CLAIM_ID_PREFIX}${digest.slice(0, CLAIM_ID_DIGEST_LENGTH)}`
 }
 
-export function renewActiveLease(db: AppDb, leaseId: number, now: number): number {
+// Structural subset of `AppDb` so callers running inside `db.transaction(...)` can pass the
+// transaction handle — same pattern as `LeaseInsertWriter` above and vault.ts's
+// `AuditEventWriter`.
+type LeaseUpdateWriter = { update: AppDb['update'] }
+
+export function renewActiveLease(db: LeaseUpdateWriter, leaseId: number, now: number): number {
   const expiresAt = now + LEASE_TTL_SECONDS
   db.update(leases)
     .set({ lastHeartbeat: now, expiresAt })
@@ -118,10 +123,16 @@ export function renewActiveLease(db: AppDb, leaseId: number, now: number): numbe
   return expiresAt
 }
 
-export function markLeaseReleased(db: AppDb, leaseId: number): void {
+export function markLeaseReleased(db: LeaseUpdateWriter, leaseId: number): void {
   db.update(leases).set({ state: 'released' }).where(eq(leases.id, leaseId)).run()
 }
 
+// Issue #31: one transaction PER lease — not one transaction for the whole sweep — so a fault on
+// any single lease's expiry write cannot strand a different lease already committed by an earlier
+// iteration, and so a `进行中` task can never be left reachable with no active lease (the lease
+// expiry, the task update, and the 状态迁移 audit for that one lease either all commit or none
+// does). A fault propagates rather than being swallowed, so the caller (and its own caller, e.g. a
+// mutation's own transaction) can tell a sweep genuinely failed mid-way.
 export function sweepExpiredLeases(db: AppDb): void {
   const now = unixNow()
   const expired = db
@@ -131,15 +142,17 @@ export function sweepExpiredLeases(db: AppDb): void {
     .all()
 
   for (const lease of expired) {
-    db.update(leases).set({ state: 'expired' }).where(eq(leases.id, lease.id)).run()
-    const task = db.select().from(tasks).where(eq(tasks.id, lease.taskId)).get()
-    if (task == null || task.status !== '进行中') continue
-    const to = transitionTaskStatus(task.status, '待认领') as TaskStatus
-    db.update(tasks).set({ status: to }).where(eq(tasks.id, task.id)).run()
-    insertAuditEvent(db, {
-      type: STATUS_TRANSITION_EVENT,
-      actorUserId: null,
-      details: { task_id: task.publicId, from: '进行中', to: '待认领' },
+    db.transaction((tx) => {
+      tx.update(leases).set({ state: 'expired' }).where(eq(leases.id, lease.id)).run()
+      const task = tx.select().from(tasks).where(eq(tasks.id, lease.taskId)).get()
+      if (task == null || task.status !== '进行中') return
+      const to = transitionTaskStatus(task.status, '待认领') as TaskStatus
+      tx.update(tasks).set({ status: to }).where(eq(tasks.id, task.id)).run()
+      insertAuditEvent(tx, {
+        type: STATUS_TRANSITION_EVENT,
+        actorUserId: null,
+        details: { task_id: task.publicId, from: '进行中', to: '待认领' },
+      })
     })
   }
 }

@@ -289,6 +289,13 @@ CREATE TABLE IF NOT EXISTS submissions (
 )
 `
 
+// Issue #31: one submission per Claim (lease) — enforces submit_pr's idempotent-repeat contract
+// at the storage layer, not just in application code.
+const SUBMISSIONS_LEASE_ID_INDEX_DDL = `
+CREATE UNIQUE INDEX IF NOT EXISTS submissions_lease_id
+  ON submissions(lease_id)
+`
+
 const CLAIM_CONFIRMATIONS_DDL = `
 CREATE TABLE IF NOT EXISTS claim_confirmations (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -356,6 +363,7 @@ export function createDb(path = ':memory:') {
   tryAddColumn(sqlite, LEASES_ADD_REQUEST_ID_DDL)
   sqlite.exec(LEASES_DEVICE_REQUEST_IDENTITY_INDEX_DDL)
   sqlite.exec(SUBMISSIONS_DDL)
+  sqlite.exec(SUBMISSIONS_LEASE_ID_INDEX_DDL)
   sqlite.exec(CLAIM_CONFIRMATIONS_DDL)
   tryAddColumn(sqlite, CLAIM_CONFIRMATIONS_ADD_DEVICE_ID_DDL)
   rebuildClaimConfirmationsIfAgentKeyStillRequired(sqlite)

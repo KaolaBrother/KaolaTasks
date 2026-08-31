@@ -354,11 +354,14 @@ async function claimTask(app, { identity, publicId, payload }) {
   })
 }
 
-async function releaseTask(app, { identity, publicId }) {
+// Issue #31: release_task now requires claim_id for a Claim minted with request_id — claimId is
+// optional here (legacy Claims, and the pre-existing callers of this helper that never used
+// request_id, still omit it).
+async function releaseTask(app, { identity, publicId, claimId }) {
   return injectSigned(app, identity, {
     method: 'POST',
     url: `/api/v1/tasks/${publicId}/release`,
-    payload: {},
+    payload: claimId == null ? {} : { claim_id: claimId },
     extraHeaders: { accept: 'application/json', 'content-type': 'application/json' },
   })
 }
@@ -846,8 +849,9 @@ describe('issue #36 claim identity (request_id / claim_id)', { concurrency: fals
 
       const claimed = await claimTask(app, { identity: key.identity, publicId: brief.id, payload: { request_id: requestId } })
       assert.equal(claimed.statusCode, 201, `claim: ${claimed.statusCode} ${claimed.body}`)
+      const claimId = jsonBody(claimed).lease.claim_id
 
-      const released = await releaseTask(app, { identity: key.identity, publicId: brief.id })
+      const released = await releaseTask(app, { identity: key.identity, publicId: brief.id, claimId })
       assert.equal(released.statusCode, 200, `release: ${released.statusCode} ${released.body}`)
 
       const db = openDb(t, sqlitePath)
@@ -1340,7 +1344,7 @@ describe('issue #36 claim identity (request_id / claim_id)', { concurrency: fals
       assert.equal(first.statusCode, 201, `first claim: ${first.statusCode} ${first.body}`)
       const firstClaimId = jsonBody(first).lease.claim_id
 
-      const released = await releaseTask(app, { identity: key.identity, publicId: brief.id })
+      const released = await releaseTask(app, { identity: key.identity, publicId: brief.id, claimId: firstClaimId })
       assert.equal(released.statusCode, 200, `release: ${released.statusCode} ${released.body}`)
 
       const second = await claimTask(app, {

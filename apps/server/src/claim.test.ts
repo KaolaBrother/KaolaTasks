@@ -1311,7 +1311,10 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       assertNoForgeSecretMaterial(released, INLINE_TOKEN)
     })
 
-    test('progress and release after the holder released are 409 任务未被认领', async (t) => {
+    // Issue #31: repeating release for the same already-terminal Claim is now idempotent (200,
+    // same result) rather than 409 — progress still has no active lease to renew, so it stays 409
+    // 任务未被认领 exactly as before.
+    test('progress after the holder released is 409 任务未被认领; a repeated release is idempotent 200', async (t) => {
       const { app, stub } = await boot(t)
       const poster = await loginGitea(app, stub, 'after-release')
       const { brief } = await createTaskOk(app, poster.cookies)
@@ -1320,15 +1323,15 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       const claimed = await claimTask(app, { identity: key.identity, publicId: brief.id })
       assert.equal(claimed.statusCode, 201, `claim: ${claimed.statusCode} ${claimed.body}`)
       const released = await releaseTask(app, { identity: key.identity, publicId: brief.id })
-      assertRelease200(released, { forgeTokens: [INLINE_TOKEN] })
+      const releasedBody = assertRelease200(released, { forgeTokens: [INLINE_TOKEN] })
 
       const progressed = await progressTask(app, { identity: key.identity, publicId: brief.id, payload: { note: 'late' } })
       assert.equal(progressed.statusCode, 409, `progress after release: ${progressed.statusCode} ${progressed.body}`)
       assert.deepEqual(jsonBody(progressed), { error: 'conflict', message: TASK_NOT_CLAIMED_MESSAGE })
 
       const again = await releaseTask(app, { identity: key.identity, publicId: brief.id })
-      assert.equal(again.statusCode, 409, `second release: ${again.statusCode} ${again.body}`)
-      assert.deepEqual(jsonBody(again), { error: 'conflict', message: TASK_NOT_CLAIMED_MESSAGE })
+      const againBody = assertRelease200(again, { forgeTokens: [INLINE_TOKEN] })
+      assert.deepEqual(againBody, releasedBody, 'a repeated release for the same already-terminal Claim must return the same result')
     })
   })
 

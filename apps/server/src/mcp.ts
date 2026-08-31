@@ -123,40 +123,45 @@ function createKaolaMcpServer(db: AppDb, authHolder: AuthHolder): McpServer {
   server.registerTool(
     'report_progress',
     {
-      description: 'Heartbeat on a claimed task. Optional note; omit to record an empty note.',
+      description:
+        'Heartbeat on a claimed task. Optional note; omit to record an empty note. claim_id is required for a Claim minted with request_id, optional for a legacy Claim.',
       inputSchema: {
         task_id: z.string(),
         note: z.string().optional(),
+        claim_id: z.string().optional(),
       },
     },
-    async (args) => toToolResult(reportProgress(db, authHolder.auth, args.task_id, args.note)),
+    async (args) => toToolResult(reportProgress(db, authHolder.auth, args.task_id, args.note, args.claim_id)),
   )
 
   server.registerTool(
     'release_task',
     {
-      description: 'Release a claimed task back to 待认领. Optional reason is recorded only when provided.',
+      description:
+        'Release a claimed task back to 待认领. Optional reason is recorded only when provided. claim_id is required for a Claim minted with request_id, optional for a legacy Claim; repeating release for an already-released Claim is idempotent.',
       inputSchema: {
         task_id: z.string(),
         reason: z.string().optional(),
+        claim_id: z.string().optional(),
       },
     },
-    async (args) => toToolResult(releaseTask(db, authHolder.auth, args.task_id, args.reason)),
+    async (args) => toToolResult(releaseTask(db, authHolder.auth, args.task_id, args.reason, args.claim_id)),
   )
 
   server.registerTool(
     'submit_pr',
     {
       description:
-        'After a PR or MR exists on the forge, submit its URL for a claimed in-progress task and move it to 待验收.',
+        'After a PR or MR exists on the forge, submit its URL for a claimed in-progress task and move it to 待验收. claim_id is required for a Claim minted with request_id, optional for a legacy Claim; repeating submit_pr for the same Claim and pr_url is idempotent.',
       inputSchema: {
         task_id: z.string(),
         pr_url: z.string(),
         summary: z.string(),
+        claim_id: z.string().optional(),
       },
     },
     async (args) =>
-      toToolResult(await submitPr(db, authHolder.auth, args.task_id, args.pr_url, args.summary)),
+      toToolResult(await submitPr(db, authHolder.auth, args.task_id, args.pr_url, args.summary, args.claim_id)),
   )
 
   return server

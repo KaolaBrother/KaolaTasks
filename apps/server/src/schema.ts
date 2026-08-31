@@ -113,14 +113,20 @@ export const leases = sqliteTable('leases', {
 })
 
 // DESIGN.md §10: submissions persist a submitted PR against the lease that held the task.
-export const submissions = sqliteTable('submissions', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  taskId: integer('task_id').notNull(),
-  leaseId: integer('lease_id').notNull(),
-  prUrl: text('pr_url').notNull(),
-  summary: text('summary').notNull(),
-  prState: text('pr_state').notNull(),
-})
+// Issue #31: one submission per Claim (lease) — the actual constraint is the
+// `submissions_lease_id` unique index created by db.ts; this mirrors it for drizzle's typing.
+export const submissions = sqliteTable(
+  'submissions',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    taskId: integer('task_id').notNull(),
+    leaseId: integer('lease_id').notNull(),
+    prUrl: text('pr_url').notNull(),
+    summary: text('summary').notNull(),
+    prState: text('pr_state').notNull(),
+  },
+  (t) => [unique('submissions_lease_id').on(t.leaseId)],
+)
 
 // Issue #16: parks an autonomous claim (task.id PK, not public_id) awaiting the claiming user's
 // approval or rejection. One row is reused per (task_id, user_id, agent_key_id) while pending.

@@ -145,10 +145,21 @@ function parsedUrl(url: string): URL | undefined {
   }
 }
 
+// Issue #31: a real forge web UI links to /files, /commits, /diffs sub-pages of a PR/MR — none of
+// those are the canonical PR/MR URL itself, so they must be stripped from the pathname (after
+// query/fragment are already dropped by URL parsing, and after any trailing slash) before the
+// per-forge shape regex below is applied.
+const PR_URL_SUBPAGE_SUFFIX = /\/(?:files|commits|diffs)$/u
+
+function stripPrPathnameSuffix(pathname: string): string {
+  return pathname.replace(/\/+$/u, '').replace(PR_URL_SUBPAGE_SUFFIX, '')
+}
+
 function parseGithubPrUrl(prUrl: string): ParsedGithubPr | undefined {
   const url = parsedUrl(prUrl)
   if (url == null) return undefined
-  const match = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)$/u.exec(url.pathname)
+  const pathname = stripPrPathnameSuffix(url.pathname)
+  const match = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)$/u.exec(pathname)
   if (match == null) return undefined
   return { owner: match[1] as string, repo: match[2] as string, number: match[3] as string }
 }
@@ -156,7 +167,8 @@ function parseGithubPrUrl(prUrl: string): ParsedGithubPr | undefined {
 function parseGiteaPrUrl(prUrl: string): ParsedGiteaPr | undefined {
   const url = parsedUrl(prUrl)
   if (url == null) return undefined
-  const match = /^\/([^/]+)\/([^/]+)\/pulls\/(\d+)$/u.exec(url.pathname)
+  const pathname = stripPrPathnameSuffix(url.pathname)
+  const match = /^\/([^/]+)\/([^/]+)\/pulls\/(\d+)$/u.exec(pathname)
   if (match == null) return undefined
   return { owner: match[1] as string, repo: match[2] as string, number: match[3] as string }
 }
@@ -164,9 +176,27 @@ function parseGiteaPrUrl(prUrl: string): ParsedGiteaPr | undefined {
 function parseGitlabMrUrl(prUrl: string): ParsedGitlabMr | undefined {
   const url = parsedUrl(prUrl)
   if (url == null) return undefined
-  const match = /^\/(.+)\/-\/merge_requests\/(\d+)$/u.exec(url.pathname)
+  const pathname = stripPrPathnameSuffix(url.pathname)
+  const match = /^\/(.+)\/-\/merge_requests\/(\d+)$/u.exec(pathname)
   if (match == null) return undefined
   return { namespace: match[1] as string, iid: match[2] as string }
+}
+
+// Issue #31: the public repo-ownership check used by the server's submit_pr — analogous to the
+// existing exported `parseIssueUrl` below, built on the same module-private per-forge parsers
+// `getPullRequest`/`prApiUrl` already use. Never throws; an unparseable prUrl (including a bare
+// repo URL with no pull/MR path segment at all) resolves to `undefined`.
+export function parsePrUrl(kind: ForgeKind, prUrl: string): { full_name: string } | undefined {
+  if (kind === 'github') {
+    const parsed = parseGithubPrUrl(prUrl)
+    return parsed == null ? undefined : { full_name: `${parsed.owner}/${parsed.repo}` }
+  }
+  if (kind === 'gitlab') {
+    const parsed = parseGitlabMrUrl(prUrl)
+    return parsed == null ? undefined : { full_name: parsed.namespace }
+  }
+  const parsed = parseGiteaPrUrl(prUrl)
+  return parsed == null ? undefined : { full_name: `${parsed.owner}/${parsed.repo}` }
 }
 
 function prApiOrigin(kind: ForgeKind, options: CreateForgeAdapterOptions | undefined): string {

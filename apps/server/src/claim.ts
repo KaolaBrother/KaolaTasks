@@ -1,3 +1,4 @@
+import { parsePrUrl } from '@kaola/forge-adapters'
 import { transitionTaskStatus } from '@kaola/shared'
 import type { TaskStatus } from '@kaola/shared'
 import { and, eq } from 'drizzle-orm'
@@ -24,7 +25,7 @@ import {
   sweepExpiredLeases,
   unixNow,
 } from './leases.ts'
-import { type Lease, type Task, credentialProfiles, events, submissions, tasks } from './schema.ts'
+import { type Lease, type Task, credentialProfiles, events, leases, submissions, tasks } from './schema.ts'
 import { selectTask, taskBrief } from './tasks.ts'
 import { decryptToken, insertAuditEvent, isVaultUnconfiguredError } from './vault.ts'
 import { attemptWriteback, scheduleWriteback } from './writeback.ts'
@@ -35,6 +36,12 @@ const TASK_NOT_CLAIMED_MESSAGE = '任务未被认领。'
 const REQUEST_ID_CONFLICT_MESSAGE =
   '同一 request_id 已用于一次不同的认领尝试（目标任务或 autonomous 标记不一致），本次请求已被拒绝。'
 const REQUEST_ID_REPLAY_TERMINAL_MESSAGE = '该 request_id 对应的认领已结束，请使用新的 request_id 重新认领。'
+// Issue #31: claim_id fencing on report_progress/release_task/submit_pr.
+const CLAIM_ID_REQUIRED_MESSAGE = '该认领要求提供 claim_id。'
+const STALE_CLAIM_MESSAGE = '提交的 claim_id 与当前认领不匹配。'
+const PR_URL_INVALID_MESSAGE = 'pr_url 无法解析，或与任务所属仓库不一致。'
+const PR_URL_CONFLICT_MESSAGE = '同一认领已提交过另一个 pr_url。'
+const PR_URL_TAKEN_MESSAGE = '该 pr_url 已被另一任务的进行中提交占用。'
 const STATUS_TRANSITION_EVENT = '状态迁移'
 const TOKEN_REVEAL_EVENT = 'token 揭示'
 const HEARTBEAT_EVENT = '心跳'
@@ -94,11 +101,147 @@ function ownerIsPendingUser(auth: AgentPrincipal): boolean {
   return auth.owner.kind === 'user' && auth.owner.user.status === '待批准'
 }
 
-function ownerMatchesLease(auth: AgentPrincipal, lease: { claimerUserId: number | null; claimerClaimantId: number | null }): boolean {
+// Issue #31: the deliberate legacy tightening — a lease's owner match now ALSO requires the exact
+// device that holds it, not just the same user/claimant. Before this, two devices bound to the
+// same owner could act on each other's Claims; after this, only the device recorded on the lease
+// (`leases.device_id`) may act on it, even for a legacy (`request_id IS NULL`) lease.
+function ownerMatchesLease(
+  auth: AgentPrincipal,
+  lease: { claimerUserId: number | null; claimerClaimantId: number | null; deviceId: number },
+): boolean {
+  if (lease.deviceId !== auth.device.id) return false
   if (auth.owner.kind === 'user') {
     return lease.claimerUserId === auth.owner.user.id
   }
   return lease.claimerClaimantId === auth.owner.claimant.id
+}
+
+// Issue #31: fencing shared by report_progress/release_task/submit_pr against whichever lease the
+// caller is being checked against (an active lease, or — for release_task/submit_pr's idempotent
+// terminal path below — a resolved terminal one). A lease with a non-null request_id (a
+// "new-style" Claim) requires claim_id; a legacy (`request_id IS NULL`) lease may omit it. A
+// presented claim_id that does not match the lease's own derived identity is a stale_claim, and a
+// device/owner mismatch is a forbidden — checked in that order so a caller who simply forgot
+// claim_id is told so before anything about who they are.
+function checkClaimFencing(
+  auth: AgentPrincipal,
+  lease: Lease,
+  claimId: string | undefined,
+): AgentServiceError2 | undefined {
+  if (lease.requestId != null && claimId == null) {
+    return { httpStatus: 400, error: 'claim_id_required', message: CLAIM_ID_REQUIRED_MESSAGE }
+  }
+  if (!ownerMatchesLease(auth, lease)) {
+    return { httpStatus: 403, error: 'forbidden' }
+  }
+  if (claimId != null && claimIdForLease(lease) !== claimId) {
+    return { httpStatus: 409, error: 'stale_claim', message: STALE_CLAIM_MESSAGE }
+  }
+  return undefined
+}
+
+type AgentServiceError2 = { httpStatus: number; error: string; message?: string }
+
+function fencingFailureResult<T>(failure: AgentServiceError2): AgentServiceResult<T> {
+  return {
+    ok: false,
+    httpStatus: failure.httpStatus,
+    body: failure.message === undefined ? { error: failure.error } : { error: failure.error, message: failure.message },
+  }
+}
+
+// The active-lease-only resolver used by report_progress: a heartbeat only ever makes sense
+// against a currently active lease, so — unlike release_task/submit_pr below — there is no
+// terminal-Claim fallback here.
+function resolveActiveLeaseForMutation(
+  db: AppDb,
+  auth: AgentPrincipal,
+  taskId: number,
+  claimId: string | undefined,
+): AgentServiceResult<Lease> {
+  const lease = selectActiveLease(db, taskId)
+  if (lease == null) {
+    return { ok: false, httpStatus: 409, body: { error: 'conflict', message: TASK_NOT_CLAIMED_MESSAGE } }
+  }
+  const failure = checkClaimFencing(auth, lease, claimId)
+  if (failure != null) {
+    return fencingFailureResult(failure)
+  }
+  return { ok: true, httpStatus: 200, body: lease }
+}
+
+// release_task/submit_pr's fenced Claim resolution. Once a Claim goes terminal (released, or
+// consumed by a prior submit_pr), it no longer holds the task's active lease — so a repeat of the
+// same operation for the same Claim (the idempotent paths in releaseTask/submitPr below) has to
+// resolve the Claim by identity instead, fenced by the exact same device+owner match the active
+// path uses. Omitted claim_id against a terminal Claim only ever resolves a legacy
+// (`request_id IS NULL`) one — a new-style Claim always requires it, even here.
+function resolveMutationLease(
+  db: AppDb,
+  auth: AgentPrincipal,
+  taskId: number,
+  claimId: string | undefined,
+): AgentServiceResult<{ lease: Lease; terminal: boolean }> {
+  const active = selectActiveLease(db, taskId)
+  if (active != null) {
+    const failure = checkClaimFencing(auth, active, claimId)
+    if (failure != null) {
+      return fencingFailureResult(failure)
+    }
+    return { ok: true, httpStatus: 200, body: { lease: active, terminal: false } }
+  }
+
+  const candidate = findTerminalLeaseForMutation(db, auth, taskId, claimId)
+  if (candidate == null) {
+    if (claimId != null) {
+      return { ok: false, httpStatus: 409, body: { error: 'stale_claim', message: STALE_CLAIM_MESSAGE } }
+    }
+    return { ok: false, httpStatus: 409, body: { error: 'conflict', message: TASK_NOT_CLAIMED_MESSAGE } }
+  }
+  return { ok: true, httpStatus: 200, body: { lease: candidate, terminal: true } }
+}
+
+function findTerminalLeaseForMutation(
+  db: AppDb,
+  auth: AgentPrincipal,
+  taskId: number,
+  claimId: string | undefined,
+): Lease | undefined {
+  const candidates = db
+    .select()
+    .from(leases)
+    .where(and(eq(leases.taskId, taskId), eq(leases.deviceId, auth.device.id)))
+    .all()
+    .filter((lease) => ownerMatchesLease(auth, lease))
+
+  if (claimId != null) {
+    return candidates.find((lease) => claimIdForLease(lease) === claimId)
+  }
+  // Legacy derivation (issue #31 contract): an omitted claim_id can only ever resolve a lease
+  // that itself never required one. Among those, the most recently held one for this exact
+  // (task, device, owner) is "the" Claim being implicitly referenced.
+  const legacyCandidates = candidates.filter((lease) => lease.requestId == null)
+  if (legacyCandidates.length === 0) return undefined
+  return legacyCandidates.reduce((latest, lease) => (lease.id > latest.id ? lease : latest))
+}
+
+// Issue #31: the stored form of a submitted pr_url must be the bare, undecorated URL a real forge
+// actually emits — webhook.ts compares it byte-for-byte against the payload's own URL, and
+// poller.ts feeds it straight back into getPullRequest. `parsePrUrl` (forge-adapters) already
+// tolerates trailing slash / query / fragment / a /files/, /commits/, /diffs sub-page suffix for
+// shape+ownership validation; this reproduces the same normalization generically (origin + a
+// suffix-stripped pathname) to derive the exact string to persist, independent of forge kind.
+const PR_URL_SUBPAGE_SUFFIX = /\/(?:files|commits|diffs)$/u
+
+function canonicalizePrUrl(prUrl: string): string | undefined {
+  let parsed: URL
+  try {
+    parsed = new URL(prUrl)
+  } catch {
+    return undefined
+  }
+  const pathname = parsed.pathname.replace(/\/+$/u, '').replace(PR_URL_SUBPAGE_SUFFIX, '')
+  return `${parsed.origin}${pathname}`
 }
 
 function sendAgentResult<T>(reply: FastifyReply, result: AgentServiceResult<T>) {
@@ -477,6 +620,7 @@ export function reportProgress(
   auth: AgentPrincipal,
   publicId: string,
   note?: string,
+  claimId?: string,
 ): AgentServiceResult<{
   task: ReturnType<typeof taskBrief>
   lease: ReturnType<typeof leaseEnvelope>
@@ -488,20 +632,24 @@ export function reportProgress(
     return { ok: false, httpStatus: 404, body: { error: 'not_found' } }
   }
 
-  const lease = selectActiveLease(db, row.task.id)
-  if (lease == null) {
-    return { ok: false, httpStatus: 409, body: { error: 'conflict', message: TASK_NOT_CLAIMED_MESSAGE } }
+  const resolved = resolveActiveLeaseForMutation(db, auth, row.task.id, claimId)
+  if (!resolved.ok) {
+    return resolved
   }
-  if (!ownerMatchesLease(auth, lease)) {
-    return { ok: false, httpStatus: 403, body: { error: 'forbidden' } }
-  }
+  const lease = resolved.body
 
+  // Issue #31: report_progress is one transaction — the lease renew and its 心跳 audit either
+  // both commit or neither does (poller.ts's applyPrTerminalTransition is the in-repo precedent
+  // for this shape).
   const now = unixNow()
-  const expiresAt = renewActiveLease(db, lease.id, now)
-  insertAuditEvent(db, {
-    type: HEARTBEAT_EVENT,
-    actorUserId: actorUserId(auth),
-    details: { task_id: publicId, note: note ?? '' },
+  const expiresAt = db.transaction((tx) => {
+    const renewed = renewActiveLease(tx, lease.id, now)
+    insertAuditEvent(tx, {
+      type: HEARTBEAT_EVENT,
+      actorUserId: actorUserId(auth),
+      details: { task_id: publicId, note: note ?? '' },
+    })
+    return renewed
   })
 
   const fresh = selectTask(db, publicId)
@@ -523,6 +671,7 @@ export function releaseTask(
   auth: AgentPrincipal,
   publicId: string,
   reason?: string,
+  claimId?: string,
 ): AgentServiceResult<{ task: ReturnType<typeof taskBrief> }> {
   sweepExpiredLeases(db)
 
@@ -531,35 +680,54 @@ export function releaseTask(
     return { ok: false, httpStatus: 404, body: { error: 'not_found' } }
   }
 
-  const lease = selectActiveLease(db, row.task.id)
-  if (lease == null) {
-    return { ok: false, httpStatus: 409, body: { error: 'conflict', message: TASK_NOT_CLAIMED_MESSAGE } }
+  const resolved = resolveMutationLease(db, auth, row.task.id, claimId)
+  if (!resolved.ok) {
+    return resolved
   }
-  if (!ownerMatchesLease(auth, lease)) {
-    return { ok: false, httpStatus: 403, body: { error: 'forbidden' } }
+  const { lease, terminal } = resolved.body
+
+  if (terminal) {
+    // Issue #31: idempotent release — repeating release for a Claim that this exact call already
+    // terminated returns the same result rather than a 409, with no duplicate transition/audit.
+    // A terminal Claim that instead already submitted a PR through submitPr (it holds a
+    // submissions row) was never released by release_task, so it is not a valid repeat here.
+    const existingSubmission = db.select().from(submissions).where(eq(submissions.leaseId, lease.id)).get()
+    if (existingSubmission != null) {
+      return { ok: false, httpStatus: 409, body: { error: 'stale_claim', message: STALE_CLAIM_MESSAGE } }
+    }
+    const fresh = selectTask(db, publicId)
+    if (fresh == null) {
+      throw new Error('task missing after idempotent release lookup')
+    }
+    return { ok: true, httpStatus: 200, body: { task: taskBrief(fresh) } }
   }
 
   const from = row.task.status
   const to = transitionTaskStatus(from, '待认领') as TaskStatus
-  markLeaseReleased(db, lease.id)
-  const updated = db
-    .update(tasks)
-    .set({ status: to })
-    .where(eq(tasks.id, row.task.id))
-    .returning()
-    .get()
-  if (updated == null) {
-    throw new Error('failed to update task status')
-  }
-
   const details =
     reason === undefined
       ? { task_id: publicId, from, to }
       : { task_id: publicId, from, to, reason }
-  insertAuditEvent(db, {
-    type: STATUS_TRANSITION_EVENT,
-    actorUserId: actorUserId(auth),
-    details,
+
+  // Issue #31: release_task is one transaction — the lease release, the task update, and the
+  // 状态迁移 audit either all commit or none does.
+  const updated = db.transaction((tx) => {
+    markLeaseReleased(tx, lease.id)
+    const updatedTask = tx
+      .update(tasks)
+      .set({ status: to })
+      .where(eq(tasks.id, row.task.id))
+      .returning()
+      .get()
+    if (updatedTask == null) {
+      throw new Error('failed to update task status')
+    }
+    insertAuditEvent(tx, {
+      type: STATUS_TRANSITION_EVENT,
+      actorUserId: actorUserId(auth),
+      details,
+    })
+    return updatedTask
   })
 
   return {
@@ -577,6 +745,7 @@ export async function submitPr(
   publicId: string,
   prUrl: string,
   summary: string,
+  claimId?: string,
 ): Promise<AgentServiceResult<{
   task: ReturnType<typeof taskBrief>
   pr_url: string
@@ -589,12 +758,54 @@ export async function submitPr(
     return { ok: false, httpStatus: 404, body: { error: 'not_found' } }
   }
 
-  const lease = selectActiveLease(db, row.task.id)
-  if (lease == null) {
-    return { ok: false, httpStatus: 409, body: { error: 'conflict', message: TASK_NOT_CLAIMED_MESSAGE } }
+  const resolved = resolveMutationLease(db, auth, row.task.id, claimId)
+  if (!resolved.ok) {
+    return resolved
   }
-  if (!ownerMatchesLease(auth, lease)) {
-    return { ok: false, httpStatus: 403, body: { error: 'forbidden' } }
+  const { lease, terminal } = resolved.body
+
+  // Issue #31: PR ownership + canonicalization — before any Task or lease mutation. A pr_url that
+  // does not parse, or whose repo does not match this task's own repo (all three forges,
+  // including GitLab subgroups), is rejected here; nothing has been written yet.
+  const parsedPr = parsePrUrl(row.task.repoForge, prUrl)
+  const canonicalPrUrl = parsedPr == null ? undefined : canonicalizePrUrl(prUrl)
+  if (parsedPr == null || canonicalPrUrl == null || parsedPr.full_name !== row.task.repoFullName) {
+    return { ok: false, httpStatus: 422, body: { error: 'pr_url_invalid', message: PR_URL_INVALID_MESSAGE } }
+  }
+
+  if (terminal) {
+    // Issue #31: one submission per Claim (submissions.lease_id is unique). Repeating submit_pr
+    // for the same Claim and the same (canonical) pr_url is idempotent; the same Claim with a
+    // different pr_url is a typed conflict. A terminal Claim with no submission at all here was
+    // never a submitter (it was released by release_task instead) — it cannot newly submit now.
+    const existingSubmission = db.select().from(submissions).where(eq(submissions.leaseId, lease.id)).get()
+    if (existingSubmission == null) {
+      return { ok: false, httpStatus: 409, body: { error: 'stale_claim', message: STALE_CLAIM_MESSAGE } }
+    }
+    if (existingSubmission.prUrl !== canonicalPrUrl) {
+      return { ok: false, httpStatus: 409, body: { error: 'pr_url_conflict', message: PR_URL_CONFLICT_MESSAGE } }
+    }
+    const fresh = selectTask(db, publicId)
+    if (fresh == null) {
+      throw new Error('task missing after idempotent submit lookup')
+    }
+    return {
+      ok: true,
+      httpStatus: 200,
+      body: { task: taskBrief(fresh), pr_url: existingSubmission.prUrl, summary: existingSubmission.summary },
+    }
+  }
+
+  // Issue #31: no duplicate PR across tasks — a pr_url already held by another task's LIVE
+  // (non-terminal pr_state) submission is a typed conflict, checked before any mutation.
+  const duplicate = db
+    .select()
+    .from(submissions)
+    .where(and(eq(submissions.prUrl, canonicalPrUrl), eq(submissions.prState, 'open')))
+    .all()
+    .find((existing) => existing.taskId !== row.task.id)
+  if (duplicate != null) {
+    return { ok: false, httpStatus: 409, body: { error: 'pr_url_taken', message: PR_URL_TAKEN_MESSAGE } }
   }
 
   const from = row.task.status
@@ -605,45 +816,48 @@ export async function submitPr(
       body: { error: 'illegal_transition', message: illegalTransitionMessage(from, '待验收') },
     }
   }
-
   const to = transitionTaskStatus(from, '待验收') as TaskStatus
-  markLeaseReleased(db, lease.id)
-  const updated = db
-    .update(tasks)
-    .set({ status: to })
-    .where(eq(tasks.id, row.task.id))
-    .returning()
-    .get()
-  if (updated == null) {
-    throw new Error('failed to update task status')
-  }
 
-  db.insert(submissions)
-    .values({
-      taskId: row.task.id,
-      leaseId: lease.id,
-      prUrl,
-      summary,
-      prState: 'open',
+  // Issue #31: submit_pr is one transaction — the lease release, the task update, the submissions
+  // insert, and the 状态迁移 audit either all commit or none does.
+  const updated = db.transaction((tx) => {
+    markLeaseReleased(tx, lease.id)
+    const updatedTask = tx
+      .update(tasks)
+      .set({ status: to })
+      .where(eq(tasks.id, row.task.id))
+      .returning()
+      .get()
+    if (updatedTask == null) {
+      throw new Error('failed to update task status')
+    }
+    tx.insert(submissions)
+      .values({
+        taskId: row.task.id,
+        leaseId: lease.id,
+        prUrl: canonicalPrUrl,
+        summary,
+        prState: 'open',
+      })
+      .run()
+    insertAuditEvent(tx, {
+      type: STATUS_TRANSITION_EVENT,
+      actorUserId: actorUserId(auth),
+      details: { task_id: publicId, from, to, pr_url: canonicalPrUrl, summary },
     })
-    .run()
-
-  insertAuditEvent(db, {
-    type: STATUS_TRANSITION_EVENT,
-    actorUserId: actorUserId(auth),
-    details: { task_id: publicId, from, to, pr_url: prUrl, summary },
+    return updatedTask
   })
 
   // submit_pr's write-back stays on the response path (unlike claim's) — only claimTask's forge
   // comment was moved off it.
-  await attemptWriteback(db, updated, '提交PR', actorUserId(auth), prUrl)
+  await attemptWriteback(db, updated, '提交PR', actorUserId(auth), canonicalPrUrl)
 
   return {
     ok: true,
     httpStatus: 200,
     body: {
       task: taskBrief({ task: updated, posterUsername: row.posterUsername }),
-      pr_url: prUrl,
+      pr_url: canonicalPrUrl,
       summary,
     },
   }
@@ -675,7 +889,16 @@ export function registerClaim(app: FastifyInstance, db: AppDb) {
       if (auth == null) return
 
       const publicId = (request.params as { publicId: string }).publicId
-      return sendAgentResult(reply, reportProgress(db, auth, publicId, readOptionalString(request.body, 'note')))
+      return sendAgentResult(
+        reply,
+        reportProgress(
+          db,
+          auth,
+          publicId,
+          readOptionalString(request.body, 'note'),
+          readOptionalString(request.body, 'claim_id'),
+        ),
+      )
     })
 
     child.post('/api/v1/tasks/:publicId/release', async (request, reply) => {
@@ -683,7 +906,16 @@ export function registerClaim(app: FastifyInstance, db: AppDb) {
       if (auth == null) return
 
       const publicId = (request.params as { publicId: string }).publicId
-      return sendAgentResult(reply, releaseTask(db, auth, publicId, readOptionalString(request.body, 'reason')))
+      return sendAgentResult(
+        reply,
+        releaseTask(
+          db,
+          auth,
+          publicId,
+          readOptionalString(request.body, 'reason'),
+          readOptionalString(request.body, 'claim_id'),
+        ),
+      )
     })
   })
 }
