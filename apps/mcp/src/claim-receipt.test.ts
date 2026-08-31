@@ -201,6 +201,21 @@ function mutationRpc(id, name, args) {
 }
 
 /**
+ * Mirrors apps/server/src/mcp.ts's `toToolResult`/`toolPayload` exactly: every `tools/call`
+ * response is an MCP CallToolResult, never the bare payload as the JSON-RPC `result`.
+ *   success: { structuredContent, content: [{ type: 'text', text: JSON.stringify(payload) }] }
+ *   error:   same, plus `isError: true`
+ */
+function toolResultEnvelope(payload, opts = {}) {
+  const envelope = {
+    structuredContent: payload,
+    content: [{ type: 'text', text: JSON.stringify(payload) }],
+  }
+  if (opts.isError) envelope.isError = true
+  return envelope
+}
+
+/**
  * A minimal but protocol-faithful fake Kaola server: sessions, claim idempotency keyed by
  * request_id, controllable mid-flight drop/delay/stale-session hooks, and a call ledger the
  * tests assert against directly (never a mock of the bridge itself).
@@ -328,28 +343,25 @@ async function makeClaimBackend(t, opts = {}) {
             const lease = legacy
               ? { expires_at: '2026-09-01T06:00:00.000Z', ttl_seconds: 86400 }
               : { claim_id: claimId, expires_at: '2026-09-01T06:00:00.000Z', ttl_seconds: 86400 }
-            respond(200, {
-              jsonrpc: '2.0',
-              id: parsed.id,
-              result: {
-                task: { id: taskId, repo: task.repo, description_md: task.description_md },
-                token: FORGE_TOKEN,
-                lease,
-                clone: { suggested_dir: 'demo' },
-                _debug: { authorization: AUTH_HEADER_CANARY, note: PROMPT_CANARY },
-              },
-            })
+            const payload = {
+              task: { id: taskId, repo: task.repo, description_md: task.description_md },
+              token: FORGE_TOKEN,
+              lease,
+              clone: { suggested_dir: 'demo' },
+              _debug: { authorization: AUTH_HEADER_CANARY, note: PROMPT_CANARY },
+            }
+            respond(200, { jsonrpc: '2.0', id: parsed.id, result: toolResultEnvelope(payload) })
             return
           }
 
           if (name === 'report_progress' || name === 'release_task' || name === 'submit_pr') {
             state.mutationCalls.push({ tool: name, args })
-            respond(200, { jsonrpc: '2.0', id: parsed.id, result: { ok: true } })
+            respond(200, { jsonrpc: '2.0', id: parsed.id, result: toolResultEnvelope({ ok: true }) })
             return
           }
 
           // unknown tool: echo back the raw args so the caller can assert unmodified pass-through
-          respond(200, { jsonrpc: '2.0', id: parsed.id, result: { echoed: { name, args } } })
+          respond(200, { jsonrpc: '2.0', id: parsed.id, result: toolResultEnvelope({ echoed: { name, args } }) })
           return
         }
 
@@ -504,8 +516,8 @@ describe('kaola-mcp Claim recovery receipt (Issue #32)', () => {
 
       const rpcs = parseJsonRpcStdout(streams.stdoutText())
       const claimResult = rpcs.find((r) => r.id === 2)
-      assert.ok(claimResult?.result?.lease?.claim_id, `expected a successful claim result, got ${JSON.stringify(claimResult)}`)
-      const claimId = claimResult.result.lease.claim_id
+      assert.ok(claimResult?.result?.structuredContent?.lease?.claim_id, `expected a successful claim result, got ${JSON.stringify(claimResult)}`)
+      const claimId = claimResult.result.structuredContent.lease.claim_id
 
       const receiptPath = mod.receiptFilePath(home, backend.origin, 'kt-happy')
       assert.equal(existsSync(receiptPath), true, 'receipt file must exist after a successful claim')
@@ -578,7 +590,7 @@ describe('kaola-mcp Claim recovery receipt (Issue #32)', () => {
       claimStreams.io.stdin.end()
       await waitForBridge(claimRunning)
       const claimResult = parseJsonRpcStdout(claimStreams.stdoutText()).find((r) => r.id === 2)
-      const claimId = claimResult?.result?.lease?.claim_id
+      const claimId = claimResult?.result?.structuredContent?.lease?.claim_id
       assert.ok(claimId, 'setup claim must succeed')
 
       // Fresh process/streams: only durable receipt state is available now.
@@ -615,8 +627,8 @@ describe('kaola-mcp Claim recovery receipt (Issue #32)', () => {
       const rpcs = parseJsonRpcStdout(streams.stdoutText())
       const claimResult = rpcs.find((r) => r.id === 2)
       assert.equal(claimResult?.error, undefined, 'legacy claim must still succeed')
-      assert.ok(claimResult?.result?.task, 'legacy claim result must still carry the task envelope')
-      assert.equal(claimResult.result.lease?.claim_id, undefined, 'legacy lease has no claim_id (sanity on the fake server)')
+      assert.ok(claimResult?.result?.structuredContent?.task, 'legacy claim result must still carry the task envelope')
+      assert.equal(claimResult.result.structuredContent.lease?.claim_id, undefined, 'legacy lease has no claim_id (sanity on the fake server)')
 
       const release = backend.state.mutationCalls.find((c) => c.tool === 'release_task')
       assert.ok(release, 'release_task must have been forwarded')
@@ -735,7 +747,7 @@ describe('kaola-mcp Claim recovery receipt (Issue #32)', () => {
       assert.equal(backend.state.claimCreateCount, 1, 'restart must never create a second claim')
       const rpcs = parseJsonRpcStdout(streams.stdoutText())
       const claimResult = rpcs.find((r) => r.id === 2)
-      assert.ok(claimResult?.result?.lease?.claim_id, `restart must eventually surface a successful claim, got ${JSON.stringify(claimResult)}`)
+      assert.ok(claimResult?.result?.structuredContent?.lease?.claim_id, `restart must eventually surface a successful claim, got ${JSON.stringify(claimResult)}`)
     })
 
     test('boundary: receipt already carried claim_id (full completion) — a repeat claim never creates a second server-side claim', async (t) => {
@@ -752,9 +764,9 @@ describe('kaola-mcp Claim recovery receipt (Issue #32)', () => {
         await waitForBridge(running)
         const rpcs = parseJsonRpcStdout(streams.stdoutText())
         const claimResult = rpcs.find((r) => r.id === 2)
-        assert.ok(claimResult?.result?.lease?.claim_id, `attempt ${i} must succeed`)
-        if (i === 0) lastClaimId = claimResult.result.lease.claim_id
-        else assert.equal(claimResult.result.lease.claim_id, lastClaimId, 'repeat claim must return the same claim_id')
+        assert.ok(claimResult?.result?.structuredContent?.lease?.claim_id, `attempt ${i} must succeed`)
+        if (i === 0) lastClaimId = claimResult.result.structuredContent.lease.claim_id
+        else assert.equal(claimResult.result.structuredContent.lease.claim_id, lastClaimId, 'repeat claim must return the same claim_id')
       }
 
       assert.equal(backend.state.claimCreateCount, 1)
@@ -787,7 +799,7 @@ describe('kaola-mcp Claim recovery receipt (Issue #32)', () => {
       assert.equal(backend.state.claimCreateCount, 1, 'must never create a second lease from the recovery replay')
       const rpcs = parseJsonRpcStdout(streams.stdoutText())
       const claimResult = rpcs.find((r) => r.id === 2)
-      assert.ok(claimResult?.result?.lease?.claim_id, `recovered claim must surface success, got ${JSON.stringify(claimResult)}`)
+      assert.ok(claimResult?.result?.structuredContent?.lease?.claim_id, `recovered claim must surface success, got ${JSON.stringify(claimResult)}`)
 
       const claimAttempts = backend.state.requests.filter((r) => r.parsed?.params?.name === 'claim_task')
       assert.equal(claimAttempts.length, 2, 'exactly one stale attempt plus exactly one replay, no more')
@@ -812,7 +824,7 @@ describe('kaola-mcp Claim recovery receipt (Issue #32)', () => {
       const rpcs = parseJsonRpcStdout(streams.stdoutText())
       const claimResult = rpcs.find((r) => r.id === 2)
       assert.ok(claimResult, 'must still surface a JSON-RPC line for the pending request id')
-      assert.equal(claimResult.result?.lease?.claim_id, undefined, 'must not report success on an unrecoverable session')
+      assert.equal(claimResult.result?.structuredContent?.lease?.claim_id, undefined, 'must not report success on an unrecoverable session')
     })
   })
 
@@ -839,8 +851,8 @@ describe('kaola-mcp Claim recovery receipt (Issue #32)', () => {
       assert.ok(claimB, 'process B must produce a claim_task response')
 
       const claimIds = [claimA, claimB]
-        .filter((r) => r?.result?.lease?.claim_id)
-        .map((r) => r.result.lease.claim_id)
+        .filter((r) => r?.result?.structuredContent?.lease?.claim_id)
+        .map((r) => r.result.structuredContent.lease.claim_id)
       assert.ok(claimIds.length >= 1, 'at least one process must successfully claim')
       assert.equal(new Set(claimIds).size, 1, `every successful claim result must share one claim_id, got ${JSON.stringify(claimIds)}`)
       assert.equal(backend.state.claimCreateCount, 1, `server must create exactly one claim total, got ${backend.state.claimCreateCount}`)
@@ -1016,7 +1028,7 @@ describe('kaola-mcp Claim recovery receipt (Issue #32)', () => {
       // is not this bridge's secret to withhold. Everything else must still never appear there.
       const rpcs = parseJsonRpcStdout(streams.stdoutText())
       const claimResult = rpcs.find((r) => r.id === 2)
-      assert.equal(claimResult?.result?.token, FORGE_TOKEN, 'sanity: the allowed claim_task token disclosure still happens')
+      assert.equal(claimResult?.result?.structuredContent?.token, FORGE_TOKEN, 'sanity: the allowed claim_task token disclosure still happens')
       assertNoSecrets(streams.stdoutText(), [privateKey], 'stdout')
     })
   })
@@ -1070,7 +1082,10 @@ describe('kaola-mcp Claim recovery receipt (Issue #32)', () => {
       assert.deepEqual(seen.parsed.params.arguments, call.params.arguments, 'unknown tool arguments must not be rewritten')
 
       const rpcs = parseJsonRpcStdout(streams.stdoutText())
-      assert.deepEqual(rpcs[0]?.result, { echoed: { name: 'some_future_tool', args: call.params.arguments } })
+      const expectedPayload = { echoed: { name: 'some_future_tool', args: call.params.arguments } }
+      assert.deepEqual(rpcs[0]?.result?.structuredContent, expectedPayload, 'unknown tool CallToolResult.structuredContent must reach the agent unmodified')
+      assert.equal(rpcs[0]?.result?.content?.[0]?.type, 'text')
+      assert.deepEqual(JSON.parse(rpcs[0]?.result?.content?.[0]?.text ?? 'null'), expectedPayload)
     })
   })
 })

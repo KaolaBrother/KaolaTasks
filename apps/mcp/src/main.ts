@@ -387,6 +387,44 @@ async function obtainClaimRequestId(
   return { path, requestId }
 }
 
+/**
+ * Reacts to a typed terminal-replay conflict (see isTerminalReplayConflict): the on-disk
+ * receipt names a Claim that has already gone terminal server-side (released, submitted, or
+ * expired), which the bridge has no local way to predict -- lease expiry in particular happens
+ * entirely server-side. Discards that stale receipt and originates a brand-new pending one
+ * (fresh request_id) at the same (origin, task) address; this is safe by construction because
+ * the prior Claim is terminal, so the new attempt is a legitimate new Claim, not a duplicate.
+ * Goes through the same cross-process lock as obtainClaimRequestId's first-write path so two
+ * processes reacting to the same terminal conflict still converge on one fresh attempt.
+ */
+async function regenerateStaleReceipt(
+  kaolaHome: string,
+  url: string,
+  taskId: string,
+): Promise<{ path: string; requestId: string }> {
+  const server = originDigest(url)
+  const path = receiptFilePath(kaolaHome, url, taskId)
+
+  if (tryAcquireReceiptLock(path)) {
+    try {
+      const requestId = randomUUID()
+      writeReceiptAtomic(path, newPendingReceipt(server, taskId, requestId))
+      return { path, requestId }
+    } finally {
+      releaseReceiptLock(path)
+    }
+  }
+
+  // A peer is already reacting to the same terminal conflict; reuse whatever it settles on
+  // instead of racing to a second, independent fresh attempt.
+  const peer = await waitForPeerReceipt(path, server, taskId)
+  if (peer != null) return { path, requestId: peer.request_id }
+
+  const requestId = randomUUID()
+  writeReceiptAtomic(path, newPendingReceipt(server, taskId, requestId))
+  return { path, requestId }
+}
+
 function claimIdFromResult(result: unknown): string | null {
   if (!isPlainObject(result)) return null
   const lease = result.lease
@@ -404,6 +442,41 @@ function repoIdentityFromResult(result: unknown): string | null {
   const fullName = repo.full_name
   if (typeof forge !== 'string' || typeof fullName !== 'string') return null
   return `${forge}/${fullName}`
+}
+
+/**
+ * The real Kaola MCP server (apps/server/src/mcp.ts's toToolResult/toolPayload) wraps every
+ * tools/call payload in an MCP CallToolResult: `{ structuredContent, content, isError? }` --
+ * the JSON-RPC `result` is NEVER the bare `{task, token, lease, clone}` (or error) body itself.
+ * Unwrap that envelope before reading claim_id/repo_identity/business-failure state. The
+ * fallback to reading `result` directly costs nothing and tolerates a server that returns the
+ * tool payload unwrapped (e.g. the acceptance suite's fake server).
+ */
+function unwrapToolResult(rpcOut: unknown): { body: unknown; isError: boolean } {
+  if (!isPlainObject(rpcOut) || rpcOut.result === undefined) return { body: null, isError: false }
+  const result = rpcOut.result
+  if (isPlainObject(result) && isPlainObject(result.structuredContent)) {
+    return { body: result.structuredContent, isError: result.isError === true }
+  }
+  return { body: result, isError: false }
+}
+
+// Must match apps/server/src/claim.ts's REQUEST_ID_REPLAY_TERMINAL_MESSAGE exactly. This is the
+// one narrow, typed signal that the Claim a receipt's request_id names has gone terminal
+// (released, submitted, or expired) -- the server refuses ANY replay against a terminal lease
+// with `claim_request_conflict`, and this exact message is the only thing that distinguishes
+// that case from the OTHER claim_request_conflict shape (same request_id reused for a genuinely
+// different task/autonomous digest, apps/server/src/claim.ts's REQUEST_ID_CONFLICT_MESSAGE) or
+// from any other business error (claim_id_required, stale_claim, an already-claimed-by-someone-
+// else conflict). Only this exact match is safe to react to automatically.
+const TERMINAL_REPLAY_CONFLICT_MESSAGE = '该 request_id 对应的认领已结束，请使用新的 request_id 重新认领。'
+
+function isTerminalReplayConflict(body: unknown): boolean {
+  return (
+    isPlainObject(body) &&
+    body.error === 'claim_request_conflict' &&
+    body.message === TERMINAL_REPLAY_CONFLICT_MESSAGE
+  )
 }
 
 /**
@@ -631,23 +704,41 @@ async function handleClaimTask(
   // Receipt-first: generate/recover request_id and persist the pending receipt atomically
   // BEFORE forwarding, so a kill between here and the response always leaves a durable,
   // replayable attempt behind.
-  const { path, requestId } = await obtainClaimRequestId(ctx.kaolaHome, ctx.url, taskId)
-  const rewrittenBody: Record<string, unknown> = {
-    ...rawBody,
-    params: { ...params, arguments: { ...args, request_id: requestId } },
+  let { path, requestId } = await obtainClaimRequestId(ctx.kaolaHome, ctx.url, taskId)
+
+  const send = (rid: string): Promise<unknown> =>
+    dispatch(ctx, {
+      ...rawBody,
+      params: { ...params, arguments: { ...args, request_id: rid } },
+    })
+
+  let out = await send(requestId)
+  let { body, isError } = unwrapToolResult(out)
+
+  if (isError && isTerminalReplayConflict(body)) {
+    // The receipt named a Claim that has already gone terminal (released/submitted/expired) --
+    // the bridge cannot predict this locally (expiry in particular is entirely server-side), so
+    // react to the server's typed signal: discard the stale receipt and retry EXACTLY ONCE with
+    // a freshly generated request_id. A second consecutive terminal conflict is surfaced as-is
+    // rather than retried again.
+    writeStderr(
+      ctx.stderr,
+      'MCP claim_request_conflict: prior Claim is terminal; retrying once with a new request_id',
+    )
+    ;({ path, requestId } = await regenerateStaleReceipt(ctx.kaolaHome, ctx.url, taskId))
+    out = await send(requestId)
+    ;({ body, isError } = unwrapToolResult(out))
   }
 
-  const out = await dispatch(ctx, rewrittenBody)
-
-  if (isPlainObject(out) && out.result !== undefined) {
+  if (!isError && isPlainObject(out) && out.result !== undefined) {
     const { carrier, runner, runnerSession } = receiptCarrierFields(ctx.carrierIntent)
     writeReceiptAtomic(path, {
       v: 1,
       server: originDigest(ctx.url),
       task_id: taskId,
       request_id: requestId,
-      claim_id: claimIdFromResult(out.result),
-      repo_identity: repoIdentityFromResult(out.result),
+      claim_id: claimIdFromResult(body),
+      repo_identity: repoIdentityFromResult(body),
       carrier,
       runner,
       runner_session: runnerSession,
