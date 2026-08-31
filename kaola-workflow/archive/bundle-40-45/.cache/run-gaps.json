@@ -1,0 +1,20 @@
+{
+  "project": "bundle-40-45",
+  "sweptClasses": [
+    {
+      "reasonClass": "manual:gitea-listing-truncation-unverified",
+      "sample": "whether Gitea's issue-comment endpoint returns every comment unbounded or applies an undocumented server-side cap could not be established this run (no live-docs access, and no live Gitea may be touched), so listIssueComments sends no page params to Gitea and the dedupe's coverage there is unverified rather than assured",
+      "count": 1
+    },
+    {
+      "reasonClass": "manual:flapping-forge-writes-one-row-per-tick",
+      "sample": "recordFailedWriteback compares only the immediately preceding outcome, so a forge alternating ambiguous and definite failures writes one 回写 ok:false row per poller tick indefinitely; growth is bounded by outcome transitions, not absolutely",
+      "count": 1
+    },
+    {
+      "reasonClass": "manual:failing-listing-suspends-writeback-silently",
+      "sample": "once an ambiguous outcome is stored, a permanently failing listIssueComments makes the write-back retry the listing forever without posting and without writing any new event, so the audit timeline shows one row then silence, indistinguishable from convergence",
+      "count": 1
+    }
+  ]
+}
