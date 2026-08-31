@@ -1,0 +1,35 @@
+{
+  "project": "bundle-37-38-39",
+  "sweptClasses": [
+    {
+      "reasonClass": "manual:deferred-contract-decision",
+      "sample": "retryPendingWritebacks has no attempt cap, backoff, or idempotency key, so a forge persistently slower than WRITEBACK_TIMEOUT_MS (30s) still re-posts a duplicate 回写 comment on a real Issue every poller tick; capping it would change #14's recovery-forever semantics, which is a public-contract tradeoff reserved for the user",
+      "count": 1
+    },
+    {
+      "reasonClass": "manual:ui-error-detail-discarded",
+      "sample": "apps/web/src/App.vue:1884-1887 renders any non-OK credential-profile delete as a bare 删除失败（409）, discarding the server's Chinese explanation for credential_profile_in_use",
+      "count": 1
+    },
+    {
+      "reasonClass": "manual:unreachable-documented-remedy",
+      "sample": "a task stuck in 进行中 cannot be cancelled directly (tasks.ts:40-41 allows 已取消 only from 待认领 and 已退回), so docs/smoke-test.md:151's advice to 先把那条任务取消 is not actionable from that state until the 24h lease expires",
+      "count": 1
+    },
+    {
+      "reasonClass": "manual:test-output-credential-exposure",
+      "sample": "writeback.test.ts's stub records headers in commentRequests and several failure messages JSON.stringify that array, so a failing assertion would print an Authorization header into test output",
+      "count": 1
+    },
+    {
+      "reasonClass": "manual:silent-orphan-retained",
+      "sample": "a database orphaned by a pre-repair crash in the only-copy state migrates successfully but silently retains the orphan *__rebuild table forever while leases/claim_confirmations come up empty, with no warning to the operator",
+      "count": 1
+    },
+    {
+      "reasonClass": "manual:retired-guarantee-uncovered",
+      "sample": "deleting workflow-target.ts removed the only assertion of \"Kaola Tasks never creates a forge Issue\"; the guarantee is still true and structurally enforced (ForgeAdapter exposes no createIssue), but is now unasserted",
+      "count": 1
+    }
+  ]
+}
