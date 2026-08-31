@@ -35,3 +35,4 @@
 - `docs/api.md`：接口合同
 - `docs/conventions.md`：工程约定
 - `docs/smoke-test.md`：真实联调步骤与记录
+- `docs/workflow-default.md`：Claim 后默认直连 Kaola Workflow 的客户端指引

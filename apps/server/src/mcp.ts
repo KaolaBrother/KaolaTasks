@@ -85,8 +85,34 @@ function getTaskBriefTool(db: AppDb, taskId: string): CallToolResult {
   return toolPayload(taskBrief(row))
 }
 
+// Issue #33: the subtraction-first default. An Agent connected to this MCP server needs no
+// explicit instruction to run Kaola Workflow directly after a claim — that is the default carrier.
+// Project Runner is used only when the user explicitly asks for it; there is no silent switch
+// either way. Workflow/Runner availability is local, advisory evidence for the Agent's own
+// judgment, never a version allowlist or a server-side hard gate on the Claim itself.
+const KAOLA_MCP_INSTRUCTIONS = `Kaola Tasks 路由与协调任务的认领和生命周期，不运行 Agent、Workflow 或 Runner。
+
+默认路径（no explicit Runner request needed）：认领任务后，当前 Agent 直接（directly）运行 Kaola
+Workflow 处理该任务；这是减法优先的默认值（default），不需要任何额外声明。只有当用户明确（explicit）
+请求使用 Kaola Project Runner 时，才切换到 Runner 承载；没有 explicit 请求就永远走 Workflow 直连，
+也绝不在两者之间静默切换。
+
+Workflow 目标映射：imported 任务（source.type === 'imported'，且 issue_url 非空）使用该任务已有的
+issue_url 作为 Workflow 目标；native 任务没有已有 Issue，Kaola Tasks 从不代为在 forge 上新建一个
+Issue 去凑合。已实测（Kaola Workflow 10.2.1，commit 7e93763e）：cmdStartup 在没有
+--target-issue/--target-issues 时以 no_target 拒绝，即 issue-less 项目当前不受支持，因此 native 任
+务只得到一个 advisory-unavailable 的 issueless_project 目标（project_name 取任务 id），而不是假设
+它可行或伪造一个 issue-<N> 项目名。
+
+兼容性只是证据，不是硬性关卡：Workflow 或 Runner 版本缺失、无法识别、或提供了新接口，都只是本地
+advisory 观察，供 Agent 自行判断如何继续；没有一份"已知可用版本清单"逐条核对放行，也绝不会因为兼
+容性原因拒绝一次 Claim。`
+
 function createKaolaMcpServer(db: AppDb, authHolder: AuthHolder): McpServer {
-  const server = new McpServer({ name: 'kaola-tasks', version: '0.0.0' })
+  const server = new McpServer(
+    { name: 'kaola-tasks', version: '0.0.0' },
+    { instructions: KAOLA_MCP_INSTRUCTIONS },
+  )
 
   server.registerTool(
     'list_tasks',
@@ -114,7 +140,7 @@ function createKaolaMcpServer(db: AppDb, authHolder: AuthHolder): McpServer {
   server.registerTool(
     'claim_task',
     {
-      description: `Claim a task and receive a one-shot forge token. ${CLONE_TOKEN_USAGE} When the human instructed this claim, omit autonomous. Set autonomous: true when the Agent discovered and initiated this claim itself (not on human instruction) — an untrusted user may then need to confirm it in the web UI before a token is issued. Optional request_id makes retries of the same claim attempt idempotent: replaying the same (device, request_id) returns the same claim_id and credential instead of erroring.`,
+      description: `Claim a task and receive its reusable stored repository credential (not minted per claim). ${CLONE_TOKEN_USAGE} Release and lease expiry revoke only Kaola Tasks' own lifecycle authority and Claim fencing — never the forge token itself. When the human instructed this claim, omit autonomous. Set autonomous: true when the Agent discovered and initiated this claim itself (not on human instruction) — an untrusted user may then need to confirm it in the web UI before a token is issued. Optional request_id makes retries of the same claim attempt idempotent: replaying the same (device, request_id) returns the same claim_id and credential instead of erroring.`,
       inputSchema: { task_id: z.string(), autonomous: z.boolean().optional(), request_id: z.string().optional() },
     },
     async (args) => toToolResult(await claimTask(db, authHolder.auth, args.task_id, args.autonomous, args.request_id)),
