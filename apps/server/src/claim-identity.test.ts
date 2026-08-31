@@ -1230,6 +1230,88 @@ describe('issue #36 claim identity (request_id / claim_id)', { concurrency: fals
         'retryPendingWritebacks must still own recovery of a write-back that failed on the response path',
       )
     })
+
+    // Issue #38: the submit_pr twin of the claim-side case above. claimTask's 认领 write-back
+    // (claim.ts:603) is already fired via scheduleWriteback and never awaited on the response
+    // path; submitPr (claim.ts:853) still does `await attemptWriteback(...)` — this test is RED
+    // against that `await` and only turns green once submit_pr's write-back is moved off its
+    // response path the same way. submit_pr is MCP-only (no REST route — see mcp.ts), so the
+    // slow comment is provoked through the MCP `submit_pr` tool call.
+    test('a slow forge write-back comment cannot delay the committed submit_pr response', async (t) => {
+      const sqlitePath = sqliteFile(t)
+      const { app, stub } = await boot(t, sqlitePath)
+      const poster = await loginGitea(app)
+      const { brief } = await createTaskOk(app, poster.cookies, importedTaskPayload({ issueNumber: 901 }))
+      const key = await mintAgentKey(app, poster.cookies, 'slow-writeback-submit')
+
+      const claimed = await claimTask(app, { identity: key.identity, publicId: brief.id })
+      assert.equal(claimed.statusCode, 201, `setup claim: ${claimed.statusCode} ${claimed.body}`)
+      // Drain the claim's own (already off-response-path) write-back first so it cannot be
+      // mistaken for the submit_pr write-back counted/timed below.
+      const { settleWritebacks } = await import('./writeback.ts')
+      await settleWritebacks()
+
+      const prUrl = `${FORGE_BASE_URL}/${REPO_FULL_NAME}/pulls/9101`
+      const client = await readyMcp(app, key.identity)
+
+      // The 认领 write-back above already posted to this same issue's comment endpoint (this
+      // stub's commentRequests only records `{ url }`, not the body, so the 提交PR comment can't
+      // be told apart from it by content) — baseline the count here so only what submit_pr posts
+      // from this point on is counted below, instead of double-counting the 认领 comment too.
+      const commentsBeforeSubmit = stub.commentRequests.length
+      stub.delayNextComment(4000)
+      const start = Date.now()
+      const submitPromise = client.callTool(app, key.identity, 'submit_pr', {
+        task_id: brief.id,
+        pr_url: prUrl,
+        summary: '慢速回写用例',
+      })
+      const timeoutGuard = new Promise((_, reject) => {
+        setTimeout(
+          () =>
+            reject(
+              new Error(
+                'submit_pr did not resolve within 1500ms; a slow forge write-back comment must not block/delay the submit_pr response',
+              ),
+            ),
+          1500,
+        )
+      })
+      const { result } = await Promise.race([submitPromise, timeoutGuard])
+      const elapsedMs = Date.now() - start
+      const envelope = assertToolOk(result)
+      assert.equal(envelope.task.status, '待验收', `submit_pr must still succeed immediately: ${JSON.stringify(envelope)}`)
+      assert.ok(elapsedMs < 1500, `submit_pr took ${elapsedMs}ms; it must not wait on the forge write-back comment`)
+
+      const db = openDb(t, sqlitePath)
+      const task = taskRow(db, brief.id)
+      assert.equal(task.status, '待验收')
+
+      // Not merely fast — genuinely backgrounded: right after the response returns, the 4s-delayed
+      // comment cannot have completed yet, so no successful 提交PR 回写 event exists.
+      assert.equal(
+        successfulWritebackEventsFor(db, brief.id, '提交PR').length,
+        0,
+        'the submit_pr write-back must still be in flight immediately after the response returns, not already completed',
+      )
+
+      // Not lost either: the deterministic settleWritebacks() seam must still observe it complete.
+      await settleWritebacks()
+      const commentPosts = stub.commentRequests
+        .slice(commentsBeforeSubmit)
+        .filter((r) => r.url === giteaCommentUrl(901))
+      assert.equal(
+        commentPosts.length,
+        1,
+        `the backgrounded submit_pr write-back must still have posted exactly once, got ${JSON.stringify(stub.commentRequests)}`,
+      )
+      assert.ok(commentPosts[0].url.length > 0)
+      assert.equal(
+        successfulWritebackEventsFor(db, brief.id, '提交PR').length,
+        1,
+        'settleWritebacks must let the backgrounded submit_pr write-back settle into a successful 回写 event',
+      )
+    }, { timeout: 10_000 })
   })
 
   describe('claim-transaction atomicity — the Task update predicate itself (CAS)', () => {

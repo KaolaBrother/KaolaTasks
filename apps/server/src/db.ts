@@ -114,65 +114,89 @@ function columnIsNotNull(
   return column != null && column.notnull === 1
 }
 
+// Guarded and transactional: sqlite.exec() is not transactional on its own, so a fault partway
+// through this statement script (a crash, power loss, or killed container between the CREATE and
+// the RENAME) would otherwise leave a durable orphan `leases__rebuild` table on disk that collides
+// with the CREATE on every subsequent boot attempt, permanently bricking the server. The leading
+// DROP TABLE IF EXISTS clears any such orphan from a prior crashed boot before rebuilding (the
+// orphan is scratch state only — the real data still lives in `leases` until this rebuild's own
+// DROP TABLE leases below), and wrapping the whole script in a transaction means a fault now leaves
+// no residue at all.
 function rebuildLeasesIfAgentKeyStillRequired(sqlite: InstanceType<typeof Database>): void {
   const columns = tableColumns(sqlite, 'leases')
   if (columns.length === 0) return
   if (!columnIsNotNull(columns, 'agent_key_id') && !columnIsNotNull(columns, 'claimer_user_id')) {
     return
   }
-  sqlite.exec(`
-    CREATE TABLE leases__rebuild (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      task_id INTEGER NOT NULL,
-      claimer_user_id INTEGER,
-      claimer_claimant_id INTEGER,
-      device_id INTEGER NOT NULL,
-      agent_key_id INTEGER,
-      claimed_at INTEGER NOT NULL,
-      expires_at INTEGER NOT NULL,
-      last_heartbeat INTEGER NOT NULL,
-      state TEXT NOT NULL,
-      request_id TEXT
-    );
-    INSERT INTO leases__rebuild (
-      id, task_id, claimer_user_id, claimer_claimant_id, device_id, agent_key_id,
-      claimed_at, expires_at, last_heartbeat, state, request_id
-    )
-    SELECT
-      id, task_id, claimer_user_id, claimer_claimant_id, device_id, agent_key_id,
-      claimed_at, expires_at, last_heartbeat, state, request_id
-    FROM leases;
-    DROP TABLE leases;
-    ALTER TABLE leases__rebuild RENAME TO leases;
-    CREATE UNIQUE INDEX IF NOT EXISTS leases_one_active_per_task
-      ON leases(task_id) WHERE state = 'active';
-  `)
+  sqlite.transaction(() => {
+    sqlite.exec(`
+      DROP TABLE IF EXISTS leases__rebuild;
+      CREATE TABLE leases__rebuild (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER NOT NULL,
+        claimer_user_id INTEGER,
+        claimer_claimant_id INTEGER,
+        device_id INTEGER NOT NULL,
+        agent_key_id INTEGER,
+        claimed_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        last_heartbeat INTEGER NOT NULL,
+        state TEXT NOT NULL,
+        request_id TEXT
+      );
+      INSERT INTO leases__rebuild (
+        id, task_id, claimer_user_id, claimer_claimant_id, device_id, agent_key_id,
+        claimed_at, expires_at, last_heartbeat, state, request_id
+      )
+      SELECT
+        id, task_id, claimer_user_id, claimer_claimant_id, device_id, agent_key_id,
+        claimed_at, expires_at, last_heartbeat, state, request_id
+      FROM leases;
+      DROP TABLE leases;
+      ALTER TABLE leases__rebuild RENAME TO leases;
+      CREATE UNIQUE INDEX IF NOT EXISTS leases_one_active_per_task
+        ON leases(task_id) WHERE state = 'active';
+    `)
+  })()
 }
 
+// Guarded and transactional for the same reason as rebuildLeasesIfAgentKeyStillRequired above:
+// sqlite.exec() is not transactional, so a fault partway through this statement script (a crash,
+// power loss, or killed container between the CREATE and the RENAME) would otherwise leave a
+// durable orphan `claim_confirmations__rebuild` table on disk that collides with the CREATE on
+// every subsequent boot attempt, permanently bricking the server. This sibling has no known
+// trigger today, but has the identical unguarded shape, so it carries the identical risk. The
+// leading DROP TABLE IF EXISTS clears any such orphan before rebuilding (the orphan is scratch
+// state only — the real data still lives in `claim_confirmations` until this rebuild's own DROP
+// TABLE below), and wrapping the whole script in a transaction means a fault now leaves no residue
+// at all.
 function rebuildClaimConfirmationsIfAgentKeyStillRequired(
   sqlite: InstanceType<typeof Database>,
 ): void {
   const columns = tableColumns(sqlite, 'claim_confirmations')
   if (columns.length === 0) return
   if (!columnIsNotNull(columns, 'agent_key_id')) return
-  sqlite.exec(`
-    CREATE TABLE claim_confirmations__rebuild (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      task_id INTEGER NOT NULL,
-      user_id INTEGER NOT NULL,
-      device_id INTEGER NOT NULL,
-      agent_key_id INTEGER,
-      state TEXT NOT NULL,
-      created_at INTEGER NOT NULL
-    );
-    INSERT INTO claim_confirmations__rebuild (
-      id, task_id, user_id, device_id, agent_key_id, state, created_at
-    )
-    SELECT id, task_id, user_id, device_id, agent_key_id, state, created_at
-    FROM claim_confirmations;
-    DROP TABLE claim_confirmations;
-    ALTER TABLE claim_confirmations__rebuild RENAME TO claim_confirmations;
-  `)
+  sqlite.transaction(() => {
+    sqlite.exec(`
+      DROP TABLE IF EXISTS claim_confirmations__rebuild;
+      CREATE TABLE claim_confirmations__rebuild (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        device_id INTEGER NOT NULL,
+        agent_key_id INTEGER,
+        state TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      INSERT INTO claim_confirmations__rebuild (
+        id, task_id, user_id, device_id, agent_key_id, state, created_at
+      )
+      SELECT id, task_id, user_id, device_id, agent_key_id, state, created_at
+      FROM claim_confirmations;
+      DROP TABLE claim_confirmations;
+      ALTER TABLE claim_confirmations__rebuild RENAME TO claim_confirmations;
+    `)
+  })()
 }
 
 const AGENT_KEYS_DDL = `
@@ -266,9 +290,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS leases_one_active_per_task
 `
 
 // Issue #36: request_id is the client-supplied idempotency key for a claim attempt. Nullable —
-// added after rebuildLeasesIfAgentKeyStillRequired so that rebuild's own INSERT ... SELECT (which
-// already carries request_id through, see below) runs against whatever the on-disk table looked
-// like beforehand.
+// added BEFORE rebuildLeasesIfAgentKeyStillRequired, because that rebuild's own INSERT ... SELECT
+// reads request_id off the existing table (see below). A legacy database still carrying
+// `agent_key_id NOT NULL` / `claimer_user_id NOT NULL` has no such column yet, so running the
+// rebuild first made createDb throw `no such column: request_id` and the server could not boot at
+// all. The ALTER is additive and tryAddColumn is idempotent, so running it first is safe for
+// already-migrated databases too.
 const LEASES_ADD_REQUEST_ID_DDL = `
 ALTER TABLE leases ADD COLUMN request_id TEXT
 `
@@ -358,9 +385,9 @@ export function createDb(path = ':memory:') {
   sqlite.exec(LEASES_DDL)
   tryAddColumn(sqlite, LEASES_ADD_DEVICE_ID_DDL)
   tryAddColumn(sqlite, LEASES_ADD_CLAIMER_CLAIMANT_ID_DDL)
+  tryAddColumn(sqlite, LEASES_ADD_REQUEST_ID_DDL)
   rebuildLeasesIfAgentKeyStillRequired(sqlite)
   sqlite.exec(LEASES_ONE_ACTIVE_INDEX_DDL)
-  tryAddColumn(sqlite, LEASES_ADD_REQUEST_ID_DDL)
   sqlite.exec(LEASES_DEVICE_REQUEST_IDENTITY_INDEX_DDL)
   sqlite.exec(SUBMISSIONS_DDL)
   sqlite.exec(SUBMISSIONS_LEASE_ID_INDEX_DDL)

@@ -353,7 +353,7 @@ KaolaTasks/
 完整决策见 [0030 — Claim MCP lifecycle with default Workflow and optional Project Runner](decisions/0030-claim-mcp-workflow-runner-compatibility.md) 与 [Issue #30](https://github.com/KaolaBrother/KaolaTasks/issues/30)。本节冻结产品边界：
 
 - Kaola Tasks 单向适配两个独立 Repo；Workflow 和 Runner 不知道 Kaola Tasks 存在。
-- `claim_task` 成功后默认由当前 MCP Agent 直接运行 Kaola Workflow；只有用户显式指定时才使用 Project Runner，当前 Agent 仍是 Claim controller/monitor。
+- 本节适用范围是来自外部 forge Issue、随任务携带该 Issue 凭证的任务；该 Issue（`source.issue_url`）就是 Workflow 目标。对这类任务，`claim_task` 成功后，当前 MCP Agent 必须直接启动并运行 Kaola Workflow 处理该任务——这是强制要求，不再只是默认值；只有用户显式指定时才使用 Project Runner，当前 Agent 仍是 Claim controller/monitor。Kaola Workflow 完成后提交 PR/MR 是默认且必须的收尾动作，Agent 必须调用 submit_pr，不允许省略这一步。若认领到的任务没有随附的 forge Issue（例如 native 任务），则不在本节范围内：Kaola Workflow 本身启动要求至少一个 Issue 编号（已实测 `no_target` / `claim_issue_numbers_invalid` 拒绝），因此无法为其启动 Workflow。
 - 服务端保持现有六个 MCP 工具且不运行外部进程；只给现有 lease 补 request id、公开 Claim identity、精确 device fence、事务和幂等。
 - `kaola-mcp` bridge 只保存无密 Claim recovery receipt：服务端身份为 request/claim，carrier 与精确 Runner session 仅留在本地回执；不保存 token、prompt、Workflow 内容或 Runner transcript。
 - Workflow/Runner capability 与版本探测只提供 advisory evidence，不形成 allowlist hard gate；身份、合法状态迁移、Claim fence、token 解密和 PR repo 绑定仍 fail closed。

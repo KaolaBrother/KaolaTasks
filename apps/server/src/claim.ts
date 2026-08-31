@@ -28,7 +28,7 @@ import {
 import { type Lease, type Task, credentialProfiles, events, leases, submissions, tasks } from './schema.ts'
 import { selectTask, taskBrief } from './tasks.ts'
 import { decryptToken, insertAuditEvent, isVaultUnconfiguredError } from './vault.ts'
-import { attemptWriteback, scheduleWriteback } from './writeback.ts'
+import { scheduleWriteback } from './writeback.ts'
 
 const PENDING_CLAIM_MESSAGE = '你的账号待正式成员批准后方可认领任务。'
 const TASK_ALREADY_CLAIMED_MESSAGE = '任务已被认领。'
@@ -848,9 +848,10 @@ export async function submitPr(
     return updatedTask
   })
 
-  // submit_pr's write-back stays on the response path (unlike claim's) — only claimTask's forge
-  // comment was moved off it.
-  await attemptWriteback(db, updated, '提交PR', actorUserId(auth), canonicalPrUrl)
+  // Issue #38: off the response path, same as claim's 认领 write-back above — never awaited
+  // here, so a slow/unreachable forge cannot delay a committed submit_pr response.
+  // settleWritebacks() (writeback.ts) is the deterministic seam for tests.
+  scheduleWriteback(db, updated, '提交PR', actorUserId(auth), canonicalPrUrl)
 
   return {
     ok: true,

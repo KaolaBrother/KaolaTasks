@@ -85,24 +85,29 @@ function getTaskBriefTool(db: AppDb, taskId: string): CallToolResult {
   return toolPayload(taskBrief(row))
 }
 
-// Issue #33: the subtraction-first default. An Agent connected to this MCP server needs no
-// explicit instruction to run Kaola Workflow directly after a claim — that is the default carrier.
-// Project Runner is used only when the user explicitly asks for it; there is no silent switch
-// either way. Workflow/Runner availability is local, advisory evidence for the Agent's own
-// judgment, never a version allowlist or a server-side hard gate on the Claim itself.
+// Issue #33 (default) → Issue #39 (required, scoped): the confirmed product line is that every
+// successful claim_task on a task that carries an external forge Issue enters Kaola Workflow — there
+// is no non-Workflow path for such a task — and once Workflow completes, submitting a PR/MR via
+// submit_pr is default and required, not optional. An Agent connected to this MCP server needs no
+// explicit instruction to run Kaola Workflow directly after a claim — that is still the default
+// carrier — but it is no longer merely a default: Kaola Workflow must be started. Project Runner is
+// used only when the user explicitly asks for it; there is no silent switch either way.
+// Workflow/Runner availability is local, advisory evidence for the Agent's own judgment, never a
+// version allowlist or a server-side hard gate on the Claim itself. This requirement presumes the
+// claimed task actually has a forge Issue to target — Kaola Workflow itself refuses to start without
+// one (measured no_target / claim_issue_numbers_invalid) — so an Agent that claims a task with no
+// forge Issue is outside this contract's scope and cannot start Workflow for it.
 const KAOLA_MCP_INSTRUCTIONS = `Kaola Tasks 路由与协调任务的认领和生命周期，不运行 Agent、Workflow 或 Runner。
 
-默认路径（no explicit Runner request needed）：认领任务后，当前 Agent 直接（directly）运行 Kaola
-Workflow 处理该任务；这是减法优先的默认值（default），不需要任何额外声明。只有当用户明确（explicit）
-请求使用 Kaola Project Runner 时，才切换到 Runner 承载；没有 explicit 请求就永远走 Workflow 直连，
-也绝不在两者之间静默切换。
-
-Workflow 目标映射：imported 任务（source.type === 'imported'，且 issue_url 非空）使用该任务已有的
-issue_url 作为 Workflow 目标；native 任务没有已有 Issue，Kaola Tasks 从不代为在 forge 上新建一个
-Issue 去凑合。已实测（Kaola Workflow 10.2.1，commit 7e93763e）：cmdStartup 在没有
---target-issue/--target-issues 时以 no_target 拒绝，即 issue-less 项目当前不受支持，因此 native 任
-务只得到一个 advisory-unavailable 的 issueless_project 目标（project_name 取任务 id），而不是假设
-它可行或伪造一个 issue-<N> 项目名。
+默认路径（no explicit Runner request needed）：本约定覆盖来自外部 forge Issue、随任务携带该 Issue
+凭证（source.issue_url）的任务——该 Issue 就是 Workflow 目标。对这类任务，认领任务成功后，当前
+Agent 必须（required）直接（directly）启动并运行 Kaola Workflow 处理该任务——这是强制要求，不再
+只是默认值（default）；只有当用户明确（explicit）请求使用 Kaola Project Runner 时，才切换到
+Runner 承载；没有 explicit 请求就永远走 Workflow 直连，也绝不在两者之间静默切换。Kaola Workflow
+完成后，Agent 必须（required）调用 submit_pr 提交 PR，这是默认且必须的收尾动作，不是可选建议。
+若认领到的任务没有随附的 forge Issue（例如 native 任务），则不在本约定范围内：Kaola Workflow 本
+身启动要求至少一个 Issue 编号（已实测 no_target / claim_issue_numbers_invalid 拒绝），因此无法为
+其启动 Workflow。
 
 兼容性只是证据，不是硬性关卡：Workflow 或 Runner 版本缺失、无法识别、或提供了新接口，都只是本地
 advisory 观察，供 Agent 自行判断如何继续；没有一份"已知可用版本清单"逐条核对放行，也绝不会因为兼
@@ -178,7 +183,7 @@ function createKaolaMcpServer(db: AppDb, authHolder: AuthHolder): McpServer {
     'submit_pr',
     {
       description:
-        'After a PR or MR exists on the forge, submit its URL for a claimed in-progress task and move it to 待验收. claim_id is required for a Claim minted with request_id, optional for a legacy Claim; repeating submit_pr for the same Claim and pr_url is idempotent.',
+        'The required completion of the Workflow path: after Kaola Workflow finishes and a PR or MR exists on the forge, submit its URL for a claimed in-progress task and move it to 待验收. claim_id is required for a Claim minted with request_id, optional for a legacy Claim; repeating submit_pr for the same Claim and pr_url is idempotent.',
       inputSchema: {
         task_id: z.string(),
         pr_url: z.string(),

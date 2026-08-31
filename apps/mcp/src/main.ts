@@ -807,6 +807,12 @@ export async function runStdioBridge(
   // environment (never an MCP tool parameter, never server/DB state). Resolved once per process
   // and carried on ctx for the claim path to record into the receipt.
   const carrierIntent = resolveCarrierIntent(env as Record<string, string | undefined>)
+  // AUDIT-R1 -- an advisory intent's observation was computed but never reported anywhere
+  // reachable without a successful claim (see receiptCarrierFields). Report it once, at
+  // startup, regardless of whether any RPC is ever sent.
+  if (carrierIntent.carrier === 'advisory') {
+    writeStderr(stderr, carrierIntent.observation)
+  }
   const ctx: BridgeCtx = { kaolaHome, url, stdout, stderr, carrierIntent }
   const rl = createInterface({ input: stdin, crlfDelay: Infinity })
   for await (const line of rl) {

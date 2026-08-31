@@ -733,6 +733,9 @@ describe('issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成)', 
       const prUrl = `${GITEA_FORGE_BASE_URL}/${GITEA_REPO_FULL_NAME}/pulls/9001`
       const submitted = await submitPrViaMcp(app, key.identity, { taskId: brief.id, prUrl, summary: '已完成分页' })
       assert.equal(submitted.task.status, '待验收', `submit_pr: ${JSON.stringify(submitted)}`)
+      // Issue #38: submit_pr's write-back moves off the response path the same way 认领's did
+      // (#36) — this test asserts on the 提交PR write-back itself, so it must settle first.
+      await settleWritebacks()
 
       const commentPosts = stub.commentRequests.filter((r) => r.url === giteaCommentUrl(511))
       assert.equal(
@@ -765,6 +768,9 @@ describe('issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成)', 
       stub.setNextCommentResponse({ unreachable: true })
       const submitted = await submitPrViaMcp(app, key.identity, { taskId: brief.id, prUrl, summary: '网络故障用例' })
       assert.equal(submitted.task.status, '待验收', `submit_pr must still succeed despite the write-back failure: ${JSON.stringify(submitted)}`)
+      // Issue #38: settle the now-backgrounded 提交PR write-back before asserting it never
+      // recorded success — otherwise this would pass vacuously (nothing attempted yet).
+      await settleWritebacks()
 
       const db = openDb(t, sqlitePath)
       assert.equal(successfulWritebackEventsFor(db, brief.id, '提交PR').length, 0)
@@ -784,6 +790,10 @@ describe('issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成)', 
       const prUrl = `${GITEA_FORGE_BASE_URL}/${GITEA_REPO_FULL_NAME}/pulls/9011`
       const submitted = await submitPrViaMcp(app, key.identity, { taskId: brief.id, prUrl, summary: '完成用例' })
       assert.equal(submitted.task.status, '待验收')
+      // Issue #38: submit_pr's write-back is now backgrounded — settle it before pollPendingReviews
+      // fires the completion comment, or `commentPosts[commentPosts.length - 1]` below could pick
+      // up the still-in-flight submit_pr comment instead of the completion one.
+      await settleWritebacks()
 
       stub.pr.set('9011', { body: { number: 9011, state: 'closed', merged: true } })
 
@@ -822,6 +832,9 @@ describe('issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成)', 
       const prUrl = `${GITEA_FORGE_BASE_URL}/${GITEA_REPO_FULL_NAME}/pulls/9012`
       const submitted = await submitPrViaMcp(app, key.identity, { taskId: brief.id, prUrl, summary: '完成用例-webhook' })
       assert.equal(submitted.task.status, '待验收')
+      // Issue #38: same ordering hazard as the poller-driven completion test above — settle the
+      // backgrounded submit_pr write-back before the webhook delivery triggers the completion one.
+      await settleWritebacks()
 
       const rawBody = JSON.stringify(giteaPrPayload({ merged: true, prUrl, fullName: GITEA_REPO_FULL_NAME }))
       const res = await app.inject({
@@ -863,6 +876,10 @@ describe('issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成)', 
       const prUrl = `${GITEA_FORGE_BASE_URL}/${GITEA_REPO_FULL_NAME}/pulls/9013`
       const submitted = await submitPrViaMcp(app, key.identity, { taskId: brief.id, prUrl, summary: '未通过验收' })
       assert.equal(submitted.task.status, '待验收')
+      // Issue #38: settle the backgrounded submit_pr write-back before `beforeCount` is captured —
+      // otherwise its late-arriving POST would land inside the pollPendingReviews window below and
+      // falsely look like a completion write-back comment.
+      await settleWritebacks()
 
       stub.pr.set('9013', { body: { number: 9013, state: 'closed', merged: false } })
       const beforeCount = stub.commentRequests.length
@@ -892,6 +909,10 @@ describe('issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成)', 
       const prUrl = `${GITEA_FORGE_BASE_URL}/${GITEA_REPO_FULL_NAME}/pulls/9014`
       const submitted = await submitPrViaMcp(app, key.identity, { taskId: brief.id, prUrl, summary: '完成评论失败用例' })
       assert.equal(submitted.task.status, '待验收')
+      // Issue #38: settle the backgrounded submit_pr write-back before queuing the one-shot 502
+      // override below — otherwise the still-in-flight submit_pr comment (not the completion one)
+      // could consume it.
+      await settleWritebacks()
 
       stub.pr.set('9014', { body: { number: 9014, state: 'closed', merged: true } })
       stub.setNextCommentResponse({ status: 502 })
@@ -998,6 +1019,9 @@ describe('issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成)', 
       const prUrl = `${GITEA_FORGE_BASE_URL}/${GITEA_REPO_FULL_NAME}/pulls/9041`
       const submitted = await submitPrViaMcp(app, key.identity, { taskId: brief.id, prUrl, summary: '完成重试用例' })
       assert.equal(submitted.task.status, '待验收')
+      // Issue #38: same one-shot-override race as above — settle the backgrounded submit_pr
+      // write-back before queuing the 502 meant for the completion comment.
+      await settleWritebacks()
 
       stub.pr.set('9041', { body: { number: 9041, state: 'closed', merged: true } })
       stub.setNextCommentResponse({ status: 502 })

@@ -16,6 +16,13 @@ const STATUS_TRANSITION_EVENT = '状态迁移'
 const IN_PROGRESS_STATUS = '进行中'
 const COMPLETED_STATUS = '已完成'
 
+// Deliberately longer than forge-adapters' read-path DEFAULT_TIMEOUT_MS: an abort here fires
+// *after* a slow-but-working forge has already committed the comment, so `attemptWriteback`
+// records no successful 回写 event and the uncapped `retryPendingWritebacks` sweep reposts it
+// forever, duplicating a real comment on a real Issue. A durable, user-visible write deserves
+// more patience than a read.
+const WRITEBACK_TIMEOUT_MS = 30_000
+
 export type WritebackTransition = '认领' | '提交PR' | '完成'
 
 // Same branch as `claimTask`'s credential resolution (claim.ts), except any failure here (vault
@@ -65,7 +72,7 @@ async function postComment(db: AppDb, task: Task, body: string): Promise<void> {
   if (token == null) {
     throw new Error('writeback: no forge credential available for task')
   }
-  const adapter = createForgeAdapter(task.repoForge, { baseUrl: task.repoBaseUrl })
+  const adapter = createForgeAdapter(task.repoForge, { baseUrl: task.repoBaseUrl, timeoutMs: WRITEBACK_TIMEOUT_MS })
   await adapter.commentOnIssue({ token }, { issue_url: task.sourceIssueUrl as string }, body)
 }
 

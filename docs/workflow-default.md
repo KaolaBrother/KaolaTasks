@@ -1,16 +1,22 @@
-# 默认直连 Kaola Workflow（Issue #33）
+# 直连 Kaola Workflow：默认承载，且是强制要求（Issue #33 → #39）
 
 本文档面向通过 MCP 连接 Kaola Tasks 的 Agent 客户端，说明 Claim 之后应当如何选择执行承载
 （carrier），以及应当如何看待 Kaola Workflow / Kaola Project Runner 的能力观测。它补充
 `docs/decisions/0030-claim-mcp-workflow-runner-compatibility.md` 中的设计决定，不改变其中任何
 决定。
 
-## 默认路径：无需显式请求即直连 Workflow
+## 必须直连 Workflow：无需显式请求，也不允许省略
 
-认领任务成功后，当前 Agent 的默认（default）行为是**直接（directly）运行 Kaola Workflow**处理该
-任务，不需要用户或调用方做任何额外声明——这是减法优先的默认值。只有当用户**明确（explicit）**
-要求使用 Kaola Project Runner 这一可选 CLI 承载时，Agent 才切换到 Runner 承载；没有显式请求就永
-远走 Workflow 直连，也绝不在两个承载之间静默切换。
+本节适用于**来自外部 forge Issue、并随任务携带该 Issue 凭证**（`source.issue_url`）的任务——该
+Issue 就是 Workflow 目标。对这类任务，认领成功后，当前 Agent **必须（required）直接（directly）
+运行 Kaola Workflow** 处理该任务，不需要用户或调用方做任何额外声明；Workflow 直连是默认
+（default）承载，而且不再只是一个可以省略的默认值。只有当用户**明确（explicit）**要求使用 Kaola
+Project Runner 这一可选 CLI 承载时，Agent 才切换到 Runner 承载；没有显式请求就永远走 Workflow 直
+连，也绝不在两个承载之间静默切换。
+
+若认领到的任务没有随附的 forge Issue（例如 native 任务），则不在本节范围内：Kaola Workflow 本身
+启动就要求至少一个 Issue 编号（已实测 `no_target` / `claim_issue_numbers_invalid` 拒绝），因此无
+法为其启动 Workflow。
 
 ```text
 get_task_brief
@@ -28,27 +34,15 @@ submit_pr(task_id, claim_id, pr_url, summary)
 
 ## Workflow 目标映射
 
-- **imported 任务**（`source.type === 'imported'` 且 `issue_url` 非空）：使用该任务已经存在的
-  `issue_url` 作为 Workflow 目标，`workflowTargetForTask` 返回 `target_kind: 'issue'`，
-  `available: true`。
-- **native 任务**（或 `issue_url` 缺失/为空的 imported 任务）：没有可用的既有 Issue，Kaola Tasks
-  **从不**代为在 forge 上新建一个 Issue 去凑合目标。`workflowTargetForTask` 返回
-  `target_kind: 'issueless_project'`、`available: false`、`project_name` 取任务的公开 id，并附带
-  一份 advisory 观测。
-
-### 已实测的 issue-less（issueless）项目回退
-
-对 Kaola Workflow 仓库做过一次只读测量（版本 `10.2.1`，commit `7e93763e`）：`cmdStartup` 在没有
-`--target-issue`/`--target-issues` 时以 `no_target` 拒绝启动；`writeState` →
-`normalizeIssueNumbers` 要求至少一个正整数 Issue 编号才能写出 `workflow-state.md`；
-`commands/workflow-next.md` 也要求先解决或登记为真实 Issue。结论是 **not supported**：issue-less
-项目当前不受 Kaola Workflow 支持。
-
-因此，native 任务的 Workflow 目标只标记为 advisory-unavailable，其 `advisory` 字段忠实记录这次
-测量，而不是假设该能力可行，也不是伪造一个 `issue-<N>` 项目名去骗过 Workflow 的存在性探测（这样
-做会让 finalize 阶段对一个不存在的编号执行 `gh issue close`）。`advisory.reason` 命名上述
-`no_target` 拒绝，`advisory.workflow_version`/`advisory.workflow_commit` 精确等于测量到的
-`10.2.1` / `7e93763e`，不是占位符。
+- 本节范围限定在来自外部 forge Issue、随任务携带该 Issue 凭证的任务：这类任务的 Issue
+  （`source.issue_url`）就是 Workflow 目标。对这类任务而言，每一次成功认领（claim_task 成功）都
+  必须启动 Kaola Workflow：Claim MCP 合同不再为它们建模“认领成功但没有 Workflow 目标”的组合。
+  Kaola Workflow 启动要求至少一个正整数 Issue 编号（已实测：`cmdStartup` 在没有
+  `--target-issue`/`--target-issues` 时以 `no_target` 拒绝；`normalizeIssueNumbers` 缺少合法 Issue
+  编号时抛 `claim_issue_numbers_invalid`）。
+- 认领到的任务若没有随附的 forge Issue（例如 native 任务），则不在本节范围内：Kaola Tasks 从不代
+  为在 forge 上新建 Issue 去凑合目标，Agent 也无法为其启动 Kaola Workflow——上面测得的
+  `no_target` / `claim_issue_numbers_invalid` 拒绝就是原因。
 
 ## 兼容性只是证据，不是硬性关卡
 

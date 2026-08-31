@@ -3,18 +3,19 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { parseTaskBrief } from '@kaola/shared'
 import { applyOauthTestEnv } from './auth.test-helpers.ts'
 import { injectSigned, pairDeviceToSelf } from './device-proof.test-helpers.ts'
 
 // Issue #33 — Make direct Kaola Workflow the default MCP Agent path.
 //
 // TEST CUSTODY ONLY. This suite owns acceptance meaning for:
-//   (A/B) a NEW pure module apps/server/src/workflow-target.ts (does not exist yet at RED time),
+//   (A/B) [RETIRED BY #39 — these describe blocks are gone; the suite now asserts
+//         apps/server/src/workflow-target.ts must NOT exist],
 //   (C)   the real MCP surface text (initialize `instructions`, tools/list schema+descriptions),
 //   (D)   a NEW client-guidance doc this Issue must add (docs/workflow-default.md, path chosen
 //         and bound here — see the final reply for rationale),
-//   (E)   a token scan over this suite's own fixtures and that doc.
+//   (E)   [RETIRED BY #39 — the fixtures it scanned were deleted with A/B; the doc and the live
+//         instructions are still token-scanned by the surviving cases].
 // No production code is written by this file.
 //
 // RED baseline: commit 6df018a5e55749aa85de1642eedfb76f5df7504f ("feat(mcp): persist secret-free
@@ -28,30 +29,26 @@ import { injectSigned, pairDeviceToSelf } from './device-proof.test-helpers.ts'
 // (Verified live against this commit with a throwaway probe script hitting POST /api/mcp
 // initialize + tools/list before writing this suite — see the reply for the raw JSON.)
 //
-// WorkflowTarget shape owned here — the implementer must match these field names exactly:
-//
-//   type WorkflowAdvisory = {
-//     reason: string             // measured refusal reason (never assumed)
-//     workflow_version: string   // measured Kaola Workflow snapshot version
-//     workflow_commit: string    // measured Kaola Workflow snapshot commit
-//   }
-//
-//   type WorkflowTarget =
-//     | { target_kind: 'issue'; available: true; issue_url: string;
-//         project_name: null; advisory: null }
-//     | { target_kind: 'issueless_project'; available: false; issue_url: null;
-//         project_name: string; advisory: WorkflowAdvisory }
-//
-//   export function workflowTargetForTask(brief: TaskBrief): WorkflowTarget   // pure, no I/O
-//
-// Measured Kaola Workflow snapshot the advisory must cite (Issue #33 brief, read-only measurement
-// against /Volumes/WorkspaceA/ylminiserver/workspace/kaola-workflow): version '10.2.1', commit
-// '7e93763e'. VERDICT: NOT SUPPORTED — cmdStartup refuses with `no_target` absent
-// --target-issue/--target-issues, so the advisory.reason must name that measured refusal rather
-// than assume issue-less-project support or fabricate an issue-<N> project name.
+// >>> RETIRED BY ISSUE #39 — DO NOT IMPLEMENT ANY OF THE FOLLOWING. <<<
+// #33 originally specified here a pure module `apps/server/src/workflow-target.ts` exporting
+// `workflowTargetForTask(brief)`, returning either a `target_kind: 'issue'` target or a
+// `target_kind: 'issueless_project'` / `available: false` target carrying an advisory that cited a
+// measured Kaola Workflow snapshot (10.2.1 / 7e93763e) refusing an issue-less project with
+// `no_target`. That measurement was accurate at the time and #33 implemented it faithfully — but it
+// modeled a "claim succeeded, yet has no Workflow target" outcome. Issue #39 confirmed the product
+// line requires every successful claim to uniformly enter Workflow, so that outcome must not be
+// modeled anywhere: `workflow-target.ts` is DELETED (Issue #39 measured it as a zero-production-
+// caller module — 16 grep hits total, 15 of them the tests removed here, the 16th its own
+// definition — whose only real effect was the `mcp.ts` prose it fed), and this file's sole
+// surviving A/B-adjacent test (in the describe block below) asserts the module does NOT exist,
+// rather than continuing to pin the shape of a retired contract. This paragraph is kept purely as a
+// record of what was retired and why; it is history, not a specification, and nothing in it may be
+// built. The former Section E's fixture-based token scans are retired alongside it for the same
+// reason (nothing left to scan) — the Issue #39 tests below instead scan the real, non-fixture
+// instructions/description/doc text they read, so that invariant stays covered.
 //
 // Ambiguities resolved here (not pinned upstream), documented rather than silently assumed:
-//   (1) exact WorkflowTarget field names — fixed above; this suite is the sole owner of that shape.
+//   (1) [RETIRED BY #39 — this suite no longer owns any WorkflowTarget shape; the module is gone.]
 //   (2) doc path — fixed to docs/workflow-default.md.
 //   (3) "no version allowlist" / "never refused for a capability reason" is asserted (i) textually,
 //       via keywords in the real `instructions` string, and (ii) structurally, by asserting no
@@ -65,13 +62,21 @@ import { injectSigned, pairDeviceToSelf } from './device-proof.test-helpers.ts'
 //       `inputSchema`, already present today, unrelated to Issue #33) is deliberately NOT treated
 //       as an "execution/carrier field" — the brief's ban is on the tool's *input* schema, i.e. the
 //       parameters an Agent can submit, not this pre-existing SDK task-support declaration.
-
-const GITHUB_BASE_URL = 'https://github.com'
-const GITLAB_BASE_URL = 'https://gitlab.example.test'
-const GITEA_BASE_URL = 'https://gitea.example.test'
-
-const WORKFLOW_MEASURED_VERSION = '10.2.1'
-const WORKFLOW_MEASURED_COMMIT = '7e93763e'
+//
+// -------------------------------------------------------------------------------------------------
+// Issue #39 amendment — the confirmed product line changed after #33 shipped: external forge Issue
+// + its token -> Claim MCP -> Workflow MUST be started for every successful claim (no non-Workflow
+// path) -> submitting a PR after Workflow completes is default AND required. #33's contract above
+// only ever said Workflow is the *default* (never required), and never required PR submission after
+// Workflow completes. Sections C and D below gain new Issue #39 tests for both of those (rather than
+// being replaced) since their existing #33 acceptance — the default-Workflow prose, the six-tool/no-
+// new-field contract, claim_task's #30 wording — is still true and still owned here. Section D's one
+// test that used to cite the retired `issueless_project` fallback (measured Workflow version/commit)
+// is replaced below by a test pinning the new "no unavailable target" requirement instead. Two new
+// describe blocks are added for surfaces this suite did not previously read: docs/architecture.md's
+// #33 paragraph (which duplicated the same retired claim) and docs/DESIGN.md §15 (the frozen product
+// boundary this whole Claim MCP contract stems from).
+// -------------------------------------------------------------------------------------------------
 
 const MCP_PATH = '/api/mcp'
 const MCP_PROTOCOL_VERSION = '2025-11-25'
@@ -111,207 +116,60 @@ function assertNoTokenShapedText(text: string, label: string) {
   }
 }
 
-function assertSerializable(value: unknown) {
-  const roundTripped = JSON.parse(JSON.stringify(value))
-  assert.deepEqual(
-    roundTripped,
-    value,
-    'WorkflowTarget must be plain-JSON-serializable (a JSON round-trip must be lossless: no functions, no undefined, no class instances)',
-  )
+// Issue #39 helper: true only if some single sentence (Chinese/English mixed prose, split on the
+// full-width period 。 or an ASCII '. ' followed by a capital/Chinese char) matches every pattern in
+// `patterns`. Sentence-scoped rather than whole-text-scoped so a requirement word and its subject
+// (e.g. "Workflow" and "必须") must genuinely co-occur in one statement, not merely appear anywhere
+// independently in a long document.
+function assertSentenceContainsAll(text: string, patterns: RegExp[], label: string, message: string) {
+  const sentences = text.split(/(?<=。)|(?<=\.)\s+(?=[A-Z一-鿿])/)
+  const found = sentences.some((sentence) => patterns.every((pattern) => pattern.test(sentence)))
+  assert.ok(found, `${label}: ${message}`)
 }
 
-// --- Section B fixtures: imported and native briefs across all three forges, one of which
-// (gitlab) uses a subgroup namespace in repo.full_name. ---------------------------------------
-
-type SourceInput = { type: 'native' } | { type: 'imported'; issue_url: string }
-type RepoInput = { forge: 'github' | 'gitlab' | 'gitea'; base_url: string; full_name: string }
-
-function buildBrief({
-  id,
-  source,
-  repo,
-}: {
-  id: string
-  source: SourceInput
-  repo: RepoInput
-}) {
-  const brief = {
-    id,
-    title: `fixture task ${id}`,
-    description_md: '……（fixture）',
-    source,
-    repo: {
-      forge: repo.forge,
-      base_url: repo.base_url,
-      full_name: repo.full_name,
-      base_branch: 'main',
-      suggested_dir: repo.full_name.split('/').at(-1) ?? repo.full_name,
-    },
-    acceptance_criteria: ['fixture acceptance criterion'],
-    test_command: 'pnpm test',
-    constraints: { allowed_paths: [], forbidden_paths: [] },
-    pr_convention: { branch_prefix: `kaola/${id}-`, title_prefix: `[${id}] ` },
-    // Never a real credential: the brief's own union only ever names a reference.
-    credential: { inline: true as const },
-    priority: 'P2' as const,
-    tags: ['fixture'],
-    poster: 'fixture-poster',
-    status: '待认领' as const,
-    created_at: new Date(Date.UTC(2026, 7, 31, 0, 0, 0)).toISOString(),
-  }
-  // Guards the fixture itself against a typo, not the module under test.
-  parseTaskBrief(brief)
-  return brief
+// Issue #39 A3 fix: assertSentenceContainsAll's split only breaks after an ASCII '.' when the
+// following word starts with an uppercase Latin letter or a CJK character (see its own comment,
+// above). submit_pr's English description has no 。 at all, and its only '. ' boundary is followed
+// by lowercase "claim_id" — so that regex never splits it, the whole description collapses into one
+// "sentence", and the unrelated, separate clause "claim_id is required for a Claim minted with
+// request_id" is enough on its own to supply the requirement word. The assertion built on
+// assertSentenceContainsAll therefore never actually verifies that Workflow and the requirement word
+// occur in the SAME clause — a description that mentions Workflow anywhere, with "required" showing
+// up in an unrelated clause elsewhere, would pass it too. This narrower helper is scoped to the A3
+// test only (assertSentenceContainsAll and every other call site, including the A2 Chinese-prose
+// tests above, are untouched): it splits on ANY '.' or '。' sentence boundary regardless of the case
+// of the following letter, so an unrelated later (or earlier) clause can no longer supply the
+// requirement word or the Workflow mention for a clause that lacks it.
+function assertClauseContainsAll(text: string, patterns: RegExp[], label: string, message: string) {
+  const clauses = text.split(/(?<=[.。])\s*/)
+  const found = clauses.some((clause) => patterns.every((pattern) => pattern.test(clause)))
+  assert.ok(found, `${label}: ${message}`)
 }
-
-const FIXTURES = [
-  {
-    label: 'github imported',
-    brief: buildBrief({
-      id: 'kt-2026-0101',
-      source: { type: 'imported', issue_url: 'https://github.com/octo/widget/issues/42' },
-      repo: { forge: 'github', base_url: GITHUB_BASE_URL, full_name: 'octo/widget' },
-    }),
-  },
-  {
-    label: 'github native',
-    brief: buildBrief({
-      id: 'kt-2026-0102',
-      source: { type: 'native' },
-      repo: { forge: 'github', base_url: GITHUB_BASE_URL, full_name: 'octo/widget' },
-    }),
-  },
-  {
-    label: 'gitlab subgroup-namespace imported',
-    brief: buildBrief({
-      id: 'kt-2026-0201',
-      source: {
-        type: 'imported',
-        issue_url: `${GITLAB_BASE_URL}/team/backend/payments/-/issues/7`,
-      },
-      repo: { forge: 'gitlab', base_url: GITLAB_BASE_URL, full_name: 'team/backend/payments' },
-    }),
-  },
-  {
-    label: 'gitlab subgroup-namespace native',
-    brief: buildBrief({
-      id: 'kt-2026-0202',
-      source: { type: 'native' },
-      repo: { forge: 'gitlab', base_url: GITLAB_BASE_URL, full_name: 'team/backend/payments' },
-    }),
-  },
-  {
-    label: 'gitea imported',
-    brief: buildBrief({
-      id: 'kt-2026-0301',
-      source: { type: 'imported', issue_url: `${GITEA_BASE_URL}/team/orders/issues/3` },
-      repo: { forge: 'gitea', base_url: GITEA_BASE_URL, full_name: 'team/orders' },
-    }),
-  },
-  {
-    label: 'gitea native',
-    brief: buildBrief({
-      id: 'kt-2026-0302',
-      source: { type: 'native' },
-      repo: { forge: 'gitea', base_url: GITEA_BASE_URL, full_name: 'team/orders' },
-    }),
-  },
-]
 
 async function loadWorkflowTarget() {
-  // Dynamic, per-test import (rather than a static top-level import) so a missing production
-  // module fails each Section A/B test individually with its own clear "Cannot find module"
-  // signal, instead of aborting the entire file (which would mask Section C/D/E's independent,
-  // differently-caused RED failures behind one module-resolution error).
+  // Dynamic import (rather than a static top-level one) so a missing module fails this one test
+  // with its own clear "Cannot find module" signal, instead of aborting the entire file and masking
+  // Section C/D's independent, differently-caused RED failures behind one module-resolution error.
   return import('./workflow-target.ts')
 }
 
-describe('Issue #33 workflow-target.ts — pure Workflow-target mapping (no I/O)', () => {
-  test('apps/server/src/workflow-target.ts must exist and export workflowTargetForTask as a function', async () => {
-    const mod = await loadWorkflowTarget()
-    assert.equal(
-      typeof (mod as { workflowTargetForTask?: unknown }).workflowTargetForTask,
-      'function',
-      'workflow-target.ts must export a workflowTargetForTask(brief) function',
-    )
-  })
-
-  for (const fixture of FIXTURES.filter((f) => f.brief.source.type === 'imported')) {
-    test(`${fixture.label}: an imported Task's existing issue_url becomes an available Workflow target, never contains a token, and is JSON-serializable`, async () => {
-      const { workflowTargetForTask } = await loadWorkflowTarget()
-      const target = workflowTargetForTask(fixture.brief)
-      assert.equal(target.target_kind, 'issue', `expected target_kind 'issue', got ${JSON.stringify(target)}`)
-      assert.equal(target.available, true, `an imported Task's target must be marked available: ${JSON.stringify(target)}`)
-      assert.equal(
-        target.issue_url,
-        (fixture.brief.source as { issue_url: string }).issue_url,
-        'the Workflow target must name the Task brief\'s own existing issue_url, not a derived or fabricated one',
-      )
-      assert.equal(target.project_name, null)
-      assert.equal(target.advisory, null, 'an available issue target must carry no advisory-unavailable observation')
-      assertSerializable(target)
-      assertNoTokenShapedText(JSON.stringify(target), `${fixture.label} WorkflowTarget`)
-    })
-  }
-
-  for (const fixture of FIXTURES.filter((f) => f.brief.source.type === 'native')) {
-    test(`${fixture.label}: a native Task gets an issue-less project named from the Task id, marked advisory-unavailable with the measured reason and Workflow snapshot identity`, async () => {
-      const { workflowTargetForTask } = await loadWorkflowTarget()
-      const target = workflowTargetForTask(fixture.brief)
-      assert.equal(
-        target.target_kind,
-        'issueless_project',
-        `expected target_kind 'issueless_project', got ${JSON.stringify(target)}`,
-      )
-      assert.equal(target.available, false, `a native Task's target must be marked unavailable, not thrown: ${JSON.stringify(target)}`)
-      assert.equal(target.issue_url, null)
-      assert.equal(
-        target.project_name,
-        fixture.brief.id,
-        'the intended (unavailable) Workflow project name must be the Task\'s own public id',
-      )
-      assert.ok(target.advisory, 'an unavailable target must carry an advisory observation, not silently omit one')
-      assert.match(
-        target.advisory.reason,
-        /no_target/i,
-        `advisory.reason must name the measured cmdStartup 'no_target' refusal rather than assume issue-less-project support: ${target.advisory.reason}`,
-      )
-      assert.equal(
-        target.advisory.workflow_version,
-        WORKFLOW_MEASURED_VERSION,
-        'advisory must cite the exact measured Kaola Workflow version, not a placeholder',
-      )
-      assert.equal(
-        target.advisory.workflow_commit,
-        WORKFLOW_MEASURED_COMMIT,
-        'advisory must cite the exact measured Kaola Workflow commit, not a placeholder',
-      )
-      assertSerializable(target)
-      assertNoTokenShapedText(JSON.stringify(target), `${fixture.label} WorkflowTarget`)
-    })
-  }
-
-  test('workflowTargetForTask performs zero forge calls and therefore creates no forge Issue, for every imported/native fixture across github, gitlab (subgroup namespace) and gitea', async (t) => {
-    const originalFetch = globalThis.fetch
-    let calls = 0
-    globalThis.fetch = (async (...args: unknown[]) => {
-      calls += 1
-      throw new Error(
-        `workflowTargetForTask must never call fetch (no forge calls, no forge Issue creation); got a call: ${JSON.stringify(args[0])}`,
-      )
-    }) as typeof fetch
-    t.after(() => {
-      globalThis.fetch = originalFetch
-    })
-
-    const { workflowTargetForTask } = await loadWorkflowTarget()
-    for (const fixture of FIXTURES) {
-      workflowTargetForTask(fixture.brief)
-    }
-    assert.equal(
-      calls,
-      0,
-      `workflowTargetForTask must make zero forge calls across all fixtures; observed ${calls} fetch call(s)`,
+describe('Issue #39 A4 — the Claim MCP contract no longer models "claim succeeded but no Workflow target"', () => {
+  test('apps/server/src/workflow-target.ts must no longer exist: its issueless_project/available:false model is a retired contract, not dead code left in place', async () => {
+    await assert.rejects(
+      () => loadWorkflowTarget(),
+      (err: unknown) => {
+        const message = String((err as { message?: unknown })?.message ?? err)
+        assert.match(
+          message,
+          /Cannot find module|ERR_MODULE_NOT_FOUND/i,
+          `expected a module-not-found rejection once workflow-target.ts is deleted, got: ${message}`,
+        )
+        return true
+      },
+      'workflow-target.ts must be deleted (Issue #39): the confirmed product line requires every ' +
+        'successful claim to enter Workflow, so a mapping whose native-task branch reports the ' +
+        'Workflow target unavailable now asserts a false contract, and the module already has zero ' +
+        'production callers',
     )
   })
 })
@@ -532,6 +390,75 @@ describe('Issue #33 MCP contract text — initialize instructions and tool surfa
     assert.match(description, /lease/i, `claim_task description must mention lease expiry: ${description}`)
     assert.match(description, /revoke/i, `claim_task description must describe what revocation scope means: ${description}`)
   })
+
+  // --- Issue #39 A2: the real initialize instructions must state Workflow is REQUIRED after a
+  // successful claim_task (not merely the #33 default), and that submitting a PR once Workflow
+  // completes is required. Baseline (measured live against this commit before these two tests were
+  // added): the instructions text contains no 必须/required/must at all, and no mention of PR or
+  // submit_pr whatsoever — so both tests below fail on missing content, not on wrong wording. ---
+
+  test('Issue #39 A2: initialize result.instructions states Workflow is REQUIRED after a successful claim, not merely the default', async (t) => {
+    const app = await bootApp(t)
+    const { identity } = await pairDeviceToSelf(app, undefined, { hostname: 'contract-workflow-required' })
+    const { rpc } = await initializeMcpSession(app, identity)
+    const instructions = String(rpc.result?.instructions ?? '')
+    assertNoTokenShapedText(instructions, 'initialize instructions')
+    // Keyword-only, sentence-scoped so the implementer keeps prose freedom: some sentence must pair
+    // a requirement word (必须/required/must) with Workflow, not merely mention each independently.
+    assertSentenceContainsAll(
+      instructions,
+      [/Workflow/i, /(必须|\brequired\b|\bmust\b)/i],
+      'initialize instructions',
+      `must state, in one sentence, that Kaola Workflow is REQUIRED (必须/required/must) after a successful claim_task — not only that it is the default: ${instructions}`,
+    )
+  })
+
+  test('Issue #39 A2: initialize result.instructions states submitting a PR after Workflow completes is default AND required', async (t) => {
+    const app = await bootApp(t)
+    const { identity } = await pairDeviceToSelf(app, undefined, { hostname: 'contract-pr-required' })
+    const { rpc } = await initializeMcpSession(app, identity)
+    const instructions = String(rpc.result?.instructions ?? '')
+    assertNoTokenShapedText(instructions, 'initialize instructions')
+    assertSentenceContainsAll(
+      instructions,
+      [/PR|submit_pr/i, /(必须|\brequired\b|\bmust\b)/i],
+      'initialize instructions',
+      `must state, in one sentence, that submitting a PR after Workflow completes is required (必须/required/must), not merely a suggested next step: ${instructions}`,
+    )
+  })
+
+  // --- Issue #39 A3: submit_pr's own registered tool description must state it is the required
+  // completion of the Workflow path. This must NOT change submit_pr's input schema (still asserted,
+  // unchanged, by the six-tools/no-new-field test above) and must NOT change the six-tool count.
+  // Baseline: submit_pr's description never mentions Workflow at all today, so this fails on missing
+  // content — not a false-positive collision with its unrelated existing "claim_id is required for
+  // a Claim minted with request_id" wording, which never mentions Workflow either. ---
+
+  test('Issue #39 A3: submit_pr tool description states it is the required completion of the Workflow path', async (t) => {
+    const app = await bootApp(t)
+    const { identity } = await pairDeviceToSelf(app, undefined, { hostname: 'contract-submit-pr-required' })
+    const { sessionId } = await initializeMcpSession(app, identity)
+    const tools = await listMcpTools(app, identity, sessionId)
+    assert.equal(tools.length, 6, `expected exactly six tools, got ${tools.length}: ${tools.map((tool) => tool.name).join(', ')}`)
+
+    const submitPr = tools.find((tool) => tool.name === 'submit_pr')
+    assert.ok(submitPr, 'submit_pr tool must still be registered')
+    const description = (submitPr as { description: string }).description
+    assertNoTokenShapedText(description, 'submit_pr description')
+    // assertClauseContainsAll, not assertSentenceContainsAll: this description has no 。 and its
+    // only '. ' boundary is followed by lowercase "claim_id", so assertSentenceContainsAll's
+    // capital/CJK-gated split never fires and the whole description collapses into one "sentence" —
+    // letting the unrelated "claim_id is required for a Claim minted with request_id" clause supply
+    // the requirement word for an entirely separate Workflow mention. assertClauseContainsAll splits
+    // on every '.'/'。' boundary regardless of case, so Workflow and the requirement word must
+    // genuinely co-occur in the same clause.
+    assertClauseContainsAll(
+      description,
+      [/Workflow/i, /(必须|\brequired\b|\bmust\b)/i],
+      'submit_pr description',
+      `must state, in one clause, that submitting the PR is the required completion of the Workflow path — today it never mentions Workflow at all: ${description}`,
+    )
+  })
 })
 
 // --- Section D: client guidance doc --------------------------------------------------------------
@@ -554,15 +481,34 @@ describe('Issue #33 docs/workflow-default.md — client guidance the implementer
     assert.match(text, /forward-only/i, 'must state forward-only recovery after PR/MR creation')
   })
 
-  test('docs/workflow-default.md must document the measured issue-less-project fallback, citing the measured reason and snapshot identity rather than assuming support', () => {
+  // Issue #39 A4 replaces this suite's former "measured issue-less-project fallback" assertion
+  // (which pinned exactly the `available: false`/no-target model Issue #39 retires — see the header
+  // comment and the Issue #39 A4 describe block above). The doc must instead state the corrected
+  // product line: no successful claim ever lacks a Workflow target. Baseline: the doc's own current
+  // "Workflow 目标映射" section still states the opposite for a native task (`available: false`,
+  // `issueless_project`, "not supported"), so this fails on wrong content, not missing content.
+  test('Issue #39 A4: docs/workflow-default.md no longer models a claim succeeding with an unavailable/no Workflow target', () => {
     const text = readFileSync(WORKFLOW_DEFAULT_DOC_PATH, 'utf8')
-    assert.match(text, /issue-less|issueless/i, 'must name the issue-less-project fallback')
-    assert.match(text, new RegExp(WORKFLOW_MEASURED_VERSION.replace(/\./g, '\\.')), 'must cite the measured Kaola Workflow version')
-    assert.match(text, new RegExp(WORKFLOW_MEASURED_COMMIT, 'i'), 'must cite the measured Kaola Workflow commit')
-    assert.match(
+    assert.doesNotMatch(
       text,
-      /no_target|not supported/i,
-      'must record the measured refusal reason, not an assumed capability',
+      /issueless_project/,
+      'must not name the retired issueless_project target_kind',
+    )
+    assert.doesNotMatch(
+      text,
+      /available:\s*false/,
+      'must not document any Workflow target as available: false — every successful claim now gets one',
+    )
+    assert.doesNotMatch(
+      text,
+      /advisory-unavailable/i,
+      'must not describe a Workflow target as advisory-unavailable',
+    )
+    assertSentenceContainsAll(
+      text,
+      [/(每|所有).*?(成功|通过).*?(claim|认领)|claim_task.*?(成功)/i, /Workflow/i, /(必须|\brequired\b|\bmust\b)/i],
+      'docs/workflow-default.md',
+      'must state that Workflow is required for every successful claim, with no issue-less exception',
     )
   })
 
@@ -572,20 +518,71 @@ describe('Issue #33 docs/workflow-default.md — client guidance the implementer
   })
 })
 
-// --- Section E: token scan over this suite's own fixtures ----------------------------------------
+// Issue #33's former Section E ("token scan over this suite's own fixtures") is removed along with
+// the FIXTURES it scanned — see the Issue #39 amendment in this file's header comment for why that
+// is a deliberate contract retirement, not a coverage gap: the new Issue #39 tests above already
+// call assertNoTokenShapedText on the real (non-fixture) instructions/description/doc text they
+// read, so the "no token in a Claim MCP contract surface" invariant stays covered.
 
-describe('Issue #33 token scan — fixtures this suite adds carry no token-shaped material', () => {
-  test('every workflow-target fixture brief (imported/native across github, gitlab-subgroup, gitea) is token-free', () => {
-    for (const fixture of FIXTURES) {
-      assertNoTokenShapedText(JSON.stringify(fixture.brief), `fixture brief "${fixture.label}"`)
-    }
+// --- Section F: docs/architecture.md must not duplicate the retired "no Workflow target" model ---
+
+const ARCHITECTURE_DOC_PATH = join(repoRoot, 'docs', 'architecture.md')
+
+describe('Issue #39 A4 — docs/architecture.md no longer duplicates the retired "claim succeeded but no Workflow target" model', () => {
+  test('docs/architecture.md no longer describes a native-task Workflow target as an unavailable/issueless_project fallback', () => {
+    const text = readFileSync(ARCHITECTURE_DOC_PATH, 'utf8')
+    assert.doesNotMatch(text, /issueless_project/, 'must not name the retired issueless_project target_kind')
+    assert.doesNotMatch(
+      text,
+      /available:\s*false/,
+      'must not document any Workflow target as available: false — every successful claim now gets one',
+    )
+    assert.doesNotMatch(
+      text,
+      /advisory-unavailable/i,
+      'must not describe a Workflow target as advisory-unavailable',
+    )
+  })
+})
+
+// --- Section G: docs/DESIGN.md §15 — Workflow is required, PR submission is required (Issue #39 A1) --
+
+const DESIGN_DOC_PATH = join(repoRoot, 'docs', 'DESIGN.md')
+
+// §15 ("Claim 执行兼容层（规划）") is the last numbered section in DESIGN.md at RED time, so slicing
+// from its heading to end-of-file captures the whole section without depending on a §16 that may or
+// may not exist by the time this is read again.
+function readDesignSection15(): string {
+  const text = readFileSync(DESIGN_DOC_PATH, 'utf8')
+  const heading = /^## 15\.\s/m
+  const match = heading.exec(text)
+  assert.ok(match, 'docs/DESIGN.md must still contain a "## 15." section (Claim 执行兼容层)')
+  return text.slice(match!.index)
+}
+
+describe('Issue #39 A1 — docs/DESIGN.md §15 states Workflow is required (not merely default) and PR submission after completion is required', () => {
+  // Baseline (measured live against this commit): §15 only ever says claim_task 成功后"默认"由当前
+  // MCP Agent 直接运行 Kaola Workflow (docs/DESIGN.md:356) — 必须/required/must appears nowhere in
+  // the section, and the section never mentions PR/MR at all. Both tests below therefore fail on
+  // missing content, not on wrong wording.
+  test('§15 states claim_task success REQUIRES the current Agent to start Kaola Workflow, not merely defaults to it', () => {
+    const section = readDesignSection15()
+    assertNoTokenShapedText(section, 'docs/DESIGN.md §15')
+    assertSentenceContainsAll(
+      section,
+      [/claim_task/, /(必须|\brequired\b|\bmust\b)/i, /Kaola Workflow/],
+      'docs/DESIGN.md §15',
+      `must state, in one sentence, that a successful claim_task REQUIRES the current Agent to run Kaola Workflow — today it only says 默认 (default): ${section}`,
+    )
   })
 
-  test('every computed WorkflowTarget for those fixtures is token-free', async () => {
-    const { workflowTargetForTask } = await loadWorkflowTarget()
-    for (const fixture of FIXTURES) {
-      const target = workflowTargetForTask(fixture.brief)
-      assertNoTokenShapedText(JSON.stringify(target), `WorkflowTarget for "${fixture.label}"`)
-    }
+  test('§15 states submitting a PR after Workflow completes is default AND required, not optional', () => {
+    const section = readDesignSection15()
+    assertSentenceContainsAll(
+      section,
+      [/Workflow/, /(完成|complet)/i, /PR|MR/, /(必须|\brequired\b|\bmust\b)/i],
+      'docs/DESIGN.md §15',
+      `must state, in one sentence, that submitting a PR/MR once Workflow completes is required — today §15 never mentions PR/MR at all: ${section}`,
+    )
   })
 })

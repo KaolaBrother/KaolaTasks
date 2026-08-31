@@ -70,12 +70,18 @@ export interface ForgeAdapter {
 export type CreateForgeAdapterOptions = {
   baseUrl?: string
   webhookSecret?: string
+  timeoutMs?: number
 }
 
 const ALL_MISSING: TokenCheck = { missing: ['读', '推', 'PR'] }
 const GITHUB_API_ORIGIN = 'https://api.github.com'
 const GITHUB_USER_AGENT = 'KaolaTasks'
 const GITHUB_ACCEPT = 'application/vnd.github+json'
+// Issue #37: every outbound forge fetch must carry a bounded, configurable abort deadline so a
+// forge that hangs (rather than refuses) can never block an operation forever. 10s is generous
+// for a healthy forge (GitHub/GitLab/Gitea API calls normally resolve in well under a second) but
+// still short enough that a genuinely hung connection doesn't stall the caller indefinitely.
+const DEFAULT_TIMEOUT_MS = 10_000
 
 export function createForgeAdapter(
   kind: ForgeKind,
@@ -104,13 +110,13 @@ async function validateToken(
 ): Promise<TokenCheck> {
   const token = cred.token
   const userUrl = apiUrl(kind, options, repo, userPath())
-  const userRes = await forgeGet(kind, userUrl, token)
+  const userRes = await forgeGet(kind, userUrl, token, options)
   if (userRes.status === 401) {
     return { missing: [...ALL_MISSING.missing] }
   }
 
   const repoUrl = apiUrl(kind, options, repo, repoPath(kind, repo.full_name))
-  const repoRes = await forgeGet(kind, repoUrl, token)
+  const repoRes = await forgeGet(kind, repoUrl, token, options)
   if (repoRes.status !== 200) {
     return { missing: [...ALL_MISSING.missing] }
   }
@@ -250,7 +256,7 @@ async function getPullRequest(
   prUrl: string,
 ): Promise<PrStatus> {
   const url = prApiUrl(kind, options, prUrl)
-  const res = await forgeGet(kind, url, cred.token)
+  const res = await forgeGet(kind, url, cred.token, options)
   if (!res.ok) {
     throw new Error(`getPullRequest: ${kind} responded ${res.status}`)
   }
@@ -368,11 +374,13 @@ async function forgePost(
   url: string,
   token: string,
   body: unknown,
+  options?: CreateForgeAdapterOptions,
 ): Promise<Response> {
   return globalThis.fetch(url, {
     method: 'POST',
     headers: { ...authHeaders(kind, token), 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(options?.timeoutMs ?? DEFAULT_TIMEOUT_MS),
   })
 }
 
@@ -393,7 +401,7 @@ async function registerWebhook(
       events: ['pull_request'],
       config: { url: callback, content_type: 'json', secret, insecure_ssl: '0' },
     }
-    const res = await forgePost(kind, url, cred.token, body)
+    const res = await forgePost(kind, url, cred.token, body, options)
     if (!res.ok) throw new Error(`registerWebhook: ${kind} responded ${res.status}`)
     return
   }
@@ -402,7 +410,7 @@ async function registerWebhook(
     const origin = (options?.baseUrl ?? '').replace(/\/+$/u, '')
     const url = `${origin}/api/v4/projects/${encodeURIComponent(repo.full_name)}/hooks`
     const body = { url: callback, merge_requests_events: true, token: secret }
-    const res = await forgePost(kind, url, cred.token, body)
+    const res = await forgePost(kind, url, cred.token, body, options)
     if (!res.ok) throw new Error(`registerWebhook: ${kind} responded ${res.status}`)
     return
   }
@@ -416,7 +424,7 @@ async function registerWebhook(
     config: { url: callback, content_type: 'json', secret },
     active: true,
   }
-  const res = await forgePost(kind, url, cred.token, body)
+  const res = await forgePost(kind, url, cred.token, body, options)
   if (!res.ok) throw new Error(`registerWebhook: ${kind} responded ${res.status}`)
 }
 
@@ -513,7 +521,7 @@ async function importIssue(
   issueUrl: string,
 ): Promise<ImportedIssue> {
   const resolved = resolveImportedIssue(kind, options, issueUrl)
-  const res = await forgeGet(kind, resolved.apiUrl, cred.token)
+  const res = await forgeGet(kind, resolved.apiUrl, cred.token, options)
   if (!res.ok) {
     throw new Error(`importIssue: ${kind} responded ${res.status}`)
   }
@@ -576,7 +584,7 @@ async function listIssues(
   repo: RepoRef,
 ): Promise<ListedIssue[]> {
   const url = listIssuesApiUrl(kind, options, repo)
-  const res = await forgeGet(kind, url, cred.token)
+  const res = await forgeGet(kind, url, cred.token, options)
   if (!res.ok) {
     throw new Error(`listIssues: ${kind} responded ${res.status}`)
   }
@@ -604,7 +612,7 @@ async function commentOnIssue(
 ): Promise<void> {
   const resolved = resolveImportedIssue(kind, options, issueRef.issue_url)
   const url = kind === 'gitlab' ? `${resolved.apiUrl}/notes` : `${resolved.apiUrl}/comments`
-  const res = await forgePost(kind, url, cred.token, { body })
+  const res = await forgePost(kind, url, cred.token, { body }, options)
   if (!res.ok) {
     throw new Error(`commentOnIssue: ${kind} responded ${res.status}`)
   }
@@ -649,10 +657,16 @@ function authHeaders(kind: ForgeKind, token: string): Record<string, string> {
   return { Authorization: `token ${token}` }
 }
 
-async function forgeGet(kind: ForgeKind, url: string, token: string): Promise<Response> {
+async function forgeGet(
+  kind: ForgeKind,
+  url: string,
+  token: string,
+  options?: CreateForgeAdapterOptions,
+): Promise<Response> {
   return globalThis.fetch(url, {
     method: 'GET',
     headers: authHeaders(kind, token),
+    signal: AbortSignal.timeout(options?.timeoutMs ?? DEFAULT_TIMEOUT_MS),
   })
 }
 
