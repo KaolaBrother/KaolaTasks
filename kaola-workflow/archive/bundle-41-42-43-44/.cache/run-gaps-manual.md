@@ -1,0 +1,2 @@
+gap: english-error-copy-in-chinese-ui — apps/web/src/App.vue has six sites (1828, 1888, 1893, 1961, 1969, 2016) that trust body.message for any non-ok status, so Fastify's default 500 envelope would render raw English internal error text in the Chinese-only admin UI; five are pre-existing and the candidate adds the sixth
+gap: fixture-assert-prints-fake-token — the new credential-diagnostic test's own setup line asserts equality against a hardcoded fake token-shaped fixture, so a setup failure would print token-shaped text that is already visible in the source
