@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createDb } from './db.ts'
 import { pollPendingReviews } from './poller.ts'
+import { settleWritebacks } from './writeback.ts'
 import { injectSigned, pairDeviceToSelf } from './device-proof.test-helpers.ts'
 import { ensureSetup } from './auth.test-helpers.ts'
 
@@ -596,6 +597,7 @@ describe('issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成)', 
 
       const claimed = await claimTaskHttp(app, { token: key.identity, publicId: brief.id })
       assert.equal(claimed.statusCode, 201, `claim: ${claimed.statusCode} ${claimed.body}`)
+      await settleWritebacks()
       assert.equal(jsonBody(claimed).token, GITEA_INLINE_TOKEN)
 
       const commentPosts = stub.commentRequests.filter((r) => r.url === giteaCommentUrl(501))
@@ -633,6 +635,7 @@ describe('issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成)', 
 
       const claimed = await claimTaskHttp(app, { token: key.identity, publicId: brief.id })
       assert.equal(claimed.statusCode, 201, `claim: ${claimed.statusCode} ${claimed.body}`)
+      await settleWritebacks()
 
       assert.equal(
         stub.commentRequests.length,
@@ -652,6 +655,7 @@ describe('issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成)', 
 
       const claimed = await claimTaskHttp(app, { token: key.identity, publicId: brief.id })
       assert.equal(claimed.statusCode, 201, `claim: ${claimed.statusCode} ${claimed.body}`)
+      await settleWritebacks()
 
       const commentPosts = stub.commentRequests.filter((r) => r.url === githubCommentUrl(541))
       assert.equal(
@@ -674,6 +678,7 @@ describe('issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成)', 
 
       const claimed = await claimTaskHttp(app, { token: key.identity, publicId: brief.id })
       assert.equal(claimed.statusCode, 201, `claim: ${claimed.statusCode} ${claimed.body}`)
+      await settleWritebacks()
 
       const commentPosts = stub.commentRequests.filter((r) => r.url === gitlabCommentUrl(551))
       assert.equal(
@@ -702,6 +707,7 @@ describe('issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成)', 
         `a forge 5xx on the write-back comment must never fail the claim itself, got ${claimed.statusCode} ${claimed.body}`,
       )
       assert.equal(jsonBody(claimed).token, GITEA_INLINE_TOKEN)
+      await settleWritebacks()
 
       const db = openDb(t, sqlitePath)
       assert.equal(
@@ -722,6 +728,7 @@ describe('issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成)', 
       const brief = await createImportedTask(app, poster.cookies, { kind: 'gitea', issueNumber: 511, title: '导入任务-gitea-提交' })
       const claimed = await claimTaskHttp(app, { token: key.identity, publicId: brief.id })
       assert.equal(claimed.statusCode, 201, `setup claim: ${claimed.statusCode} ${claimed.body}`)
+      await settleWritebacks()
 
       const prUrl = `${GITEA_FORGE_BASE_URL}/${GITEA_REPO_FULL_NAME}/pulls/9001`
       const submitted = await submitPrViaMcp(app, key.identity, { taskId: brief.id, prUrl, summary: '已完成分页' })
@@ -752,6 +759,7 @@ describe('issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成)', 
       const brief = await createImportedTask(app, poster.cookies, { kind: 'gitea', issueNumber: 512, title: '导入任务-gitea-提交失败' })
       const claimed = await claimTaskHttp(app, { token: key.identity, publicId: brief.id })
       assert.equal(claimed.statusCode, 201)
+      await settleWritebacks()
 
       const prUrl = `${GITEA_FORGE_BASE_URL}/${GITEA_REPO_FULL_NAME}/pulls/9002`
       stub.setNextCommentResponse({ unreachable: true })
@@ -772,6 +780,7 @@ describe('issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成)', 
       const brief = await createImportedTask(app, poster.cookies, { kind: 'gitea', issueNumber: 521, title: '导入任务-gitea-完成-轮询' })
       const claimed = await claimTaskHttp(app, { token: key.identity, publicId: brief.id })
       assert.equal(claimed.statusCode, 201)
+      await settleWritebacks()
       const prUrl = `${GITEA_FORGE_BASE_URL}/${GITEA_REPO_FULL_NAME}/pulls/9011`
       const submitted = await submitPrViaMcp(app, key.identity, { taskId: brief.id, prUrl, summary: '完成用例' })
       assert.equal(submitted.task.status, '待验收')
@@ -809,6 +818,7 @@ describe('issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成)', 
       const brief = await createImportedTask(app, poster.cookies, { kind: 'gitea', issueNumber: 522, title: '导入任务-gitea-完成-webhook' })
       const claimed = await claimTaskHttp(app, { token: key.identity, publicId: brief.id })
       assert.equal(claimed.statusCode, 201)
+      await settleWritebacks()
       const prUrl = `${GITEA_FORGE_BASE_URL}/${GITEA_REPO_FULL_NAME}/pulls/9012`
       const submitted = await submitPrViaMcp(app, key.identity, { taskId: brief.id, prUrl, summary: '完成用例-webhook' })
       assert.equal(submitted.task.status, '待验收')
@@ -849,6 +859,7 @@ describe('issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成)', 
       const brief = await createImportedTask(app, poster.cookies, { kind: 'gitea', issueNumber: 523, title: '导入任务-gitea-已退回' })
       const claimed = await claimTaskHttp(app, { token: key.identity, publicId: brief.id })
       assert.equal(claimed.statusCode, 201)
+      await settleWritebacks()
       const prUrl = `${GITEA_FORGE_BASE_URL}/${GITEA_REPO_FULL_NAME}/pulls/9013`
       const submitted = await submitPrViaMcp(app, key.identity, { taskId: brief.id, prUrl, summary: '未通过验收' })
       assert.equal(submitted.task.status, '待验收')
@@ -877,6 +888,7 @@ describe('issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成)', 
       const brief = await createImportedTask(app, poster.cookies, { kind: 'gitea', issueNumber: 524, title: '导入任务-gitea-完成失败' })
       const claimed = await claimTaskHttp(app, { token: key.identity, publicId: brief.id })
       assert.equal(claimed.statusCode, 201)
+      await settleWritebacks()
       const prUrl = `${GITEA_FORGE_BASE_URL}/${GITEA_REPO_FULL_NAME}/pulls/9014`
       const submitted = await submitPrViaMcp(app, key.identity, { taskId: brief.id, prUrl, summary: '完成评论失败用例' })
       assert.equal(submitted.task.status, '待验收')
@@ -906,6 +918,7 @@ describe('issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成)', 
       const brief = await createNativeTask(app, poster.cookies, { kind: 'gitea', title: '原生任务-全流程' })
       const claimed = await claimTaskHttp(app, { token: key.identity, publicId: brief.id })
       assert.equal(claimed.statusCode, 201)
+      await settleWritebacks()
 
       const prUrl = `${GITEA_FORGE_BASE_URL}/${GITEA_REPO_FULL_NAME}/pulls/9031`
       const submitted = await submitPrViaMcp(app, key.identity, { taskId: brief.id, prUrl, summary: '原生任务提交' })
@@ -936,6 +949,7 @@ describe('issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成)', 
       stub.setNextCommentResponse({ status: 500 })
       const claimed = await claimTaskHttp(app, { token: key.identity, publicId: brief.id })
       assert.equal(claimed.statusCode, 201, `claim must still succeed despite the forge 5xx, got ${claimed.statusCode} ${claimed.body}`)
+      await settleWritebacks()
 
       const db = openDb(t, sqlitePath)
       assert.equal(
@@ -980,6 +994,7 @@ describe('issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成)', 
       const brief = await createImportedTask(app, poster.cookies, { kind: 'gitea', issueNumber: 532, title: '导入任务-gitea-完成重试' })
       const claimed = await claimTaskHttp(app, { token: key.identity, publicId: brief.id })
       assert.equal(claimed.statusCode, 201)
+      await settleWritebacks()
       const prUrl = `${GITEA_FORGE_BASE_URL}/${GITEA_REPO_FULL_NAME}/pulls/9041`
       const submitted = await submitPrViaMcp(app, key.identity, { taskId: brief.id, prUrl, summary: '完成重试用例' })
       assert.equal(submitted.task.status, '待验收')

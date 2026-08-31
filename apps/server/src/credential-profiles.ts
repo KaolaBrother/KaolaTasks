@@ -1,10 +1,10 @@
 import { createForgeAdapter } from '@kaola/forge-adapters'
-import { eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { getSessionUser, sendUnauthorized } from './auth.ts'
 import type { AppDb } from './db.ts'
 import { canPublish } from './permissions.ts'
-import { type CredentialProfile, credentialProfiles } from './schema.ts'
+import { type CredentialProfile, credentialProfiles, tasks } from './schema.ts'
 import {
   decryptToken,
   encryptToken,
@@ -15,7 +15,12 @@ import {
 const FORGE_REVOKE_MESSAGE = '请同时到 forge 侧撤销该 token。'
 const LIST_TOKEN_INVALID_MESSAGE = 'token 无效或无权读取该 Issue。'
 const LIST_FORGE_UNREACHABLE_MESSAGE = '无法连接 forge 列出 Issue。'
+const CREDENTIAL_PROFILE_IN_USE_MESSAGE = '该凭证档案仍被未完成任务引用，暂不能删除。'
 const FORGES = new Set(['github', 'gitlab', 'gitea'])
+// Issue #36: retention — a profile referenced by a task still in flight must survive DELETE, so a
+// claimed/submitted/returned task never loses the credential it was published or claimed with.
+// Terminal tasks (已完成/已取消) or no reference at all: delete exactly as before.
+const NON_TERMINAL_TASK_STATUSES = ['待认领', '进行中', '待验收', '已退回'] as const
 
 function canManageProfiles(user: { status: string; permissionLevel: string }): boolean {
   return canPublish(user)
@@ -60,6 +65,16 @@ function isUniqueConstraintError(err: unknown): boolean {
     }
   }
   return false
+}
+
+function isReferencedByNonTerminalTask(db: AppDb, profileId: number): boolean {
+  const row = db
+    .select({ id: tasks.id })
+    .from(tasks)
+    .where(and(eq(tasks.credentialProfileId, profileId), inArray(tasks.status, NON_TERMINAL_TASK_STATUSES)))
+    .limit(1)
+    .get()
+  return row != null
 }
 
 function parsePositiveInt(raw: string): number | undefined {
@@ -233,6 +248,13 @@ export function registerCredentialProfiles(app: FastifyInstance, db: AppDb) {
     const id = parsePositiveInt((request.params as { id: string }).id)
     if (id == null) {
       return reply.code(404).send({ error: 'not_found' })
+    }
+
+    if (isReferencedByNonTerminalTask(db, id)) {
+      return reply.code(409).send({
+        error: 'credential_profile_in_use',
+        message: CREDENTIAL_PROFILE_IN_USE_MESSAGE,
+      })
     }
 
     const deleted = db

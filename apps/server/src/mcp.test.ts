@@ -828,7 +828,9 @@ function assertClaimEnvelope(body, { forgeToken, suggestedDir, nowUnix }) {
   assertBriefShape(body.task)
   assert.equal(body.task.status, '进行中')
   assertClaimRevealToken(body, forgeToken)
-  assert.deepEqual(Object.keys(body.lease).sort(), ['expires_at', 'ttl_seconds'])
+  // Issue #36: the claim lease envelope gains a derived, opaque claim_id alongside the existing
+  // fields (report_progress's envelope is unaffected).
+  assert.deepEqual(Object.keys(body.lease).sort(), ['claim_id', 'expires_at', 'ttl_seconds'])
   assert.equal(body.lease.ttl_seconds, TTL_SECONDS)
   assert.equal(body.lease.expires_at, expiresAtIso(nowUnix))
   assertCloneRecipe(body.clone, {

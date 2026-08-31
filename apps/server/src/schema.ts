@@ -107,6 +107,9 @@ export const leases = sqliteTable('leases', {
   expiresAt: integer('expires_at').notNull(),
   lastHeartbeat: integer('last_heartbeat').notNull(),
   state: text('state', { enum: ['active', 'released', 'expired'] }).notNull(),
+  // Issue #36: the client-supplied idempotency key for a claim attempt (device_id, request_id)
+  // pair. Nullable — legacy leases and clients that omit request_id have none.
+  requestId: text('request_id'),
 })
 
 // DESIGN.md §10: submissions persist a submitted PR against the lease that held the task.

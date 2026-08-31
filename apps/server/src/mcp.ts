@@ -114,10 +114,10 @@ function createKaolaMcpServer(db: AppDb, authHolder: AuthHolder): McpServer {
   server.registerTool(
     'claim_task',
     {
-      description: `Claim a task and receive a one-shot forge token. ${CLONE_TOKEN_USAGE} When the human instructed this claim, omit autonomous. Set autonomous: true when the Agent discovered and initiated this claim itself (not on human instruction) — an untrusted user may then need to confirm it in the web UI before a token is issued.`,
-      inputSchema: { task_id: z.string(), autonomous: z.boolean().optional() },
+      description: `Claim a task and receive a one-shot forge token. ${CLONE_TOKEN_USAGE} When the human instructed this claim, omit autonomous. Set autonomous: true when the Agent discovered and initiated this claim itself (not on human instruction) — an untrusted user may then need to confirm it in the web UI before a token is issued. Optional request_id makes retries of the same claim attempt idempotent: replaying the same (device, request_id) returns the same claim_id and credential instead of erroring.`,
+      inputSchema: { task_id: z.string(), autonomous: z.boolean().optional(), request_id: z.string().optional() },
     },
-    async (args) => toToolResult(await claimTask(db, authHolder.auth, args.task_id, args.autonomous)),
+    async (args) => toToolResult(await claimTask(db, authHolder.auth, args.task_id, args.autonomous, args.request_id)),
   )
 
   server.registerTool(

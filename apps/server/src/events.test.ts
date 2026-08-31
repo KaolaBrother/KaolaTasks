@@ -498,10 +498,17 @@ describe('issue #15 audit log HTTP + team stats', { concurrency: false }, () => 
       assert.equal(reveal.length, 1)
       assert.equal(reveal[0].actor_user_id, poster.body.id)
       assert.equal(reveal[0].actor_username, poster.body.username)
+      // Issue #36: the reveal event's details gain claim_id/request_id/autonomous — claim_id is a
+      // derived hash, so its shape is checked separately and then substituted into the exact match.
+      assert.equal(typeof reveal[0].details.claim_id, 'string')
+      assert.match(reveal[0].details.claim_id, /^clm_/)
       assert.deepEqual(reveal[0].details, {
         task_id: brief.id,
         device_id: key.id,
         credential: 'inline',
+        claim_id: reveal[0].details.claim_id,
+        request_id: null,
+        autonomous: false,
       })
 
       const transitions = eventsOfType(forTask, STATUS_TRANSITION_EVENT)

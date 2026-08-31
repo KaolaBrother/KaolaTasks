@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { transitionTaskStatus } from '@kaola/shared'
 import type { TaskStatus } from '@kaola/shared'
 import { and, eq, lte } from 'drizzle-orm'
@@ -7,6 +8,10 @@ import { insertAuditEvent } from './vault.ts'
 
 export const LEASE_TTL_SECONDS = 86400
 const STATUS_TRANSITION_EVENT = '状态迁移'
+const CLAIM_ID_PREFIX = 'clm_'
+// 32 base64url characters off a sha256 digest is 192 bits of the hash — collision-proof for this
+// purpose while staying short as an opaque public token.
+const CLAIM_ID_DIGEST_LENGTH = 32
 
 export function unixNow(): number {
   return Math.floor(Date.now() / 1000)
@@ -20,14 +25,34 @@ export function selectActiveLease(db: AppDb, taskId: number): Lease | undefined 
     .get()
 }
 
-export function insertActiveLease(
+// Issue #36: replay identity lookup — any state (active/released/expired), keyed on the pair the
+// contract pins as the idempotency key. A different device presenting the same request_id must
+// never match, hence device_id is part of the predicate rather than request_id alone.
+export function selectLeaseByDeviceRequest(
   db: AppDb,
+  deviceId: number,
+  requestId: string,
+): Lease | undefined {
+  return db
+    .select()
+    .from(leases)
+    .where(and(eq(leases.deviceId, deviceId), eq(leases.requestId, requestId)))
+    .get()
+}
+
+// Structural subset of `AppDb` so callers running inside `db.transaction(...)` can pass the
+// transaction handle, matching `insertAuditEvent`'s `AuditEventWriter` pattern (vault.ts).
+type LeaseInsertWriter = { insert: AppDb['insert'] }
+
+export function insertActiveLease(
+  db: LeaseInsertWriter,
   input: {
     taskId: number
     claimerUserId: number | null
     claimerClaimantId: number | null
     deviceId: number
     now: number
+    requestId?: string | null
   },
 ): Lease {
   const expiresAt = input.now + LEASE_TTL_SECONDS
@@ -43,6 +68,7 @@ export function insertActiveLease(
       expiresAt,
       lastHeartbeat: input.now,
       state: 'active',
+      requestId: input.requestId ?? null,
     })
     .returning()
     .get()
@@ -50,6 +76,37 @@ export function insertActiveLease(
     throw new Error('failed to insert lease')
   }
   return inserted
+}
+
+type ClaimIdentityFields = Pick<
+  Lease,
+  'id' | 'taskId' | 'deviceId' | 'claimedAt' | 'requestId' | 'claimerUserId' | 'claimerClaimantId'
+>
+
+// Length-prefixed so no field's own content (a request_id that happens to contain whatever
+// separator we'd otherwise pick) can shift the hash into colliding with a different lease's.
+function encodeClaimIdentityField(value: string | number | null): string {
+  const raw = value == null ? '' : String(value)
+  return `${raw.length}:${raw}`
+}
+
+// ADR-0030 / Issue #36: claim_id is DERIVED, never stored — an opaque public encoding of the
+// lease row's immutable identity. Only fields that can never change across a heartbeat or a
+// terminal transition may participate here (never state / expiresAt / lastHeartbeat).
+export function claimIdForLease(lease: ClaimIdentityFields): string {
+  const material = [
+    lease.id,
+    lease.taskId,
+    lease.deviceId,
+    lease.claimedAt,
+    lease.requestId,
+    lease.claimerUserId,
+    lease.claimerClaimantId,
+  ]
+    .map(encodeClaimIdentityField)
+    .join('')
+  const digest = createHash('sha256').update(material).digest('base64url')
+  return `${CLAIM_ID_PREFIX}${digest.slice(0, CLAIM_ID_DIGEST_LENGTH)}`
 }
 
 export function renewActiveLease(db: AppDb, leaseId: number, now: number): number {

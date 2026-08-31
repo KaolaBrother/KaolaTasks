@@ -628,7 +628,9 @@ function assertClaim201(res, { forgeToken, suggestedDir, nowUnix }) {
   assertBriefShape(body.task)
   assert.equal(body.task.status, '进行中')
   assertClaimRevealToken(body, forgeToken)
-  assert.deepEqual(Object.keys(body.lease).sort(), ['expires_at', 'ttl_seconds'])
+  // Issue #36: the claim lease envelope gains a derived, opaque claim_id alongside the existing
+  // fields (report_progress's envelope is unaffected — see assertProgress200 below).
+  assert.deepEqual(Object.keys(body.lease).sort(), ['claim_id', 'expires_at', 'ttl_seconds'])
   assert.equal(body.lease.ttl_seconds, TTL_SECONDS)
   assert.equal(body.lease.expires_at, expiresAtIso(nowUnix))
   assertCloneRecipe(body.clone, {
@@ -1612,10 +1614,19 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       const reveals = claimRevealEvents(db, brief.id)
       assert.equal(reveals.length, 1)
       assert.equal(Number(reveals[0].actor_user_id), Number(poster.body.id))
-      assert.deepEqual(parseDetails(reveals[0]), {
+      // Issue #36: the reveal event's details gain claim_id/request_id/autonomous (a legacy claim
+      // with no request_id records request_id: null, autonomous: false) — claim_id is a derived
+      // hash, so its shape is checked separately and then substituted into the exact-match below.
+      const inlineRevealDetails = parseDetails(reveals[0])
+      assert.equal(typeof inlineRevealDetails.claim_id, 'string')
+      assert.match(inlineRevealDetails.claim_id, /^clm_/)
+      assert.deepEqual(inlineRevealDetails, {
         task_id: brief.id,
         device_id: key.id,
         credential: 'inline',
+        claim_id: inlineRevealDetails.claim_id,
+        request_id: null,
+        autonomous: false,
       })
       assert.equal(Object.hasOwn(parseDetails(reveals[0]), 'profile_id'), false)
       assertEventOmitsSecrets(reveals[0], INLINE_TOKEN, key.identity.publicKeySpkiB64)
@@ -1652,11 +1663,18 @@ describe('issue #9 lease-based claiming', { concurrency: false }, () => {
       const ciphertext = profileCiphertext(db, profile.id)
       const reveals = claimRevealEvents(db, brief.id)
       assert.equal(reveals.length, 1)
-      assert.deepEqual(parseDetails(reveals[0]), {
+      // Issue #36: same claim_id/request_id/autonomous addition as the inline case above.
+      const profileRevealDetails = parseDetails(reveals[0])
+      assert.equal(typeof profileRevealDetails.claim_id, 'string')
+      assert.match(profileRevealDetails.claim_id, /^clm_/)
+      assert.deepEqual(profileRevealDetails, {
         task_id: brief.id,
         device_id: key.id,
         credential: 'profile',
         profile_id: Number(profile.id),
+        claim_id: profileRevealDetails.claim_id,
+        request_id: null,
+        autonomous: false,
       })
       assertEventOmitsSecrets(reveals[0], PROFILE_TOKEN, key.identity.publicKeySpkiB64, ciphertext)
     })

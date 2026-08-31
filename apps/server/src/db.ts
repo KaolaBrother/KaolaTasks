@@ -131,15 +131,16 @@ function rebuildLeasesIfAgentKeyStillRequired(sqlite: InstanceType<typeof Databa
       claimed_at INTEGER NOT NULL,
       expires_at INTEGER NOT NULL,
       last_heartbeat INTEGER NOT NULL,
-      state TEXT NOT NULL
+      state TEXT NOT NULL,
+      request_id TEXT
     );
     INSERT INTO leases__rebuild (
       id, task_id, claimer_user_id, claimer_claimant_id, device_id, agent_key_id,
-      claimed_at, expires_at, last_heartbeat, state
+      claimed_at, expires_at, last_heartbeat, state, request_id
     )
     SELECT
       id, task_id, claimer_user_id, claimer_claimant_id, device_id, agent_key_id,
-      claimed_at, expires_at, last_heartbeat, state
+      claimed_at, expires_at, last_heartbeat, state, request_id
     FROM leases;
     DROP TABLE leases;
     ALTER TABLE leases__rebuild RENAME TO leases;
@@ -264,6 +265,19 @@ CREATE UNIQUE INDEX IF NOT EXISTS leases_one_active_per_task
   ON leases(task_id) WHERE state = 'active'
 `
 
+// Issue #36: request_id is the client-supplied idempotency key for a claim attempt. Nullable —
+// added after rebuildLeasesIfAgentKeyStillRequired so that rebuild's own INSERT ... SELECT (which
+// already carries request_id through, see below) runs against whatever the on-disk table looked
+// like beforehand.
+const LEASES_ADD_REQUEST_ID_DDL = `
+ALTER TABLE leases ADD COLUMN request_id TEXT
+`
+
+const LEASES_DEVICE_REQUEST_IDENTITY_INDEX_DDL = `
+CREATE UNIQUE INDEX IF NOT EXISTS leases_device_request_identity
+  ON leases(device_id, request_id) WHERE request_id IS NOT NULL
+`
+
 const SUBMISSIONS_DDL = `
 CREATE TABLE IF NOT EXISTS submissions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -339,6 +353,8 @@ export function createDb(path = ':memory:') {
   tryAddColumn(sqlite, LEASES_ADD_CLAIMER_CLAIMANT_ID_DDL)
   rebuildLeasesIfAgentKeyStillRequired(sqlite)
   sqlite.exec(LEASES_ONE_ACTIVE_INDEX_DDL)
+  tryAddColumn(sqlite, LEASES_ADD_REQUEST_ID_DDL)
+  sqlite.exec(LEASES_DEVICE_REQUEST_IDENTITY_INDEX_DDL)
   sqlite.exec(SUBMISSIONS_DDL)
   sqlite.exec(CLAIM_CONFIRMATIONS_DDL)
   tryAddColumn(sqlite, CLAIM_CONFIRMATIONS_ADD_DEVICE_ID_DDL)

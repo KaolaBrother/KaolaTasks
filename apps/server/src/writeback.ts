@@ -104,6 +104,38 @@ export async function attemptWriteback(
   }
 }
 
+// Issue #36: claim.ts's 认领 write-back leaves the response path — it must never delay or fail the
+// claim response, so it is fired here without being awaited by the caller. `attemptWriteback`
+// already swallows every fault, so the tracked promise itself never rejects (no unhandled
+// rejection risk); `settleWritebacks` below is the only way a caller observes it deterministically.
+const pendingWritebacks = new Set<Promise<void>>()
+
+function trackWriteback(promise: Promise<void>): void {
+  const tracked = promise.finally(() => {
+    pendingWritebacks.delete(tracked)
+  })
+  pendingWritebacks.add(tracked)
+}
+
+export function scheduleWriteback(
+  db: AppDb,
+  task: Task,
+  transition: WritebackTransition,
+  actorUserId: number | null,
+  prUrl?: string,
+): void {
+  trackWriteback(attemptWriteback(db, task, transition, actorUserId, prUrl))
+}
+
+// Lets a test (or any caller) wait for every currently in-flight background write-back to settle
+// deterministically instead of racing a real timer. Keeps draining until the set is empty, in
+// case awaiting the current batch let a caller schedule another before this returns.
+export async function settleWritebacks(): Promise<void> {
+  while (pendingWritebacks.size > 0) {
+    await Promise.all(pendingWritebacks)
+  }
+}
+
 function parseDetails(raw: string): Record<string, unknown> | undefined {
   try {
     const parsed: unknown = JSON.parse(raw)

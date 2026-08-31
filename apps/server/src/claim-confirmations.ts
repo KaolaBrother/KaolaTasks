@@ -65,20 +65,41 @@ export function insertPendingConfirmation(
   return inserted
 }
 
+// Structural subset of `AppDb` so callers running inside `db.transaction(...)` can pass the
+// transaction handle, matching `insertAuditEvent`'s `AuditEventWriter` pattern (vault.ts).
+type ClaimConfirmationDeleter = { delete: AppDb['delete'] }
+
 // A consumed approval must never match again (a later release + re-claim must 202, not 201), so
 // consuming means removing the row rather than flipping it to some other terminal state.
-export function consumeApprovedConfirmation(db: AppDb, id: number): void {
+export function consumeApprovedConfirmation(db: ClaimConfirmationDeleter, id: number): void {
   db.delete(claimConfirmations).where(eq(claimConfirmations.id, id)).run()
 }
 
 export function recordPendingConfirmEvent(
   db: AppDb,
-  input: { actorUserId: number; publicId: string; deviceId: number },
+  input: {
+    actorUserId: number
+    publicId: string
+    deviceId: number
+    // Issue #36: only recorded when the parking claim attempt carried a request_id, so a legacy
+    // (no request_id) park keeps its exact original `{ task_id, device_id }` details shape — this
+    // lets a later same-request_id attempt with a mismatched digest be refused before any lease
+    // even exists (claim.ts's findPendingConfirmDigest reads it back the same way
+    // findOriginalRevealDigest reads a lease's 揭示 event).
+    requestId?: string
+    autonomous?: boolean
+  },
 ): void {
   insertAuditEvent(db, {
     type: PENDING_CONFIRM_EVENT,
     actorUserId: input.actorUserId,
-    details: { task_id: input.publicId, device_id: input.deviceId },
+    details: {
+      task_id: input.publicId,
+      device_id: input.deviceId,
+      ...(input.requestId != null
+        ? { request_id: input.requestId, autonomous: input.autonomous === true }
+        : {}),
+    },
   })
 }
 
