@@ -43,10 +43,10 @@
 | 九个 `OAUTH_*` | 假占位（`registerAuth` boot 仍 `requireEnv`） | 缺或空 → id/secret `unused`，`OAUTH_GITLAB_BASE_URL=https://gitlab.com`，`OAUTH_GITEA_BASE_URL=https://gitea.com` |
 | `PUBLIC_URL` | 假 | 缺或空 → `http://localhost:31415` |
 | sqlite | 假 | 临时目录隔离文件库，跑完丢掉 |
-| HTTP | 假 | Fastify `inject`，不 listen |
+| HTTP | 混合 | 发布侧 API 用 Fastify `inject`；真实 `kaola-mcp` stdio bridge 连接同一应用的临时 `127.0.0.1` listener |
 | 登录 | 假 | `ensureSetup` 本地管理员，再 stub GitLab OAuth userinfo（用户记成 `gitlab` / `KaolaBrother` / `full` 发布者，不是空库抢权） |
 | 电脑绑定 | 假 | `pairDeviceToSelf`（绑到 setup 管理员） |
-| MCP | 假 | 同一 `inject` 走 `/api/mcp` |
+| MCP | 真 | 生产 `apps/mcp/src/main.ts` stdio bridge；每次调用都以新进程语义重新初始化，并复用临时 `KAOLA_HOME` 的设备身份与 Claim receipt |
 | 建 Issue、clone、开 PR、合并、回写评论 | **真** | 用 PAT 打 `KaolaBrother/kaola-tasks-smoke` |
 
 ```bash
@@ -80,7 +80,9 @@ POST /api/v1/setup → local active+admin（空库 OAuth 不得插用户）
 
 口头让 Agent 去领时不要带 `autonomous`。网页没有「认领」按钮。
 
-**Claim identity（#36/#31，尚未在本手册的任一轮里实测覆盖）：** `claim_task` 现在可选带 `request_id`，成功信封的 `lease` 里新增 `claim_id`（从 lease 行派生，不新建表）；`report_progress` / `release_task` / MCP `submit_pr` 可选带 `claim_id`。`scripts/forge-smoke.ts` 目前不传 `request_id`，走的是遗留（legacy）Claim 路径——`claim_id` 因此在提交 `submit_pr` 时可省，脚本行为不受影响。#31 把设备锁定收紧到「必须是持有该 lease 的**那一台**设备」，也覆盖遗留 Claim；本手册全程只用同一把 `~/.kaola/device.json`，同样不受影响。
+**Claim identity（#36/#31，已实测）：** 调用方仍只给 `claim_task` 传 `task_id`；生产 stdio bridge 会在转发前生成并持久化 `request_id`。成功信封的 `lease` 必须有 `clm_` 前缀的 `claim_id`。随后用全新的 bridge 进程调用 `report_progress` / `release_task` / `submit_pr` 时，bridge 从无密钥 receipt 恢复并自动附加同一个 `claim_id`，调用方不需要手工保存。#31 的设备锁定也已实测：同一账号绑定的另一台设备即使拿到正确 `claim_id`，也必须收到 `403`，不能心跳或改变该 Claim。
+
+脚本还覆盖两种恢复：同一 `request_id` 的 active Claim 重放必须返回同一 `claim_id` 和同一仓库凭证，不新增 lease；Claim 被 `release_task` 终止后，新 bridge 进程先收到 typed `claim_request_conflict`，只轮换一次 `request_id`，再得到新的 `claim_id`。这一过程是局部恢复，不是 hard gate；失败只影响当前操作，不阻断服务器或其他任务。
 
 ## 标准闭环（每家重复一遍）
 
@@ -93,7 +95,7 @@ POST /api/v1/setup → local active+admin（空库 OAuth 不得插用户）
 | 5 | 从 Issue 导入并发布 | **配合** 来源「从 Issue 导入」、凭证「共享档案」、下拉选 Issue，点导入再发布 | **自动** `POST /import` 再 `POST /tasks` |
 | 6 | Agent 申请这台电脑 | **自动** 第一次 MCP → `authorization_required` | **自动** `pairDeviceToSelf` |
 | 7 | 管理员一天内把电脑绑到自己 | **配合** | **自动** |
-| 8 | 人指定任务 id；`claim_task` 只传 `task_id` | **配合** 指定 / **自动** 认领 | **自动** |
+| 8 | 人指定任务 id；`claim_task` 只传 `task_id`，bridge 自动补 `request_id` 并保存 `claim_id` receipt | **配合** 指定 / **自动** 认领 | **自动** |
 | 9 | 按 `clone` 四键 clone、改 README、推分支、开 PR | **自动**（人确认任务后） | **自动** |
 | 10 | `submit_pr` | **自动** | **自动** |
 | 11 | 合并 PR，看任务变已完成；源 Issue 三条回写 | **配合** 点 Merge；Agent 核 SQLite | **自动** 调 forge merge + `pollPendingReviews` |
@@ -131,6 +133,7 @@ POST /api/v1/setup → local active+admin（空库 OAuth 不得插用户）
 | 手册脚本（GitLab stub / 无 GitHub 发布） | 2026-08-25 | B `pnpm smoke:forge -- gitlab` / `gitea` | [Issue #8](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/issues/8) → [MR !6](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/merge_requests/6)，`clone_auth=gitlab-basic-oauth2`，`已完成` | [Issue #10](https://gitea.com/KaolaBrother/kaola-tasks-smoke/issues/10) → [PR #11](https://gitea.com/KaolaBrother/kaola-tasks-smoke/pulls/11)，`clone_auth=envelope`，`已完成` |
 | 手册脚本（#28 后 ensureSetup） | 2026-08-26 | B `pnpm smoke:forge -- gitlab` / `gitea` | [Issue #9](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/issues/9) → [MR !7](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/merge_requests/7)，任务 `kt-2026-0001`，`clone_auth=gitlab-basic-oauth2`，`已完成` | [Issue #12](https://gitea.com/KaolaBrother/kaola-tasks-smoke/issues/12) → [PR #13](https://gitea.com/KaolaBrother/kaola-tasks-smoke/pulls/13)，任务 `kt-2026-0001`，`clone_auth=envelope`，`已完成` |
 | 手册脚本（B 自填进程 env） | 2026-08-26 | B `ensureSimulatedAuthEnv`（未再开真实 Issue） | 空 PAT → `missing env GITLAB_TOKEN`（不是缺 `SESSION_SECRET`）；无 session/vault/OAuth 时 `buildApp`+`ensureSetup` 成功 | 同左 |
+| Claim MCP 完整闭环（#31–#40 后） | 2026-09-01 | B 生产 stdio bridge + 临时本机 listener；先 release/recover，再完整 Workflow/PR 闭环 | [Issue #15](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/issues/15) → [MR !11](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/merge_requests/11)，`request_id`/`claim_id`/跨进程恢复/同设备 fencing/`report_progress`/`release_task`/`submit_pr` 均通过，`clone_auth=gitlab-basic-oauth2`，`已完成` | [Issue #20](https://gitea.com/KaolaBrother/kaola-tasks-smoke/issues/20) → [PR #21](https://gitea.com/KaolaBrother/kaola-tasks-smoke/pulls/21)，同一组 Claim 验证通过，`clone_auth=envelope`，`已完成` |
 
 GitHub 发布冒烟已停（此前仓 [Issue #1](https://github.com/KaolaBrother/kaola-tasks-smoke/issues/1) 开过、未走认领，已标 `not_planned` 关闭）。stdio 桥回放 `mcp-session-id` 已进 `main`；另窗 UAT 曾用短提示词走完认领到 `submit_pr`。
 

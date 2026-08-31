@@ -14,7 +14,8 @@
  * git remotes, mcp.json, or .env.
  *
  * Then: setup local admin → GitLab publisher OAuth stub → credential profile →
- * import Issue → publish → pair device (admin bind) → claim_task → git clone
+ * import Issue → publish → production stdio bridge → pair device (admin bind) →
+ * request_id/claim_id recovery + same-device fencing → Workflow guidance → git clone
  * via the claim envelope → push branch → open PR → submit_pr → merge →
  * pollPendingReviews → 已完成 + 回写.
  *
@@ -29,6 +30,7 @@ import { randomBytes } from 'node:crypto'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { Readable, Writable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../apps/server/src/app.ts'
@@ -36,10 +38,10 @@ import { createDb } from '../apps/server/src/db.ts'
 import {
   injectSigned,
   pairDeviceToSelf,
-  type DeviceIdentity,
 } from '../apps/server/src/device-proof.test-helpers.ts'
 import { pollPendingReviews } from '../apps/server/src/poller.ts'
 import { DEFAULT_SETUP, ensureSetup } from '../apps/server/src/auth.test-helpers.ts'
+import { runStdioBridge } from '../apps/mcp/src/main.ts'
 
 type ForgeKind = 'gitlab' | 'gitea'
 
@@ -67,9 +69,7 @@ type JsonRpc = {
 
 const STUB_OAUTH_ACCESS = 'kaola-forge-smoke-oauth-stub'
 const MCP_PROTOCOL = '2025-11-25'
-const MCP_PATH = '/api/mcp'
 const JSON_HEADERS = { accept: 'application/json', 'content-type': 'application/json' }
-const MCP_ACCEPT = { accept: 'application/json, text/event-stream', 'content-type': 'application/json' }
 
 const FORGES: Record<ForgeKind, ForgeSpec> = {
   gitlab: {
@@ -167,35 +167,6 @@ function installOauthUserinfoStub(): void {
   }
 }
 
-function parseSseMessages(body: string): JsonRpc[] {
-  const messages: JsonRpc[] = []
-  for (const chunk of body.split(/\r?\n\r?\n/)) {
-    if (!chunk.trim()) continue
-    let eventName = 'message'
-    const dataParts: string[] = []
-    for (const line of chunk.split(/\r?\n/)) {
-      if (line.startsWith('event:')) eventName = line.slice('event:'.length).trim()
-      else if (line.startsWith('data:')) dataParts.push(line.slice('data:'.length).replace(/^\s/, ''))
-    }
-    if (eventName === 'message' && dataParts.length > 0) {
-      messages.push(JSON.parse(dataParts.join('\n')) as JsonRpc)
-    }
-  }
-  return messages
-}
-
-function parseJsonRpcHttp(res: { headers: Record<string, unknown>; body: string; statusCode: number }): JsonRpc[] {
-  const contentType = String(res.headers['content-type'] ?? '')
-  const body = String(res.body ?? '')
-  if (contentType.includes('text/event-stream') || /^\s*event:/m.test(body) || /^\s*data:/m.test(body)) {
-    const messages = parseSseMessages(body)
-    if (messages.length === 0) fail(`expected SSE JSON-RPC, status ${res.statusCode}: ${body.slice(0, 400)}`)
-    return messages
-  }
-  const parsed: unknown = JSON.parse(body)
-  return Array.isArray(parsed) ? (parsed as JsonRpc[]) : [parsed as JsonRpc]
-}
-
 function rpcById(messages: JsonRpc[], id: number): JsonRpc {
   const hit = messages.find((message) => message.id === id)
   if (hit == null) fail(`no JSON-RPC id ${id}`)
@@ -211,64 +182,83 @@ function toolBody(result: JsonRpc['result']): Record<string, unknown> {
   return JSON.parse(texts[0]) as Record<string, unknown>
 }
 
-async function postMcp(
-  app: FastifyInstance,
-  identity: DeviceIdentity,
-  payload: unknown,
-  sessionId?: string,
-) {
-  const extra: Record<string, string> = { ...MCP_ACCEPT }
-  if (sessionId != null) extra['mcp-session-id'] = sessionId
-  return injectSigned(app, identity, {
-    method: 'POST',
-    url: MCP_PATH,
-    payload,
-    extraHeaders: extra,
+async function runBridgeMessages(
+  url: string,
+  kaolaHome: string,
+  messages: unknown[],
+): Promise<{ messages: JsonRpc[]; stderr: string }> {
+  const stdoutChunks: string[] = []
+  const stderrChunks: string[] = []
+  const stdout = new Writable({
+    write(chunk, _encoding, callback) {
+      stdoutChunks.push(String(chunk))
+      callback()
+    },
   })
+  const stderr = new Writable({
+    write(chunk, _encoding, callback) {
+      stderrChunks.push(String(chunk))
+      callback()
+    },
+  })
+  const stdin = Readable.from(messages.map((message) => `${JSON.stringify(message)}\n`))
+  await runStdioBridge(['--url', url], { KAOLA_HOME: kaolaHome }, { stdin, stdout, stderr })
+  const parsed = stdoutChunks
+    .join('')
+    .split(/\r?\n/u)
+    .filter((line) => line.trim() !== '')
+    .map((line) => JSON.parse(line) as JsonRpc)
+  return { messages: parsed, stderr: stderrChunks.join('') }
 }
 
-function createMcpClient(identity: DeviceIdentity) {
-  let nextId = 1
-  let sessionId: string | undefined
+function bridgeInitialize(id: number): Record<string, unknown> {
   return {
-    async initialize(app: FastifyInstance) {
-      const id = nextId
-      nextId += 1
-      const res = await postMcp(app, identity, {
-        jsonrpc: '2.0',
-        id,
-        method: 'initialize',
-        params: {
-          protocolVersion: MCP_PROTOCOL,
-          capabilities: {},
-          clientInfo: { name: 'kaola-forge-smoke', version: '0.0.0' },
-        },
-      })
-      if (res.statusCode !== 200) fail(`MCP initialize HTTP ${res.statusCode}: ${res.body}`)
-      const rpc = rpcById(parseJsonRpcHttp(res), id)
-      if (rpc.error != null) fail(`MCP initialize JSON-RPC error: ${JSON.stringify(rpc.error)}`)
-      const header = res.headers['mcp-session-id']
-      if (header != null && header !== '') sessionId = String(header)
-      if (sessionId != null) {
-        await postMcp(app, identity, { jsonrpc: '2.0', method: 'notifications/initialized' }, sessionId)
-      }
-    },
-    async callTool(app: FastifyInstance, name: string, args: Record<string, unknown> = {}) {
-      const id = nextId
-      nextId += 1
-      const res = await postMcp(
-        app,
-        identity,
-        { jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: args } },
-        sessionId,
-      )
-      if (res.statusCode !== 200) fail(`tools/call ${name} HTTP ${res.statusCode}: ${res.body}`)
-      const rpc = rpcById(parseJsonRpcHttp(res), id)
-      if (rpc.error != null) fail(`tools/call ${name} protocol error: ${JSON.stringify(rpc.error)}`)
-      if (rpc.result?.isError === true) fail(`tools/call ${name} isError: ${JSON.stringify(rpc.result)}`)
-      return toolBody(rpc.result)
+    jsonrpc: '2.0',
+    id,
+    method: 'initialize',
+    params: {
+      protocolVersion: MCP_PROTOCOL,
+      capabilities: {},
+      clientInfo: { name: 'kaola-forge-smoke-bridge', version: '0.0.0' },
     },
   }
+}
+
+async function bridgeToolCall(
+  url: string,
+  kaolaHome: string,
+  name: string,
+  args: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const toolId = 2
+  const run = await runBridgeMessages(url, kaolaHome, [
+    bridgeInitialize(1),
+    { jsonrpc: '2.0', method: 'notifications/initialized' },
+    { jsonrpc: '2.0', id: toolId, method: 'tools/call', params: { name, arguments: args } },
+  ])
+  const rpc = rpcById(run.messages, toolId)
+  if (rpc.error != null) fail(`bridge tools/call ${name} protocol error: ${JSON.stringify(rpc.error)}`)
+  if (rpc.result?.isError === true) fail(`bridge tools/call ${name} isError: ${JSON.stringify(rpc.result)}`)
+  return toolBody(rpc.result)
+}
+
+async function bridgeListTools(url: string, kaolaHome: string): Promise<Array<Record<string, unknown>>> {
+  const listId = 2
+  const run = await runBridgeMessages(url, kaolaHome, [
+    bridgeInitialize(1),
+    { jsonrpc: '2.0', method: 'notifications/initialized' },
+    { jsonrpc: '2.0', id: listId, method: 'tools/list', params: {} },
+  ])
+  const initialized = rpcById(run.messages, 1)
+  const instructions = String((initialized.result as { instructions?: unknown } | undefined)?.instructions ?? '')
+  if (!/workflow/iu.test(instructions) || !/(必须|required|must)/iu.test(instructions)) {
+    fail('MCP initialize instructions did not require Workflow after claim')
+  }
+  const rpc = rpcById(run.messages, listId)
+  if (rpc.error != null) fail(`bridge tools/list protocol error: ${JSON.stringify(rpc.error)}`)
+  const tools = rpc.result?.tools
+  if (!Array.isArray(tools)) fail(`bridge tools/list missing tools: ${JSON.stringify(rpc.result)}`)
+  return tools as Array<Record<string, unknown>>
 }
 
 async function loginGitlabStub(app: FastifyInstance): Promise<Record<string, string>> {
@@ -518,9 +508,39 @@ async function run(): Promise<void> {
   const app = buildApp({ sqlitePath, pollIntervalMs: 0 })
   await app.ready()
   try {
-    await ensureSetup(app, DEFAULT_SETUP)
+    const setup = await ensureSetup(app, DEFAULT_SETUP)
     const cookies = await loginGitlabStub(app)
-    const paired = await pairDeviceToSelf(app, cookies, { hostname: 'forge-smoke' })
+    const bridgeUrl = await app.listen({ host: '127.0.0.1', port: 0 })
+    const kaolaHome = join(workRoot, 'kaola-home')
+
+    const sighted = await runBridgeMessages(bridgeUrl, kaolaHome, [bridgeInitialize(1)])
+    if (!sighted.stderr.includes('authorization_required')) {
+      fail(`unbound bridge did not request device authorization: ${sighted.stderr}`)
+    }
+    const pendingRes = await app.inject({
+      method: 'GET',
+      url: '/api/v1/devices/pending',
+      cookies: setup.cookies,
+      headers: { accept: 'application/json' },
+    })
+    const pendingBody = await expectJson(pendingRes, 200, 'list pending bridge device')
+    const pending = pendingBody.devices
+    if (!Array.isArray(pending) || pending.length !== 1) {
+      fail(`expected one pending bridge device: ${pendingRes.body}`)
+    }
+    const pendingId = (pending[0] as { id?: unknown }).id
+    if (typeof pendingId !== 'number') fail(`pending bridge device id missing: ${pendingRes.body}`)
+    await expectJson(
+      await app.inject({
+        method: 'POST',
+        url: `/api/v1/devices/${pendingId}/bind`,
+        cookies: setup.cookies,
+        headers: JSON_HEADERS,
+        payload: { bind_to_self: true },
+      }),
+      200,
+      'bind bridge device',
+    )
 
     const profileRes = await app.inject({
       method: 'POST',
@@ -570,19 +590,68 @@ async function run(): Promise<void> {
     if (typeof task.id !== 'string' || task.status !== '待认领') fail(`publish unexpected: ${createRes.body}`)
     console.log(`task ${task.id}`)
 
-    const mcp = createMcpClient(paired.identity)
-    await mcp.initialize(app)
-    const claimed = await mcp.callTool(app, 'claim_task', { task_id: task.id })
+    const tools = await bridgeListTools(bridgeUrl, kaolaHome)
+    const submitTool = tools.find((tool) => tool.name === 'submit_pr')
+    if (!/workflow/iu.test(String(submitTool?.description ?? ''))) {
+      fail('submit_pr description did not identify Workflow completion')
+    }
+
+    const firstClaim = await bridgeToolCall(bridgeUrl, kaolaHome, 'claim_task', { task_id: task.id })
+    const firstLease = firstClaim.lease as { claim_id?: unknown } | undefined
+    if (typeof firstLease?.claim_id !== 'string' || !firstLease.claim_id.startsWith('clm_')) {
+      fail(`first claim missing claim_id: ${JSON.stringify({ ...firstClaim, token: undefined })}`)
+    }
+    const released = await bridgeToolCall(bridgeUrl, kaolaHome, 'release_task', {
+      task_id: task.id,
+      reason: 'live smoke recovery boundary',
+    })
+    if ((released.task as { status?: string } | undefined)?.status !== '待认领') {
+      fail(`release_task expected 待认领: ${JSON.stringify(released)}`)
+    }
+
+    // A fresh bridge process recovers the terminal receipt, receives the server's typed
+    // claim_request_conflict, rotates request_id once, and claims again without caller help.
+    const claimed = await bridgeToolCall(bridgeUrl, kaolaHome, 'claim_task', { task_id: task.id })
     const claimedTask = claimed.task as { status?: string } | undefined
+    const claimLease = claimed.lease as { claim_id?: unknown } | undefined
     const clone = claimed.clone as
       | { suggested_dir?: string; remote_url?: string; extra_header?: CloneHeader }
       | undefined
     if (claimedTask?.status !== '进行中') fail(`claim did not enter 进行中: ${JSON.stringify({ ...claimed, token: undefined })}`)
     if (typeof claimed.token !== 'string' || claimed.token === '') fail('claim missing token')
+    if (typeof claimLease?.claim_id !== 'string' || !claimLease.claim_id.startsWith('clm_')) {
+      fail(`claim missing claim_id: ${JSON.stringify({ ...claimed, token: undefined })}`)
+    }
+    if (claimLease.claim_id === firstLease.claim_id) fail('terminal Claim recovery did not mint a fresh claim_id')
     if (clone?.remote_url == null || clone.extra_header == null) fail('claim missing clone envelope')
     const revealed = claimed.token
     secrets.push(revealed)
     if (clone.remote_url.includes(revealed)) fail('clone.remote_url contained the token')
+
+    const replayed = await bridgeToolCall(bridgeUrl, kaolaHome, 'claim_task', { task_id: task.id })
+    const replayLease = replayed.lease as { claim_id?: unknown } | undefined
+    if (replayLease?.claim_id !== claimLease.claim_id || replayed.token !== revealed) {
+      fail('claim replay did not return the same Claim identity and credential')
+    }
+
+    const progressed = await bridgeToolCall(bridgeUrl, kaolaHome, 'report_progress', {
+      task_id: task.id,
+      note: 'live smoke after Workflow start',
+    })
+    if ((progressed.task as { status?: string } | undefined)?.status !== '进行中') {
+      fail(`report_progress expected 进行中: ${JSON.stringify(progressed)}`)
+    }
+
+    const otherDevice = await pairDeviceToSelf(app, setup.cookies, { hostname: 'forge-smoke-other-device' })
+    const copiedClaimAttempt = await injectSigned(app, otherDevice.identity, {
+      method: 'POST',
+      url: `/api/v1/tasks/${task.id}/progress`,
+      payload: { note: 'must not pass', claim_id: claimLease.claim_id },
+      extraHeaders: JSON_HEADERS,
+    })
+    if (copiedClaimAttempt.statusCode !== 403) {
+      fail(`different device unexpectedly used copied claim_id: ${copiedClaimAttempt.statusCode} ${copiedClaimAttempt.body}`)
+    }
 
     const branch = `kaola/${task.id}-smoke-${stamp}`
     const line = `Smoke ${kind} ${task.id} ${stamp}.`
@@ -601,7 +670,7 @@ async function run(): Promise<void> {
     const pull = await openPull(spec, revealed, branch, `[${task.id}] ${line}`)
     console.log(`pull ${pull.url}`)
 
-    const submitted = await mcp.callTool(app, 'submit_pr', {
+    const submitted = await bridgeToolCall(bridgeUrl, kaolaHome, 'submit_pr', {
       task_id: task.id,
       pr_url: pull.url,
       summary: line,
