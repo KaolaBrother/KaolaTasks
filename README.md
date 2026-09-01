@@ -6,6 +6,8 @@
 
 考拉**只做路由与协调**：不跑 Agent、不托管代码、不做沙箱。Agent 跑在各自主人的电脑上，代码仍在你们现有的 forge 上。
 
+![Kaola Tasks 从真实 Issue 到真实 PR 的自动化协作全流程](kaola-tasks-overview.png)
+
 ## 一次任务怎么走完
 
 ```mermaid
