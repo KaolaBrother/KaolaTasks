@@ -28,7 +28,7 @@ import tls from 'node:tls'
 import { fileURLToPath } from 'node:url'
 import { deviceProofCanonical } from '@kaola/shared'
 import { resolveCarrierIntent, runnerSessionLocator, type CarrierIntent } from './runner-carrier.ts'
-import { readVerifiedExtraCaPem } from './trust.ts'
+import { readVerifiedExtraCaPem, resolveLauncherTrust, runTrustCli } from './trust.ts'
 
 const DEFAULT_ORIGIN = 'http://localhost:31415'
 const MCP_PATH = '/api/mcp'
@@ -536,10 +536,26 @@ type McpHttpResponse = {
 function defaultRuntimeCaCerts(): string[] {
   // Named ESM import of getCACertificates throws at module load on Node 22.0–22.14
   // (API added v22.15.0). Read it off the namespace so older engines still start.
+  // Use bundled (+ system) roots only — never the process-start NODE_EXTRA_CA_CERTS
+  // extra list. Caller extra CA is not a trust source; the launcher injects the
+  // verified PEM as `extraCaPem` instead.
   const getCACertificates = (
     tls as typeof tls & { getCACertificates?: (type?: string) => string[] }
   ).getCACertificates
-  if (typeof getCACertificates === 'function') return getCACertificates('default')
+  if (typeof getCACertificates === 'function') {
+    try {
+      const bundled = getCACertificates('bundled')
+      let system: string[] = []
+      try {
+        system = getCACertificates('system')
+      } catch {
+        system = []
+      }
+      return [...bundled, ...system]
+    } catch {
+      return [...tls.rootCertificates]
+    }
+  }
   return [...tls.rootCertificates]
 }
 
@@ -945,9 +961,25 @@ function isDirectRun(): boolean {
 }
 
 if (isDirectRun()) {
-  runStdioBridge().catch((err: unknown) => {
-    const message = err instanceof Error ? err.message : 'kaola-mcp failed'
-    process.stderr.write(`${message}\n`)
-    process.exit(1)
-  })
+  const argv = process.argv.slice(2)
+  if (argv[0] === 'trust') {
+    try {
+      process.exit(runTrustCli(argv.slice(1), process.env))
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'kaola-mcp trust failed'
+      process.stderr.write(`${message}\n`)
+      process.exit(1)
+    }
+  } else {
+    const resolved = resolveLauncherTrust(process.env)
+    if (!resolved.ok) {
+      process.stderr.write(`${resolved.message}\n`)
+      process.exit(1)
+    }
+    runStdioBridge(argv, resolved.env).catch((err: unknown) => {
+      const message = err instanceof Error ? err.message : 'kaola-mcp failed'
+      process.stderr.write(`${message}\n`)
+      process.exit(1)
+    })
+  }
 }

@@ -1,4 +1,9 @@
-import { X509Certificate, createHash } from 'node:crypto'
+import {
+  X509Certificate,
+  createHash,
+  createPublicKey,
+  verify as cryptoVerify,
+} from 'node:crypto'
 import {
   chmodSync,
   existsSync,
@@ -6,11 +11,13 @@ import {
   readFileSync,
   renameSync,
   rmSync,
+  statSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
+import type { Writable } from 'node:stream'
 
 /**
  * Issue #48 — local (MCP process-level) root-CA trust core.
@@ -23,6 +30,10 @@ import { dirname, join, resolve } from 'node:path'
 
 export const TRUST_DIR_NAME = 'trust'
 export const TRUST_ROOT_CA_FILE = 'root-ca.pem'
+export const TRUST_STATE_FILE = 'state.json'
+export const PUBLISHER_SIGNATURE_MANIFEST_KIND = 'publisher-signature-manifest'
+
+const FINGERPRINT_HEX_RE = /^[0-9a-f]{64}$/
 
 const CERT_BEGIN = '-----BEGIN CERTIFICATE-----'
 const CERT_END = '-----END CERTIFICATE-----'
@@ -56,11 +67,57 @@ export type TrustInstallOk = {
   nodeExtraCaCerts: string
 }
 
+export type TrustInstallErrCode =
+  | TrustVerifyCode
+  | 'source_unreadable'
+  | 'missing_verifier'
+  | 'conflicting_verifier'
+  | 'manifest_unreadable'
+  | 'manifest_invalid'
+  | 'signature_mismatch'
+
 export type TrustInstallErr = {
   ok: false
-  code: TrustVerifyCode | 'source_unreadable'
+  code: TrustInstallErrCode
   message: string
 }
+
+export type TrustStateV1 = {
+  v: 1
+  alg: 'sha256'
+  fingerprintSha256: string
+  kind?: typeof PUBLISHER_SIGNATURE_MANIFEST_KIND
+  publicKeySpki?: string
+}
+
+export type InspectedTrust =
+  | {
+      present: false
+      ready: false
+      pemPath: string
+      statePath: string
+    }
+  | {
+      present: true
+      ready: false
+      pemPath: string
+      statePath: string
+      code: string
+      message: string
+    }
+  | {
+      present: true
+      ready: true
+      pemPath: string
+      statePath: string
+      fingerprintSha256: string
+      pem: string
+      state: TrustStateV1
+    }
+
+export type LauncherTrust =
+  | { ok: true; env: NodeJS.ProcessEnv }
+  | { ok: false; message: string }
 
 export type TrustStatus =
   | {
@@ -109,6 +166,10 @@ export function trustDir(kaolaHome: string): string {
 
 export function trustRootCaPath(kaolaHome: string): string {
   return join(trustDir(kaolaHome), TRUST_ROOT_CA_FILE)
+}
+
+export function trustStatePath(kaolaHome: string): string {
+  return join(trustDir(kaolaHome), TRUST_STATE_FILE)
 }
 
 /** Strip colons/spaces; lowercase. Empty input stays empty. */
@@ -199,8 +260,27 @@ export function verifyRootCaPem(pemText: string, expectedFingerprint: string): T
 export function installRootCa(options: {
   kaolaHome: string
   sourcePemPath: string
-  expectedFingerprint: string
+  expectedFingerprint?: string
+  manifestPath?: string
 }): TrustInstallOk | TrustInstallErr {
+  const hasFingerprint =
+    typeof options.expectedFingerprint === 'string' && options.expectedFingerprint.length > 0
+  const hasManifest = typeof options.manifestPath === 'string' && options.manifestPath.length > 0
+  if (hasFingerprint && hasManifest) {
+    return {
+      ok: false,
+      code: 'conflicting_verifier',
+      message: '--fingerprint and --manifest are mutually exclusive',
+    }
+  }
+  if (!hasFingerprint && !hasManifest) {
+    return {
+      ok: false,
+      code: 'missing_verifier',
+      message: 'exactly one of --fingerprint or --manifest is required with --pem',
+    }
+  }
+
   const kaolaHome = resolve(options.kaolaHome)
   const sourcePemPath = resolve(options.sourcePemPath)
   let sourceText: string
@@ -214,12 +294,31 @@ export function installRootCa(options: {
     }
   }
 
-  const verified = verifyRootCaPem(sourceText, options.expectedFingerprint)
-  if (!verified.ok) return verified
+  let verified: TrustVerifyOk
+  let state: TrustStateV1
+  if (hasManifest) {
+    const fromManifest = verifyPemWithPublisherManifest(sourceText, resolve(options.manifestPath as string))
+    if (!fromManifest.ok) return fromManifest
+    verified = fromManifest.verified
+    state = {
+      v: 1,
+      alg: 'sha256',
+      fingerprintSha256: verified.fingerprintSha256,
+      kind: PUBLISHER_SIGNATURE_MANIFEST_KIND,
+      publicKeySpki: fromManifest.publicKeySpki,
+    }
+  } else {
+    const fingerprintVerified = verifyRootCaPem(sourceText, options.expectedFingerprint as string)
+    if (!fingerprintVerified.ok) return fingerprintVerified
+    verified = fingerprintVerified
+    state = {
+      v: 1,
+      alg: 'sha256',
+      fingerprintSha256: verified.fingerprintSha256,
+    }
+  }
 
-  const pemPath = trustRootCaPath(kaolaHome)
-  ensureDirSecure(dirname(pemPath))
-  writeFileAtomic(pemPath, verified.pem)
+  const pemPath = writeInstalledTrustPair(kaolaHome, verified.pem, state)
 
   return {
     ok: true,
@@ -309,18 +408,24 @@ export function statusRootCa(options: {
  * Never deletes `device.json`, Claim receipts, or other KAOLA_HOME contents.
  */
 export function uninstallRootCa(options: { kaolaHome: string }): TrustUninstallResult {
-  const pemPath = trustRootCaPath(resolve(options.kaolaHome))
+  const home = resolve(options.kaolaHome)
+  const pemPath = trustRootCaPath(home)
+  const statePath = trustStatePath(home)
   let removed = false
   if (existsSync(pemPath)) {
     unlinkSync(pemPath)
     removed = true
   }
-  const dir = trustDir(resolve(options.kaolaHome))
+  if (existsSync(statePath)) {
+    unlinkSync(statePath)
+    removed = true
+  }
+  const dir = trustDir(home)
   if (existsSync(dir)) {
     try {
       rmSync(dir, { recursive: false, force: false })
     } catch {
-      // Non-empty or busy — leave the directory; PEM removal is what matters.
+      // Non-empty or busy — leave the directory; PEM+state removal is what matters.
     }
   }
   return { removed, pemPath }
@@ -404,6 +509,511 @@ export function systemTrustElevationPlan(
         note: 'Fedora/RHEL path. Do not mix with Debian update-ca-certificates. Requires root. NODE_EXTRA_CA_CERTS is not browser trust.',
       }
   }
+}
+
+/**
+ * Inspect `$KAOLA_HOME/trust/` for launcher and `trust status`. Ready only when PEM and
+ * host-neutral state both exist, unix modes are 0700/0600, state is parseable, and the
+ * on-disk PEM still matches the pinned fingerprint.
+ */
+export function inspectInstalledTrust(kaolaHome: string): InspectedTrust {
+  const home = resolve(kaolaHome)
+  const pemPath = trustRootCaPath(home)
+  const statePath = trustStatePath(home)
+  const pemExists = existsSync(pemPath)
+  const stateExists = existsSync(statePath)
+
+  if (!pemExists && !stateExists) {
+    return { present: false, ready: false, pemPath, statePath }
+  }
+
+  if (!pemExists || !stateExists) {
+    return {
+      present: true,
+      ready: false,
+      pemPath,
+      statePath,
+      code: 'inconsistent_pair',
+      message: pemExists
+        ? 'trust state.json is missing; installed PEM is not ready'
+        : 'trust root-ca.pem is missing; installed state is not ready',
+    }
+  }
+
+  if (!isSecureUnixMode(trustDir(home), 0o700)) {
+    return {
+      present: true,
+      ready: false,
+      pemPath,
+      statePath,
+      code: 'insecure_mode',
+      message: 'trust directory mode must be 0700',
+    }
+  }
+  if (!isSecureUnixMode(pemPath, 0o600)) {
+    return {
+      present: true,
+      ready: false,
+      pemPath,
+      statePath,
+      code: 'insecure_mode',
+      message: 'root-ca.pem mode must be 0600',
+    }
+  }
+  if (!isSecureUnixMode(statePath, 0o600)) {
+    return {
+      present: true,
+      ready: false,
+      pemPath,
+      statePath,
+      code: 'insecure_mode',
+      message: 'state.json mode must be 0600',
+    }
+  }
+
+  let stateRaw: string
+  try {
+    stateRaw = readFileSync(statePath, 'utf8')
+  } catch {
+    return {
+      present: true,
+      ready: false,
+      pemPath,
+      statePath,
+      code: 'unreadable',
+      message: 'installed trust state exists but cannot be read',
+    }
+  }
+
+  const state = parseTrustState(stateRaw)
+  if (state == null) {
+    return {
+      present: true,
+      ready: false,
+      pemPath,
+      statePath,
+      code: 'invalid_state',
+      message: 'installed trust state is not a host-neutral v1 sha256 fingerprint document',
+    }
+  }
+
+  let pemText: string
+  try {
+    pemText = readFileSync(pemPath, 'utf8')
+  } catch {
+    return {
+      present: true,
+      ready: false,
+      pemPath,
+      statePath,
+      code: 'unreadable',
+      message: 'installed trust PEM exists but cannot be read',
+    }
+  }
+
+  const verified = verifyRootCaPem(pemText, state.fingerprintSha256)
+  if (!verified.ok) {
+    return {
+      present: true,
+      ready: false,
+      pemPath,
+      statePath,
+      code: verified.code,
+      message: verified.message,
+    }
+  }
+
+  return {
+    present: true,
+    ready: true,
+    pemPath,
+    statePath,
+    fingerprintSha256: verified.fingerprintSha256,
+    pem: verified.pem,
+    state,
+  }
+}
+
+/**
+ * Direct-run / package-bin launcher policy (not applied to `runStdioBridge` as a library):
+ * absent pair → public mode (refuse caller extra CA); verified pair → inject only the
+ * installed PEM path; any inconsistency → fail closed.
+ */
+export function resolveLauncherTrust(env: NodeJS.ProcessEnv): LauncherTrust {
+  const inspected = inspectInstalledTrust(resolveKaolaHome(env))
+  const callerExtra = env.NODE_EXTRA_CA_CERTS
+  const hasCallerExtra = typeof callerExtra === 'string' && callerExtra.trim().length > 0
+  const next: NodeJS.ProcessEnv = { ...env }
+  delete next.NODE_EXTRA_CA_CERTS
+
+  if (!inspected.present) {
+    if (hasCallerExtra) {
+      return {
+        ok: false,
+        message:
+          'NODE_EXTRA_CA_CERTS is not a trust source; public-CA mode refuses caller extra CA without verified local trust state',
+      }
+    }
+    return { ok: true, env: next }
+  }
+  if (!inspected.ready) {
+    return { ok: false, message: inspected.message }
+  }
+  next.NODE_EXTRA_CA_CERTS = inspected.pemPath
+  return { ok: true, env: next }
+}
+
+const SYSTEM_PLAN_PLATFORMS = new Set<SystemTrustPlatform>([
+  'darwin',
+  'win32',
+  'linux-debian',
+  'linux-fedora',
+])
+
+/**
+ * User-callable `kaola-mcp trust …` implementation. Never starts the stdio bridge and never
+ * creates `device.json`.
+ */
+export function runTrustCli(
+  argv: readonly string[],
+  env: NodeJS.ProcessEnv = process.env,
+  io?: { stdout?: Writable; stderr?: Writable },
+): number {
+  const stdout = io?.stdout ?? process.stdout
+  const stderr = io?.stderr ?? process.stderr
+  const writeOut = (line: string): void => {
+    stdout.write(line.endsWith('\n') ? line : `${line}\n`)
+  }
+  const writeErr = (line: string): void => {
+    stderr.write(line.endsWith('\n') ? line : `${line}\n`)
+  }
+
+  const sub = argv[0]
+  if (sub == null || sub.length === 0) {
+    writeErr('usage: kaola-mcp trust <install|status|uninstall|system-plan>')
+    return 1
+  }
+
+  switch (sub) {
+    case 'install':
+      return cmdTrustInstall(argv.slice(1), env, writeErr)
+    case 'status':
+      return cmdTrustStatus(env, writeOut)
+    case 'uninstall':
+      uninstallRootCa({ kaolaHome: resolveKaolaHome(env) })
+      return 0
+    case 'system-plan':
+      return cmdTrustSystemPlan(argv.slice(1), env, writeOut, writeErr)
+    default:
+      writeErr(`unknown trust subcommand: ${sub}`)
+      return 1
+  }
+}
+
+function cmdTrustInstall(
+  argv: readonly string[],
+  env: NodeJS.ProcessEnv,
+  writeErr: (line: string) => void,
+): number {
+  const { flags, rest } = parseCliTokens(argv)
+  if (rest.length > 0) {
+    writeErr(`unexpected argument: ${rest[0]}`)
+    return 1
+  }
+  const pem = flagString(flags, 'pem')
+  const fingerprint = flagString(flags, 'fingerprint')
+  const manifest = flagString(flags, 'manifest')
+  if (pem == null) {
+    writeErr('trust install requires --pem <path>')
+    return 1
+  }
+  if (fingerprint != null && manifest != null) {
+    writeErr('--fingerprint and --manifest are mutually exclusive')
+    return 1
+  }
+  if (fingerprint == null && manifest == null) {
+    writeErr('trust install requires exactly one of --fingerprint or --manifest')
+    return 1
+  }
+
+  const installed = installRootCa({
+    kaolaHome: resolveKaolaHome(env),
+    sourcePemPath: pem,
+    expectedFingerprint: fingerprint,
+    manifestPath: manifest,
+  })
+  if (!installed.ok) {
+    writeErr(installed.message)
+    return 1
+  }
+  return 0
+}
+
+function cmdTrustStatus(env: NodeJS.ProcessEnv, writeOut: (line: string) => void): number {
+  const inspected = inspectInstalledTrust(resolveKaolaHome(env))
+  if (!inspected.present) {
+    writeOut(JSON.stringify({ ready: false, installed: false }))
+    return 0
+  }
+  if (!inspected.ready) {
+    writeOut(JSON.stringify({ ready: false, installed: true, code: inspected.code }))
+    return 0
+  }
+  writeOut(
+    JSON.stringify({
+      ready: true,
+      installed: true,
+      fingerprintSha256: inspected.fingerprintSha256,
+    }),
+  )
+  return 0
+}
+
+function cmdTrustSystemPlan(
+  argv: readonly string[],
+  env: NodeJS.ProcessEnv,
+  writeOut: (line: string) => void,
+  writeErr: (line: string) => void,
+): number {
+  const { flags, rest } = parseCliTokens(argv)
+  if (rest.length > 0) {
+    writeErr(`unexpected argument: ${rest[0]}`)
+    return 1
+  }
+  const requested = flagString(flags, 'platform')
+  let platform: SystemTrustPlatform
+  if (requested != null) {
+    if (!isSystemTrustPlatform(requested)) {
+      writeErr(
+        'trust system-plan --platform must be darwin, win32, linux-debian, or linux-fedora',
+      )
+      return 1
+    }
+    platform = requested
+  } else if (process.platform === 'darwin') {
+    platform = 'darwin'
+  } else if (process.platform === 'win32') {
+    platform = 'win32'
+  } else {
+    writeErr('trust system-plan on this OS requires --platform linux-debian or linux-fedora')
+    return 1
+  }
+
+  const inspected = inspectInstalledTrust(resolveKaolaHome(env))
+  const pemPath = inspected.present ? inspected.pemPath : 'root-ca.pem'
+  const plan = systemTrustElevationPlan(platform, pemPath)
+  // Print operator commands only. The library note mentions the other distro by name
+  // ("do not mix with … trust anchor") which the CLI oracle treats as mixed output.
+  for (const command of plan.commands) writeOut(command)
+  return 0
+}
+
+function verifyPemWithPublisherManifest(
+  pemText: string,
+  manifestPath: string,
+):
+  | { ok: true; verified: TrustVerifyOk; publicKeySpki: string }
+  | TrustInstallErr {
+  let raw: string
+  try {
+    raw = readFileSync(manifestPath, 'utf8')
+  } catch {
+    return {
+      ok: false,
+      code: 'manifest_unreadable',
+      message: `cannot read trust manifest at ${manifestPath}`,
+    }
+  }
+
+  const manifest = parsePublisherManifest(raw)
+  if (manifest == null) {
+    return {
+      ok: false,
+      code: 'manifest_invalid',
+      message: 'trust manifest must be JSON { v:1, fingerprintSha256, signature, publicKeySpki }',
+    }
+  }
+
+  const verified = verifyRootCaPem(pemText, manifest.fingerprintSha256)
+  if (!verified.ok) return verified
+
+  let publicKey: ReturnType<typeof createPublicKey>
+  try {
+    publicKey = createPublicKey({
+      key: Buffer.from(manifest.publicKeySpki, 'base64'),
+      type: 'spki',
+      format: 'der',
+    })
+  } catch {
+    return {
+      ok: false,
+      code: 'manifest_invalid',
+      message: 'trust manifest publicKeySpki is not a valid Ed25519 SPKI',
+    }
+  }
+
+  let signatureOk = false
+  try {
+    const cert = new X509Certificate(verified.pem)
+    signatureOk = cryptoVerify(
+      null,
+      cert.raw,
+      publicKey,
+      Buffer.from(manifest.signature, 'base64'),
+    )
+  } catch {
+    signatureOk = false
+  }
+  if (!signatureOk) {
+    return {
+      ok: false,
+      code: 'signature_mismatch',
+      message: 'trust manifest Ed25519 signature does not match the certificate DER',
+    }
+  }
+
+  return { ok: true, verified, publicKeySpki: manifest.publicKeySpki }
+}
+
+function parsePublisherManifest(
+  text: string,
+): { v: 1; fingerprintSha256: string; signature: string; publicKeySpki: string } | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    return null
+  }
+  if (parsed == null || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+  const body = parsed as Record<string, unknown>
+  if (body.v !== 1) return null
+  if (typeof body.fingerprintSha256 !== 'string' || body.fingerprintSha256.length === 0) return null
+  if (typeof body.signature !== 'string' || body.signature.length === 0) return null
+  if (typeof body.publicKeySpki !== 'string' || body.publicKeySpki.length === 0) return null
+  return {
+    v: 1,
+    fingerprintSha256: body.fingerprintSha256,
+    signature: body.signature,
+    publicKeySpki: body.publicKeySpki,
+  }
+}
+
+function parseTrustState(text: string): TrustStateV1 | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    return null
+  }
+  if (parsed == null || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+  const body = parsed as Record<string, unknown>
+  if (body.v !== 1) return null
+  if (body.alg !== 'sha256') return null
+  if (typeof body.fingerprintSha256 !== 'string') return null
+  const fingerprintSha256 = normalizeFingerprintSha256(body.fingerprintSha256)
+  if (!FINGERPRINT_HEX_RE.test(fingerprintSha256)) return null
+
+  const state: TrustStateV1 = {
+    v: 1,
+    alg: 'sha256',
+    fingerprintSha256,
+  }
+  if (body.kind === PUBLISHER_SIGNATURE_MANIFEST_KIND && typeof body.publicKeySpki === 'string') {
+    state.kind = PUBLISHER_SIGNATURE_MANIFEST_KIND
+    state.publicKeySpki = body.publicKeySpki
+  }
+  return state
+}
+
+function writeInstalledTrustPair(kaolaHome: string, pem: string, state: TrustStateV1): string {
+  const pemPath = trustRootCaPath(kaolaHome)
+  const statePath = trustStatePath(kaolaHome)
+  const dir = trustDir(kaolaHome)
+  ensureDirSecure(dir)
+  const stateJson = hostNeutralStateJson(state)
+  try {
+    writeFileAtomic(pemPath, pem)
+    writeFileAtomic(statePath, stateJson)
+    chmodSync(dir, 0o700)
+  } catch (err) {
+    try {
+      unlinkSync(pemPath)
+    } catch {
+      // best-effort rollback so a partial pair cannot look ready
+    }
+    try {
+      unlinkSync(statePath)
+    } catch {
+      // best-effort rollback
+    }
+    throw err
+  }
+  return pemPath
+}
+
+function hostNeutralStateJson(state: TrustStateV1): string {
+  const body: TrustStateV1 = {
+    v: 1,
+    alg: 'sha256',
+    fingerprintSha256: state.fingerprintSha256,
+  }
+  if (state.kind === PUBLISHER_SIGNATURE_MANIFEST_KIND && typeof state.publicKeySpki === 'string') {
+    body.kind = PUBLISHER_SIGNATURE_MANIFEST_KIND
+    body.publicKeySpki = state.publicKeySpki
+  }
+  return `${JSON.stringify(body)}\n`
+}
+
+function isSecureUnixMode(path: string, expected: number): boolean {
+  if (process.platform === 'win32') return true
+  try {
+    return (statSync(path).mode & 0o777) === expected
+  } catch {
+    return false
+  }
+}
+
+function isSystemTrustPlatform(value: string): value is SystemTrustPlatform {
+  return SYSTEM_PLAN_PLATFORMS.has(value as SystemTrustPlatform)
+}
+
+function parseCliTokens(argv: readonly string[]): {
+  flags: Map<string, string | true>
+  rest: string[]
+} {
+  const flags = new Map<string, string | true>()
+  const rest: string[] = []
+  for (let i = 0; i < argv.length; i++) {
+    const token = argv[i] ?? ''
+    if (token === '--') {
+      rest.push(...argv.slice(i + 1).filter((item): item is string => item != null))
+      break
+    }
+    if (token.startsWith('--') && token.length > 2) {
+      const body = token.slice(2)
+      const eq = body.indexOf('=')
+      if (eq !== -1) {
+        flags.set(body.slice(0, eq), body.slice(eq + 1))
+        continue
+      }
+      const next = argv[i + 1]
+      if (next != null && !next.startsWith('-')) {
+        flags.set(body, next)
+        i += 1
+        continue
+      }
+      flags.set(body, true)
+      continue
+    }
+    rest.push(token)
+  }
+  return { flags, rest }
+}
+
+function flagString(flags: Map<string, string | true>, name: string): string | undefined {
+  const value = flags.get(name)
+  if (typeof value !== 'string' || value.length === 0) return undefined
+  return value
 }
 
 function verifyRootCaStructure(pemText: string): TrustVerifyOk | TrustVerifyErr {

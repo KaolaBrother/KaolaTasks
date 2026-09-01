@@ -378,9 +378,7 @@ KaolaTasks/
 
 操作者在未跟踪的本地配置里声明入口属于哪一种模式。模式名与 [#46](https://github.com/KaolaBrother/KaolaTasks/issues/46) 的两阶段 TLS 划分对齐（`STABLE_PUBLIC_CA` / `DEBUG_PRIVATE_CA`），但职责分开：#46 拥有签发、反代、续期和公网跨平台实测（见 §12）；#48 拥有每台电脑怎么安装 `kaola-mcp` 以及如何（或不）信任证书。本节不重复服务器签发/DNS-01/fullchain/续期合同。
 
-本版只冻结两套操作者方案。不规定尚未实现的安装器 CLI、子命令、磁盘布局或其它未落地存储合同。安装器自动化仍是本 Issue 开放的 frontier。
-
-当前可执行入口仍是现有 stdio 桥：`kaola-mcp --url <kaola-origin>`。不新增 MCP 工具名。提交进 Git 的示例仍是 `command` + `--url`，不含 `env`、PEM、指纹或任何私钥。
+可执行入口是 `@kaola/mcp` 的 package bin `kaola-mcp`。`kaola-mcp trust …` 在 MCP 协议之外完成信任引导（不是新的 MCP 工具）。`kaola-mcp --url <kaola-origin>` 由同一 bin 启动 stdio 桥，且只从本机已核验的信任 state 注入额外 CA。提交进 Git 的示例仍是 `command` + `--url`，不含 `env`、PEM、指纹、清单或任何私钥。磁盘布局见 §16.7。
 
 ### 16.1 方案 1：`STABLE_PUBLIC_CA`（公开 CA 默认安装）
 
@@ -403,11 +401,11 @@ KaolaTasks/
 
 默认 MCP 路径是**进程级**信任，与系统/浏览器信任分开：
 
-1. 从安装包或带外材料取得 PEM 与指纹。禁止用第一次连 `<kaola-origin>` 时服务器返回的 CA 当信任锚。
-2. 在本机核验指纹（§16.4）通过之前，不得设置 `NODE_EXTRA_CA_CERTS`，也不得发起 HTTPS 连接。
-3. **只**给本机 `kaola-mcp` 进程设置 `NODE_EXTRA_CA_CERTS` 指向该已核验 PEM（本机未跟踪的 MCP `env`，或该进程的环境）。真实路径不得提交进 Git。Node 把该根**加到**运行时默认根证书库，而不是替换默认库。不得关闭严格 TLS。
+1. 从安装包或带外材料取得 PEM，以及固定 SHA-256 指纹或发布者签名清单。禁止用第一次连 `<kaola-origin>` 时服务器返回的 CA 当信任锚。
+2. 运行 `kaola-mcp trust install`（§16.7）核验并原子写入用户级 `$KAOLA_HOME/trust/` 下的公开根 PEM 与 host-neutral 验证 state。核验通过之前，不得启动带额外 CA 的 HTTPS 连接。
+3. 之后用 `kaola-mcp --url <kaola-origin>` 启动桥。launcher **只**从已核验 state 给桥子进程注入 `NODE_EXTRA_CA_CERTS`（指向已安装的公开根 PEM）。调用方环境里的 `NODE_EXTRA_CA_CERTS` 不是信任源，不得作为成功路径。真实路径不得提交进 Git。Node 把该根**加到**运行时默认根证书库，而不是替换默认库。不得关闭严格 TLS。
 4. 不把该根写入系统信任库，除非操作者另走 §16.3 的显式提权。`NODE_EXTRA_CA_CERTS` 不是浏览器信任。
-5. 设置、更换或去掉 `NODE_EXTRA_CA_CERTS` 之后必须**重启 MCP 客户端**，再以严格 TLS 发起设备 pending / 绑定。正在跑的 stdio 桥不会热加载新根。
+5. 安装、轮换或卸载之后必须**重启 MCP 客户端**，再以严格 TLS 发起设备 pending / 绑定。正在跑的 stdio 桥不会热加载新根。
 
 只跑 Agent、不打开工作台/OAuth 的电脑：做完进程级信任即可。需要浏览器、OAuth 或管理员绑定的电脑：进程级信任不够，必须另做 §16.3。
 
@@ -427,35 +425,73 @@ KaolaTasks/
 
 禁止 TOFU：客户端不得在第一次未信任连接上「下载到什么 CA 就自动信任什么」。服务器可以另外提供 CA 下载通道，但操作者**不**从 `<kaola-origin>` 抓 CA 并据此建立对该 origin 的 TLS 信任——那会用未信任的连接给自己发根。先核验、再设置 `NODE_EXTRA_CA_CERTS`、再连接。
 
-本版冻结的带外材料是：**本地 PEM + 带外 SHA-256**。操作者从安装包或其它可信渠道拿到 PEM，用带外抄来的指纹核验后再启用。
-
-核验：
+本版冻结的带外材料是：**本地 PEM + 带外 SHA-256**，或 **本地 PEM + 发布者签名清单**。操作者从安装包或其它可信渠道拿到材料，用 `kaola-mcp trust install` 核验后再启用。手工对照：
 
 ```bash
 openssl x509 -in <dev-root-ca.pem> -noout -fingerprint -sha256
 ```
 
-输出必须与带外 `<sha256-fingerprint>` 一致（去掉冒号、大小写不敏感）。PEM 必须恰好一块 `CERTIFICATE`，且是 CA；文件中出现任何私钥块（`PRIVATE KEY`）则拒绝。错误指纹、无法解析、非 CA、含私钥、或磁盘上的 PEM 被替换导致指纹不再匹配：一律不得设置 `NODE_EXTRA_CA_CERTS`，也不得连接，不得降级为「先连上再说」。
+输出必须与带外 `<sha256-fingerprint>` 一致（去掉冒号、大小写不敏感）。PEM 必须恰好一块 `CERTIFICATE`，且是 CA；文件中出现任何私钥块（`PRIVATE KEY`）则拒绝。错误指纹、错误签名、无法解析、非 CA、含私钥、state 缺失/损坏/权限不合、或磁盘上的 PEM 被替换导致与 state 中的指纹不再匹配：`trust install` / `trust status` / `kaola-mcp --url` launcher 一律 fail closed，不得给桥注入额外 CA，不得连接，不得降级为「先连上再说」。只对内部 `exportMcpTrustEnv(expectedFingerprint)` 证明替换失败、而不证明真实 bin 启动链，不算验收通过。
 
 下列路径不是成功：
 
 - `NODE_TLS_REJECT_UNAUTHORIZED` 为 `0` / `false`
 - `--insecure`、`curl -k`、浏览器证书例外
-- `STABLE_PUBLIC_CA` 下设置 `NODE_EXTRA_CA_CERTS`
-- `DEBUG_PRIVATE_CA` 下 `NODE_EXTRA_CA_CERTS` 指向未核验、指纹不匹配、非 CA 或含私钥的文件
-- 未核验就从 origin 下载 CA 并写入 `NODE_EXTRA_CA_CERTS`
+- `STABLE_PUBLIC_CA` 下安装私有根、或调用方设置 `NODE_EXTRA_CA_CERTS` 仍被 launcher 接受
+- `DEBUG_PRIVATE_CA` 下未核验、指纹不匹配、签名不匹配、非 CA、含私钥、或 PEM 被替换后仍启动桥
+- 未核验就从 origin 下载 CA 并写入信任目录或 `NODE_EXTRA_CA_CERTS`
 
 ### 16.5 卸载、轮换、退出团队、迁移到公开 CA
 
-- **核验**：用上面的 `openssl` 命令对照带外 `<sha256-fingerprint>`。不一致就停止连接。
-- **卸载 MCP 额外 CA**：去掉 MCP 配置和 shell 里的 `NODE_EXTRA_CA_CERTS`，重启 MCP。不要删 `device.json` 或 Claim receipts。卸载后公开 CA 路径不得再读到额外 CA。
-- **卸载系统/浏览器信任**：按各 OS 提权命令手工删除该根。撤掉 `NODE_EXTRA_CA_CERTS` 不等于系统信任已撤。
-- **根 CA 轮换**：先带外分发新根的指纹；各电脑核验新 PEM，更新 MCP 的 `NODE_EXTRA_CA_CERTS` 指向，重启 MCP；若曾做系统信任则同步替换；再作废旧根。新旧根的私钥都不分发。
-- **电脑退出团队**：管理员解除该设备；本机卸载 MCP 额外 CA；若曾做系统信任则再撤系统根。
-- **从 `DEBUG_PRIVATE_CA` 迁到 `STABLE_PUBLIC_CA`**：入口改为公开 CA 链之后，各电脑卸载私有根（MCP 进程级 + 若装过的系统级）、去掉 `NODE_EXTRA_CA_CERTS`、重启 MCP，只保留 `--url <kaola-origin>`。
+- **核验**：`kaola-mcp trust status`，或用上面的 `openssl` 命令对照带外 `<sha256-fingerprint>`。不一致就停止连接。
+- **卸载 MCP 额外 CA**：`kaola-mcp trust uninstall`，然后重启 MCP。不要删 `device.json` 或 Claim receipts。卸载后公开 CA 路径不得再注入额外 CA；调用方若仍设置 `NODE_EXTRA_CA_CERTS`，launcher 必须拒绝。
+- **卸载系统/浏览器信任**：按各 OS 提权命令手工删除该根。卸载 MCP 信任不等于系统信任已撤。
+- **根 CA 轮换**：先带外分发新根的指纹或签名清单；各电脑再跑 `kaola-mcp trust install`（原子替换 PEM + state），重启 MCP；若曾做系统信任则同步替换；再作废旧根。新旧根的私钥都不分发。
+- **电脑退出团队**：管理员解除该设备；本机 `kaola-mcp trust uninstall`；若曾做系统信任则再撤系统根。
+- **从 `DEBUG_PRIVATE_CA` 迁到 `STABLE_PUBLIC_CA`**：入口改为公开 CA 链之后，各电脑卸载私有根（MCP 进程级 + 若装过的系统级）、重启 MCP，只保留 `--url <kaola-origin>`。
 
 ### 16.6 验收边界
 
-本节冻结合同，不规定安装器 CLI、子命令或磁盘布局文件名。`kaola-mcp` 已按本节做进程级信任：`NODE_EXTRA_CA_CERTS` 必须指向本机已核验的单块公开根 CA PEM（无私钥）；HTTPS 把该根加到运行时默认库，不替换、不关闭校验。指纹核验、安装到用户 `KAOLA_HOME`、卸载（不删 `device.json` / receipts）与系统提权**计划**由 `@kaola/mcp` 导出；系统/浏览器装证命令从不由考拉进程执行。安装器 CLI 与跨平台浏览器/OAuth 活测仍未交付。
+`kaola-mcp trust` 与 launcher 是本 Issue 的用户路径，必须从 package bin 可调用。内部库函数不是安装器。系统/浏览器装证命令从不由考拉进程执行。不新增 MCP 工具。
 
-必须证明：公开 CA 路径不加额外 CA 且拒绝 TLS 例外；私有 CA 路径在指纹匹配时严格 TLS 成功，去掉额外 CA 或指纹错误时失败；首次连接不能盲信「服务器返回的 CA」；卸载不留下 MCP 额外 CA。macOS / Windows / Linux 浏览器与 OAuth 的系统信任、以及干净机器对真实公开 CA 入口的活测，标为 **配合**，未实际执行不得写成已通过。真实环境标识与根私钥扫描必须为零。
+必须证明（自动化，针对真实 bin / 子进程桥，而不是只调用 `exportMcpTrustEnv`）：公开 CA 默认无额外 CA，调用方设置 `NODE_EXTRA_CA_CERTS` 时 fail closed；私有 CA 在指纹或签名清单匹配时严格 TLS 成功；错误指纹、错误签名、替换证书、缺失/权限/state 不一致时 fail closed；卸载不留下 MCP 额外 CA 且不删 `device.json` / receipts；轮换后须重启才生效。macOS / Windows / Linux 浏览器与 OAuth 的系统信任、以及干净机器对真实公开 CA 入口的活测，标为 **配合**，未实际执行不得写成已通过。真实环境标识与根私钥扫描必须为零。
+
+### 16.7 客户端 CLI 与信任 state（package bin，非 MCP 工具）
+
+`kaola-mcp` 由 `@kaola/mcp` 的 `bin` 提供。成功退出码 `0`，fail-closed 非 `0`。
+
+信任子命令：
+
+- `kaola-mcp trust install --pem <dev-root-ca.pem> --fingerprint <sha256-fingerprint>`
+- `kaola-mcp trust install --pem <dev-root-ca.pem> --manifest <trust-manifest.json>`
+- `kaola-mcp trust status`
+- `kaola-mcp trust uninstall`
+- `kaola-mcp trust system-plan`（可选 `--platform darwin|win32|linux-debian|linux-fedora`）。省略时：`darwin` / `win32` 按 `process.platform`；Linux 必须显式传发行版，不得把 Debian 与 Fedora 命令混用。只打印操作者命令，从不执行。
+
+`--fingerprint` 与 `--manifest` 必须恰好提供一个。清单 JSON：
+
+```json
+{
+  "v": 1,
+  "fingerprintSha256": "<sha256-fingerprint>",
+  "signature": "<ed25519-signature-base64>",
+  "publicKeySpki": "<ed25519-spki-base64>"
+}
+```
+
+`signature` 是对证书 DER 的 Ed25519 签名。清单里的指纹必须与 PEM 的 SHA-256 一致，且验签必须通过。
+
+安装成功后写入 `$KAOLA_HOME/trust/`（`KAOLA_HOME` 或默认 `~/.kaola`）：
+
+- 目录模式 `0700`
+- `root-ca.pem`：单块公开根 CA，`0600`
+- `state.json`：host-neutral，`0600`，至少 `{ "v": 1, "alg": "sha256", "fingerprintSha256": "<lowercase hex without colons>" }`。不含主机名、本机绝对路径、PEM 正文或私钥。经清单安装时另含 `"kind": "publisher-signature-manifest"` 与 `"publicKeySpki"`
+- PEM 与 state 必须原子写入（先写临时文件再 rename）。只存在其一、JSON 无法解析、指纹与 PEM 不一致、权限不合或不可读：视为未就绪，fail closed
+
+桥启动 `kaola-mcp --url <kaola-origin>`（同一 bin）：
+
+1. 无 PEM 且无 state：公开 CA 默认，不注入额外 CA。若调用方环境已设 `NODE_EXTRA_CA_CERTS`，fail closed，不启动桥。
+2. PEM 与 state 齐全且核验通过：只把已核验 PEM 路径注入桥**子进程**的 `NODE_EXTRA_CA_CERTS`；调用方该变量不是信任源。
+3. 其它任何不一致：fail closed，不启动桥。
+
+`trust status` 用同一套规则报告是否 ready。`trust uninstall` 删除该目录下的 PEM 与 state，不删 `device.json` 或 Claim receipts。
