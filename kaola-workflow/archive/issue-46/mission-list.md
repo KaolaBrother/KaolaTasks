@@ -41,9 +41,11 @@
   result: kaola-workflow/issue-46/.cache/validation.md — `rg`/`git grep` clean; lint/typecheck/test/build exit 0; node 843/843, vitest 131/131. No live mutation. No unexecuted platform claims.
 
 - item: Use the owner-authorized server session to deploy the selected debug TLS mode with backup, configuration validation, reload, and rollback evidence; keep all real environment identifiers in a local untracked operator receipt.
-  status: in-flight
+  status: done
   dispatched: self → user-local operator receipt outside the repository
+  result: External Ubuntu deployment completed with a controlled private root, SAN leaf, loopback-only application listener, TLS reverse proxy, persistent SQLite, service restart proof, strict pre-trust failure, and no root private key on the server. Real host, port, certificate identity, credentials, and operator paths remain only in the untracked operator receipt.
 
 - item: Complete browser login/OAuth, pending-device binding, and post-bind MCP `list_tasks` smoke against the deployed endpoint, recording only deployment-neutral acceptance in the repository.
-  status: in-flight
+  status: done
   dispatched: self via Computer Use → local isolated Path A first; deployed endpoint after strict TLS is repaired
+  result: On an enrolled macOS Claim client, GitLab and Gitea OAuth callbacks, pending-device creation, real UI bind-to-self, post-bind `list_tasks`, trust uninstall failure, reinstall recovery, service-restart persistence, and both real Issue → Claim → Git push → PR/MR → merge → completed/writeback lifecycles passed. Deployment-neutral evidence is in `docs/smoke-test.md` and PR #51. Owner accepted macOS as this run's closing UAT; Windows/Linux Claim clients and STABLE_PUBLIC_CA live validation remain explicitly unexecuted, deferred, and non-blocking.
