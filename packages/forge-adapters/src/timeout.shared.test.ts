@@ -189,7 +189,9 @@ async function raceGuard<T>(promise: Promise<T>, guardMs: number, label: string)
         ),
       )
     }, guardMs)
-    timer.unref?.()
+    // Keep the guard referenced. AbortSignal.timeout() uses an unreferenced internal timer, so if
+    // the rest of a parallel test run finishes first, unref'ing this guard as well lets Node exit
+    // the event loop and cancel the still-pending timeout assertion before either timer fires.
   })
   try {
     return await Promise.race([promise, guard])
