@@ -466,7 +466,7 @@ openssl x509 -in <dev-root-ca.pem> -noout -fingerprint -sha256
 - `kaola-mcp trust install --pem <dev-root-ca.pem> --manifest <trust-manifest.json>`
 - `kaola-mcp trust status`
 - `kaola-mcp trust uninstall`
-- `kaola-mcp trust system-plan`（可选 `--platform darwin|win32|linux-debian|linux-fedora`）。省略时：`darwin` / `win32` 按 `process.platform`；Linux 必须显式传发行版，不得把 Debian 与 Fedora 命令混用。只打印操作者命令，从不执行。
+- `kaola-mcp trust system-plan`（可选 `--platform darwin|win32|linux-debian|linux-fedora`）。省略时：`darwin` / `win32` 按 `process.platform`；Linux 必须显式传发行版，不得把 Debian 与 Fedora 命令混用。只打印操作者命令，从不执行。仅当本机信任 **ready**（PEM + state 核验通过）时才打印提权命令，目标必须是已核验的 `$KAOLA_HOME/trust/root-ca.pem`。未安装、PEM/state 不一致或磁盘 PEM 被替换：退出非 0，且不得输出 `security add-trusted-cert` / `certutil` / `update-ca-certificates` / `trust anchor`。win32 用 Windows 命令行引号（不是 POSIX 单引号），路径含空格或 `"` 时仍是一条可解析参数。
 
 `--fingerprint` 与 `--manifest` 必须恰好提供一个。清单 JSON：
 
@@ -479,7 +479,7 @@ openssl x509 -in <dev-root-ca.pem> -noout -fingerprint -sha256
 }
 ```
 
-`signature` 是对证书 DER 的 Ed25519 签名。清单里的指纹必须与 PEM 的 SHA-256 一致，且验签必须通过。
+`signature` 是对证书 DER 的 Ed25519 签名。清单里的指纹必须与 PEM 的 SHA-256 一致，且验签必须通过。`publicKeySpki` 与 `signature` **同在这份操作者提供的文件里**：它不是产品内置的发布者公钥钉，也不能把任意自带密钥的 JSON 当成独立信任锚。只有当整份清单来自与带外指纹相同的可信渠道（安装包或已认证分发，而不是第一次连 origin 下载到的东西）时，验签才代表该渠道的发布者身份。否则用 `--fingerprint` 对照带外 SHA-256。
 
 安装成功后写入 `$KAOLA_HOME/trust/`（`KAOLA_HOME` 或默认 `~/.kaola`）：
 

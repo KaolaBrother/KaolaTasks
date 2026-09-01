@@ -419,6 +419,44 @@ function collectErrorText(result) {
   return `${result.stderr || ''}\n${result.stdout || ''}\n${result.error ? String(result.error) : ''}`
 }
 
+const ELEVATION_COMMAND_MARKERS = [
+  'security add-trusted-cert',
+  'certutil',
+  'update-ca-certificates',
+  'trust anchor',
+]
+
+const SYSTEM_PLAN_PLATFORMS = {
+  darwin: /security add-trusted-cert/,
+  win32: /certutil -addstore Root/,
+  'linux-debian': /update-ca-certificates/,
+  'linux-fedora': /trust anchor/,
+}
+
+function elevationCommandHits(text) {
+  return ELEVATION_COMMAND_MARKERS.filter((marker) => String(text).includes(marker))
+}
+
+function assertNoElevationCommands(result, label) {
+  assert.equal(result.timedOut, false, `${label}: system-plan must not hang as the stdio bridge`)
+  const blob = `${result.stdout}\n${result.stderr}`
+  const hits = elevationCommandHits(blob)
+  assert.deepEqual(
+    hits,
+    [],
+    `${label}: stdout+stderr must not contain elevation commands; hits=${hits.join(', ')}; stdout=${result.stdout} stderr=${result.stderr}`,
+  )
+}
+
+function assertSystemPlanNotReady(result, label) {
+  assert.notEqual(
+    result.code,
+    0,
+    `${label}: system-plan must exit non-zero when local trust is not ready; stdout=${result.stdout} stderr=${result.stderr}`,
+  )
+  assertNoElevationCommands(result, label)
+}
+
 function assertStrictTlsNotDisabled(result, label) {
   const blob = collectErrorText(result)
   assert.equal(
@@ -596,10 +634,13 @@ describe('package bin is the user-callable trust CLI (not a new MCP tool)', () =
       `trust install via package bin must exit 0 on matching fingerprint; stdout=${install.stdout} stderr=${install.stderr}`,
     )
     assertInstallLayout(home, fixtures.ca.fingerprint)
+    const planReady = await runBin(['trust', 'system-plan', '--platform', 'darwin'], { env: launchEnv(home) })
+    assert.equal(planReady.error, undefined, 'trust system-plan after install must spawn the package bin')
+    assert.equal(planReady.timedOut, false, 'trust system-plan after install must not hang as the stdio bridge')
     assert.equal(
-      /security add-trusted-cert/.test(`${plan.stdout}\n${plan.stderr}`),
+      /security add-trusted-cert/.test(`${planReady.stdout}\n${planReady.stderr}`),
       true,
-      `trust system-plan --platform darwin must print operator commands; stdout=${plan.stdout} stderr=${plan.stderr}`,
+      `trust system-plan --platform darwin after matching install must print operator commands; stdout=${planReady.stdout} stderr=${planReady.stderr}`,
     )
   })
 
@@ -1010,20 +1051,66 @@ describe('launcher public vs private CA (real bin child)', { concurrency: 1 }, (
 })
 
 describe('trust system-plan prints operator commands and never spawns them', () => {
-  test('darwin/win32/debian/fedora command text; Linux requires explicit platform; CLI path does not spawn those tools', async (t) => {
+  test('absent local trust: system-plan exits non-zero and prints no elevation commands', async (t) => {
     const home = tmpKaolaHome(t)
-    const platforms = {
-      darwin: /security add-trusted-cert/,
-      win32: /certutil -addstore Root/,
-      'linux-debian': /update-ca-certificates/,
-      'linux-fedora': /trust anchor/,
+    for (const platform of Object.keys(SYSTEM_PLAN_PLATFORMS)) {
+      const result = await runBin(['trust', 'system-plan', '--platform', platform], { env: launchEnv(home) })
+      assertSystemPlanNotReady(result, `clean home --platform ${platform}`)
     }
 
-    for (const [platform, pattern] of Object.entries(platforms)) {
+    const omitted = await runBin(['trust', 'system-plan'], { env: launchEnv(home) })
+    assertSystemPlanNotReady(omitted, 'clean home without --platform on this host')
+  })
+
+  test('inconsistent or replaced PEM: system-plan exits non-zero and prints no elevation commands', async (t) => {
+    const replacedHome = tmpKaolaHome(t)
+    const installed = await runBin(
+      ['trust', 'install', '--pem', fixtures.ca.pemPath, '--fingerprint', fixtures.ca.fingerprint],
+      { env: launchEnv(replacedHome) },
+    )
+    assert.equal(installed.code, 0, 'setup install must succeed before replacement')
+    assertInstallLayout(replacedHome, fixtures.ca.fingerprint)
+    writeFileSync(trustPemPath(replacedHome), fixtures.otherCa.pem, { mode: 0o600 })
+
+    const replaced = await runBin(['trust', 'system-plan', '--platform', 'darwin'], {
+      env: launchEnv(replacedHome),
+    })
+    assertSystemPlanNotReady(replaced, 'replaced on-disk PEM')
+
+    const missingStateHome = tmpKaolaHome(t)
+    const installedState = await runBin(
+      ['trust', 'install', '--pem', fixtures.ca.pemPath, '--fingerprint', fixtures.ca.fingerprint],
+      { env: launchEnv(missingStateHome) },
+    )
+    assert.equal(installedState.code, 0, 'setup install must succeed before deleting state.json')
+    unlinkSync(trustStatePath(missingStateHome))
+    const missingState = await runBin(['trust', 'system-plan', '--platform', 'darwin'], {
+      env: launchEnv(missingStateHome),
+    })
+    assertSystemPlanNotReady(missingState, 'missing state.json after install')
+  })
+
+  test('ready local trust: darwin/win32/debian/fedora command text; Linux requires explicit platform; CLI path does not spawn those tools', async (t) => {
+    const home = tmpKaolaHome(t)
+    const installed = await runBin(
+      ['trust', 'install', '--pem', fixtures.ca.pemPath, '--fingerprint', fixtures.ca.fingerprint],
+      { env: launchEnv(home) },
+    )
+    assert.equal(installed.code, 0, `matching fingerprint must install before ready system-plan; stderr=${installed.stderr}`)
+    assertInstallLayout(home, fixtures.ca.fingerprint)
+    const pem = trustPemPath(home)
+
+    for (const [platform, pattern] of Object.entries(SYSTEM_PLAN_PLATFORMS)) {
       const result = await runBin(['trust', 'system-plan', '--platform', platform], { env: launchEnv(home) })
-      assert.equal(result.code, 0, `system-plan --platform ${platform} must exit 0; stderr=${result.stderr}`)
+      assert.equal(result.timedOut, false, `ready system-plan --platform ${platform} must not hang`)
+      assert.equal(result.code, 0, `ready system-plan --platform ${platform} must exit 0; stderr=${result.stderr}`)
       const blob = `${result.stdout}\n${result.stderr}`
-      assert.match(blob, pattern, `system-plan ${platform} must print the operator command`)
+      assert.match(blob, pattern, `ready system-plan ${platform} must print the operator command`)
+      assert.equal(
+        blob.includes(pem),
+        true,
+        `ready system-plan ${platform} must target installed $KAOLA_HOME/trust/root-ca.pem; stdout=${result.stdout}`,
+      )
       if (platform === 'linux-debian') {
         assert.equal(/trust anchor/.test(blob), false, 'Debian plan must not mix Fedora trust anchor')
       }
@@ -1034,9 +1121,17 @@ describe('trust system-plan prints operator commands and never spawns them', () 
           'Fedora plan must not mix Debian update-ca-certificates',
         )
       }
+      if (platform === 'win32') {
+        assert.equal(
+          blob.includes(`'${pem}'`),
+          false,
+          `printed win32 line must not wrap the PEM path in POSIX single quotes; stdout=${result.stdout} stderr=${result.stderr}`,
+        )
+      }
     }
 
     const omitted = await runBin(['trust', 'system-plan'], { env: launchEnv(home) })
+    assert.equal(omitted.timedOut, false, 'ready system-plan without --platform must not hang')
     const omittedBlob = `${omitted.stdout}\n${omitted.stderr}`
     if (process.platform === 'linux') {
       assert.notEqual(omitted.code, 0, 'Linux system-plan without --platform must fail rather than mix distros')
@@ -1046,11 +1141,16 @@ describe('trust system-plan prints operator commands and never spawns them', () 
         'Linux without --platform must not print mixed Debian+Fedora commands',
       )
     } else if (process.platform === 'darwin') {
-      assert.equal(omitted.code, 0)
+      assert.equal(omitted.code, 0, `ready omitted --platform on darwin must exit 0; stderr=${omitted.stderr}`)
       assert.match(omittedBlob, /security add-trusted-cert/)
     } else if (process.platform === 'win32') {
-      assert.equal(omitted.code, 0)
+      assert.equal(omitted.code, 0, `ready omitted --platform on win32 must exit 0; stderr=${omitted.stderr}`)
       assert.match(omittedBlob, /certutil -addstore Root/)
+      assert.equal(
+        omittedBlob.includes(`'${pem}'`),
+        false,
+        'omitted --platform win32 must not wrap the PEM path in POSIX single quotes',
+      )
     }
 
     const srcFiles = [join(PKG_DIR, 'bin', 'kaola-mcp.mjs'), ...walkSrcFiles(SRC_DIR)]

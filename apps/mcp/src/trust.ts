@@ -488,7 +488,7 @@ export function systemTrustElevationPlan(
       return {
         platform,
         requiresElevation: true,
-        commands: [`certutil -addstore Root ${shellSingleQuote(path)}`],
+        commands: [`certutil -addstore Root ${windowsQuoteArg(path)}`],
         note: 'Requires Windows UAC elevation. NODE_EXTRA_CA_CERTS is not browser trust.',
       }
     case 'linux-debian':
@@ -814,8 +814,15 @@ function cmdTrustSystemPlan(
   }
 
   const inspected = inspectInstalledTrust(resolveKaolaHome(env))
-  const pemPath = inspected.present ? inspected.pemPath : 'root-ca.pem'
-  const plan = systemTrustElevationPlan(platform, pemPath)
+  if (!inspected.ready) {
+    const reason =
+      inspected.present && inspected.message.length > 0
+        ? inspected.message
+        : 'local extra CA is not ready; install and verify before printing a system-trust plan'
+    writeErr(reason)
+    return 1
+  }
+  const plan = systemTrustElevationPlan(platform, inspected.pemPath)
   // Print operator commands only. The library note mentions the other distro by name
   // ("do not mix with … trust anchor") which the CLI oracle treats as mixed output.
   for (const command of plan.commands) writeOut(command)
@@ -1118,4 +1125,30 @@ function writeFileAtomic(path: string, contents: string): void {
 
 function shellSingleQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`
+}
+
+/** Quote one argument for Windows CreateProcess / CommandLineToArgvW (not POSIX sh). */
+function windowsQuoteArg(value: string): string {
+  if (value.length === 0) return '""'
+  if (!/[\t "]/.test(value)) return value
+  let out = '"'
+  let backslashes = 0
+  for (const ch of value) {
+    if (ch === '\\') {
+      backslashes += 1
+      continue
+    }
+    if (ch === '"') {
+      out += '\\'.repeat(backslashes * 2)
+      out += '\\"'
+      backslashes = 0
+      continue
+    }
+    out += '\\'.repeat(backslashes)
+    out += ch
+    backslashes = 0
+  }
+  out += '\\'.repeat(backslashes * 2)
+  out += '"'
+  return out
 }

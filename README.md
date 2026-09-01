@@ -207,7 +207,7 @@ openssl x509 -in <dev-root-ca.pem> -noout -fingerprint -sha256
 kaola-mcp trust install --pem <dev-root-ca.pem> --fingerprint <sha256-fingerprint>
 ```
 
-或用发布者签名清单（PEM 的 DER 上的 Ed25519）：
+或用发布者签名清单（PEM 的 DER 上的 Ed25519）。清单里的 `publicKeySpki` 与签名在同一文件，不是产品内置公钥钉：只有整份清单来自安装包或其它已认证带外渠道时才代表该渠道身份，任意自带密钥的 JSON 不能当独立信任锚。否则请用上面的 `--fingerprint`。
 
 ```bash
 kaola-mcp trust install --pem <dev-root-ca.pem> --manifest <trust-manifest.json>
@@ -228,7 +228,7 @@ kaola-mcp trust install --pem <dev-root-ca.pem> --manifest <trust-manifest.json>
 
 `kaola-mcp --url` 只从已核验 state 给桥子进程注入额外 CA。调用方环境里的 `NODE_EXTRA_CA_CERTS` 不是信任源；公开 CA 模式下若仍设置它，launcher 会拒绝启动。安装、轮换或卸载之后必须**重启 MCP 客户端**。禁止 `NODE_TLS_REJECT_UNAUTHORIZED=0`。
 
-查看状态 / 打印系统提权命令（只打印，不执行）：
+查看状态 / 打印系统提权命令（只打印，不执行）。`system-plan` 只有本机信任已核验 ready 时才输出提权命令；未安装或 PEM 被替换时失败且不打印 `security` / `certutil` / `update-ca-certificates` / `trust anchor`。
 
 ```bash
 kaola-mcp trust status

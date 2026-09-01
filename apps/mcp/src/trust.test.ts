@@ -474,6 +474,55 @@ function stripJsComments(src) {
   return src.replace(/\/\*[\s\S]*?\*\//g, '\n').replace(/(^|[^:])\/\/.*$/gm, '$1')
 }
 
+/** CommandLineToArgvW / CRT argv split. Used as the win32 quoting oracle, not a spawn. */
+function commandLineToArgvW(commandLine) {
+  const args = []
+  let current = ''
+  let inQuotes = false
+  let backslashes = 0
+  let started = false
+  const flushBackslashes = (beforeQuote) => {
+    if (!beforeQuote) {
+      current += '\\'.repeat(backslashes)
+      backslashes = 0
+      return false
+    }
+    current += '\\'.repeat(Math.floor(backslashes / 2))
+    const literalQuote = backslashes % 2 === 1
+    backslashes = 0
+    return literalQuote
+  }
+  const pushArg = () => {
+    args.push(current)
+    current = ''
+    started = false
+  }
+  for (const char of commandLine) {
+    if (char === '\\') {
+      backslashes += 1
+      started = true
+      continue
+    }
+    if (char === '"') {
+      const literalQuote = flushBackslashes(true)
+      started = true
+      if (literalQuote) current += '"'
+      else inQuotes = !inQuotes
+      continue
+    }
+    flushBackslashes(false)
+    if (!inQuotes && (char === ' ' || char === '\t')) {
+      if (started) pushArg()
+      continue
+    }
+    current += char
+    started = true
+  }
+  flushBackslashes(false)
+  if (started) pushArg()
+  return args
+}
+
 describe('verifyRootCaPem fail-closed', () => {
   test('empty PEM, private-key block, not-one CERTIFICATE, unparseable, non-CA, and fingerprint mismatch do not verify', () => {
     const verifyRootCaPem = requireFn(trust, 'verifyRootCaPem')
@@ -694,6 +743,66 @@ describe('system/browser trust elevation is explicit and never silent', () => {
     }
   })
 
+  test('win32 quoting: path with spaces is one double-quoted argument, not POSIX single quotes', () => {
+    const systemTrustElevationPlan = requireFn(trust, 'systemTrustElevationPlan')
+    const pemPath = 'C:\\Program Files\\kaola\\root-ca.pem'
+    const plan = systemTrustElevationPlan('win32', pemPath)
+    const certutilLine = (plan?.commands ?? []).find((command) => /certutil -addstore Root/.test(command))
+    assert.equal(typeof certutilLine, 'string', `win32 plan must include a certutil line; commands=${JSON.stringify(plan?.commands)}`)
+    assert.equal(
+      /'[^'\n]*Program Files[^'\n]*'/.test(certutilLine),
+      false,
+      `win32 certutil line must not wrap a spaced path in POSIX single quotes; got ${certutilLine}`,
+    )
+    assert.match(
+      certutilLine,
+      /"[^"\n]*Program Files[^"\n]*"/,
+      `win32 certutil line must double-quote a path with spaces as one argument; got ${certutilLine}`,
+    )
+    const argv = commandLineToArgvW(certutilLine)
+    const recovered = argv.find((arg) => arg.includes('Program Files'))
+    assert.equal(
+      typeof recovered,
+      'string',
+      `CommandLineToArgvW must recover the spaced path as one argument; argv=${JSON.stringify(argv)} line=${certutilLine}`,
+    )
+    assert.equal(
+      recovered.includes(pemPath) || recovered.endsWith(pemPath),
+      true,
+      `recovered argument must contain the original spaced path; recovered=${recovered}`,
+    )
+  })
+
+  test('win32 quoting: embedded double-quote is escaped for CommandLineToArgvW, not POSIX single-quoted', () => {
+    const systemTrustElevationPlan = requireFn(trust, 'systemTrustElevationPlan')
+    const pemPath = 'C:\\dir\\x"y.pem'
+    const plan = systemTrustElevationPlan('win32', pemPath)
+    const certutilLine = (plan?.commands ?? []).find((command) => /certutil -addstore Root/.test(command))
+    assert.equal(typeof certutilLine, 'string', `win32 plan must include a certutil line; commands=${JSON.stringify(plan?.commands)}`)
+    assert.equal(
+      /'[^'\n]*x"y\.pem'/.test(certutilLine),
+      false,
+      `win32 certutil line must not POSIX-single-quote a path containing "; got ${certutilLine}`,
+    )
+    assert.match(
+      certutilLine,
+      /\\"/,
+      `embedded " must be escaped as \\" inside a double-quoted Windows argument; got ${certutilLine}`,
+    )
+    const argv = commandLineToArgvW(certutilLine)
+    const recovered = argv.find((arg) => arg.includes('x"y.pem'))
+    assert.equal(
+      typeof recovered,
+      'string',
+      `CommandLineToArgvW must recover the path containing " as one argument; argv=${JSON.stringify(argv)} line=${certutilLine}`,
+    )
+    assert.equal(
+      recovered.includes(pemPath) || recovered.endsWith(pemPath),
+      true,
+      `recovered argument must contain the original path with an embedded "; recovered=${recovered}`,
+    )
+  })
+
   test('trust module source does not spawn security/certutil/update-ca-certificates/trust anchor', () => {
     const src = stripJsComments(sourceOf(TRUST_PATH))
     assert.equal(
@@ -900,4 +1009,3 @@ describe('committed MCP example stays clean', () => {
     assert.equal(server?.env, undefined, 'committed example must not include env extra-CA')
   })
 })
-
