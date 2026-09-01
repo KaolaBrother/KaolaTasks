@@ -156,8 +156,114 @@ Gitea 回调：`http://localhost:31415/login/gitea/callback`（Scopes 勾 **`rea
 2. OAuth Redirect URI：`${PUBLIC_URL}/login/gitlab/callback`（Gitea 同形）。可与 localhost 回调并存。`OAUTH_*_BASE_URL` 填服务器访问 forge 的**内网**地址。不要配 GitHub 登录回调（该路径 404）。
 3. 反代转到 `127.0.0.1:31415`，不要把 31415 放到公网。HTTPS 时用对外 scheme **覆盖** `X-Forwarded-Proto`。
 4. 证书按 [DESIGN §12](docs/DESIGN.md) 双模式：`DEBUG_PRIVATE_CA` 用受控开发根 CA 签发 **SAN 含 `<public-host>`** 的 leaf，已登记机器用 `kaola-mcp trust install` 装入**公开根 CA 证书（不含私钥）**，launcher 只给本机桥注入额外 CA；这只证明已登记测试机，不是干净机器公网信任。`STABLE_PUBLIC_CA` 用 ACME **DNS-01**（`<acme-dns-provider>` API；无 API 时手工 DNS-01 仅临时；可选 `_acme-challenge` CNAME 委派）在 `<https-port>` 上发送 fullchain，自动续期，配置测试后再 reload。CN-only 自签名 leaf 不是交付物。禁止 `NODE_TLS_REJECT_UNAUTHORIZED=0` 与把 `curl -k` 当验收。
-5. `docker compose up -d --build`。库在卷 `/data/kaola.sqlite`。密钥、主机名、证书、DNS 提供商不要进 git。没有已证明的服务器授权、选定的 `<production-subdomain>` 和 `<acme-dns-provider>` 时，不要在活网上换证。
+5. 默认承载方式是 `docker compose up -d --build`。库在卷 `/data/kaola.sqlite`。若主机不适合再运行一套容器（例如同机已有其它 Docker 工作负载），使用下面已经过外部 Ubuntu VPS smoke 的 `systemd + Nginx` fallback。两种承载方式共用同一份应用、环境、TLS 和验收合同，不要同时启动占用同一应用端口的两套服务。密钥、主机名、证书、DNS 提供商不要进 git。没有已证明的服务器授权、选定的 `<production-subdomain>` 和 `<acme-dns-provider>` 时，不要在活网上换证。
 6. 成员本机：`kaola-mcp --url ${PUBLIC_URL}`，保持严格 TLS。HTTPS 时先按下一节「安装与证书信任」选对证书模式再绑定（`STABLE_PUBLIC_CA` 不装额外 CA；`DEBUG_PRIVATE_CA` 先 `kaola-mcp trust install`，仅本机桥进程）。管理员在「电脑」页绑定设备。同机默认每分钟轮询完结任务。空库只许向导；之后 GitLab / Gitea 登录成为发布者。
+
+#### Fallback：Ubuntu + systemd + Nginx（已实测）
+
+这条路径是外部 `DEBUG_PRIVATE_CA` 完整 smoke 使用的服务器承载方式。它替代上面的 Compose 启动步骤，但不替代客户端证书信任、OAuth、设备绑定或 Claim 验收。下文只用固定产品端口和部署占位符；真实入口仍只放在未跟踪的 operator 配置。
+
+服务器准备 Node.js 22+、pnpm 和 Nginx。创建不可登录的服务用户，把当前发布字节放到 `/opt/kaola-tasks`，把 SQLite 放到单独可写目录：
+
+```bash
+sudo useradd --system --home /var/lib/kaola-tasks --shell /usr/sbin/nologin kaola
+sudo install -d -o kaola -g kaola -m 0750 /opt/kaola-tasks
+sudo install -d -o kaola -g kaola -m 0750 /var/lib/kaola-tasks
+sudo install -d -o root -g root -m 0750 /etc/kaola-tasks/certs
+```
+
+如果 `kaola` 已存在，不要重复创建。由操作者把仓库字节复制或拉取到 `/opt/kaola-tasks`；`.env` 来自仓库外的 secret/operator 材料，安装后只让服务用户可读。然后以服务用户安装和构建：
+
+```bash
+sudo install -o kaola -g kaola -m 0600 <operator-env-file> /opt/kaola-tasks/.env
+sudo -u kaola -H sh -lc 'cd /opt/kaola-tasks && pnpm install --frozen-lockfile && pnpm build'
+```
+
+`DEBUG_PRIVATE_CA` 的根私钥始终留在签发端，**不得复制到 VPS**。服务器只安装该根签发的 SAN leaf 和 leaf 私钥；SAN 是主机名时用 `DNS:<public-host>`，入口是 IP 时用 `IP:<public-ip>`，不要只写 CN：
+
+```bash
+sudo install -o root -g root -m 0644 <leaf-cert.pem> /etc/kaola-tasks/certs/leaf.pem
+sudo install -o root -g root -m 0600 <leaf-key.pem> /etc/kaola-tasks/certs/leaf.key
+```
+
+安装 `/etc/systemd/system/kaola-tasks.service`。先用 `command -v node` 核对本机 Node 绝对路径，再替换示例中的 `/usr/local/bin/node`：
+
+```ini
+[Unit]
+Description=Kaola Tasks
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kaola
+Group=kaola
+WorkingDirectory=/opt/kaola-tasks
+EnvironmentFile=/opt/kaola-tasks/.env
+Environment=PORT=31415
+Environment=HOST=127.0.0.1
+Environment=SQLITE_PATH=/var/lib/kaola-tasks/kaola.sqlite
+Environment=WEB_DIST=/opt/kaola-tasks/apps/web/dist
+Environment=POLL_INTERVAL_MS=60000
+ExecStart=/usr/local/bin/node --experimental-strip-types /opt/kaola-tasks/apps/server/src/index.ts
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/kaola-tasks
+
+[Install]
+WantedBy=multi-user.target
+```
+
+启用应用前先检查 unit；应用必须只监听 loopback：
+
+```bash
+sudo systemd-analyze verify /etc/systemd/system/kaola-tasks.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now kaola-tasks
+sudo systemctl is-active kaola-tasks
+curl --fail --silent --show-error http://127.0.0.1:31415/login >/dev/null
+```
+
+在 Debian/Ubuntu 的 `/etc/nginx/sites-available/kaola-tasks` 安装 TLS 反代，再链接到 `sites-enabled`。`X-Forwarded-Proto` 必须由反代覆盖为 `https`：
+
+```nginx
+server {
+    listen <https-port> ssl;
+    listen [::]:<https-port> ssl;
+    server_name <public-host>;
+
+    ssl_certificate /etc/kaola-tasks/certs/leaf.pem;
+    ssl_certificate_key /etc/kaola-tasks/certs/leaf.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    client_max_body_size 2m;
+
+    location / {
+        proxy_pass http://127.0.0.1:31415;
+        proxy_http_version 1.1;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-Host $http_host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Connection "";
+        proxy_read_timeout 75s;
+    }
+}
+```
+
+首次启用或每次换证都必须先检查 Nginx 配置，通过后才 reload。云安全组/防火墙只开放 `<https-port>`，不要开放 31415：
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+sudo systemctl is-active nginx kaola-tasks
+```
+
+服务器承载通过后，继续执行下一节的严格 TLS 负例、带外根指纹核验、`kaola-mcp trust install`、显式系统/浏览器信任、设备 pending/绑定和绑定后 MCP。应用或证书更新前保留上一版应用字节、`.env`、leaf/key 和 SQLite 备份；失败时恢复上一版，分别运行 `systemctl restart kaola-tasks` 和 `nginx -t` 后 reload。不要重启、清理或接管同机无关的 Docker/systemd 工作负载。
 
 Cookie / `trustProxy` / webhook 配置见 [docs/api.md](docs/api.md)。
 
