@@ -1,7 +1,7 @@
 # Documentation Index
 
 - [User guide](../README.md) — how to log in, publish tasks, and connect an Agent
-- [生产向部署](../README.md#生产向部署) — 内网 + 公网入口短清单
+- [生产向部署](../README.md#生产向部署) — 内网 + 公网入口短清单；#46 双模式 `DEBUG_PRIVATE_CA` / `STABLE_PUBLIC_CA`（文档只用占位符）
 - [Design (source of truth)](DESIGN.md)
 - [Architecture](architecture.md)
 - [API](api.md)

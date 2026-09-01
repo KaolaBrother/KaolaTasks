@@ -113,6 +113,26 @@ POST /api/v1/setup → local active+admin（空库 OAuth 不得插用户）
 
 目录用 `clone.suggested_dir`。Cloud Agent / 云端 Runtime 访问不了操作者笔记本上的 `localhost:31415`；接单用本机 Cursor，或走脚本 B。
 
+## 公网 HTTPS 入口（#46）
+
+路径 A 的原点仍是 **http://localhost:31415**。公网 `PUBLIC_URL` 的真实主机名 / `<https-port>` 只写在本地 `.env`、操作者配置或用户本机 MCP 配置，不要写进本手册、仓库共享 MCP 示例或 git。两种模式的验收**分开**，都是 **配合**（或未授权的生产机则跳过 live）：
+
+### `DEBUG_PRIVATE_CA` — 已登记设备冒烟
+
+- Leaf 由受控开发根 CA 签发，SAN 含 `<public-host>`（不是 CN-only 自签名 leaf）。
+- 只在已登记的 macOS / Windows / Linux / 浏览器里安装**公开根 CA 证书（不含私钥）**；`NODE_EXTRA_CA_CERTS` 只给本机 `kaola-mcp`，指向同一份已核验指纹的公开根 CA 证书。
+- 通过只证明这些已登记机器上的工作台、OAuth、MCP initialize → `authorization_required`、管理员绑定、绑定后 `list_tasks`。**不**证明干净机器的默认公网信任。
+- 禁止 `NODE_TLS_REJECT_UNAUTHORIZED=0`；禁止把 `curl -k` 当验收。
+
+### `STABLE_PUBLIC_CA` — 干净机器默认信任冒烟
+
+- `PUBLIC_URL` 优先 `https://<production-subdomain>`。证书来自 ACME DNS-01（不是 HTTP-01 / 入站 80），反代在 `<https-port>` 发送 fullchain。
+- 干净 macOS / Windows / Linux：不加 CA 环境变量、不点证书例外，系统 TLS / 浏览器 / `kaola-mcp` 必须链到内置根。
+- GitLab OAuth start+callback 必须走这条默认信任链；浏览器证书例外不算 OAuth 通过。
+- 续期后复跑 TLS + MCP focused proof（配置测试再 reload）。
+
+本手册路径 B（`pnpm smoke:forge`）仍打本机临时 listener，不替代上述任一条。未实际执行的平台、浏览器、OAuth 或设备绑定不得写成已通过。没有已证明的服务器授权、选定的 `<production-subdomain>` 与 `<acme-dns-provider>` 时，不做 live 换证。
+
 ## 禁止
 
 - 不要点仍为 `unused` 的登录按钮。
