@@ -133,6 +133,20 @@ POST /api/v1/setup → local active+admin（空库 OAuth 不得插用户）
 
 本手册路径 B（`pnpm smoke:forge`）仍打本机临时 listener，不替代上述任一条。未实际执行的平台、浏览器、OAuth 或设备绑定不得写成已通过。没有已证明的服务器授权、选定的 `<production-subdomain>` 与 `<acme-dns-provider>` 时，不做 live 换证。
 
+## 验收分层与通过条件
+
+按层留证据，低层通过不能替代高层。一次对外“完整通过”至少同时满足第 1–4 层；第 5 层只属于 `STABLE_PUBLIC_CA`。
+
+| 层 | 验收面 | 最小通过证据 | 不能替代 |
+|----|--------|--------------|----------|
+| 1 | 仓库静态与回归 | `pnpm lint` / `typecheck` / `test` / `build` 全部退出 0 | 真实 forge、TLS、OAuth、绑定 |
+| 2 | 真实 Forge 闭环 | 路径 B 对 GitLab 与 Gitea 都完成真实 Issue → clone/push → PR/MR → merge → 状态与评论回写 | 浏览器会话、真实管理员批准、远端 TLS |
+| 3 | 部署与 TLS | 备份；反代配置测试通过后 reload；严格 TLS 校验通过；MCP initialize 到达 `authorization_required`；保留回滚与续期证据 | OAuth 与绑定后身份 |
+| 4 | 浏览器与设备身份 | 浏览器登录/OAuth；未绑定设备得到 pending；管理员绑到指定用户；同一设备随后 `list_tasks` 成功 | 干净设备默认信任 |
+| 5 | 公网默认信任 | 干净 macOS / Windows / Linux 不装私有 CA、不设额外 CA、不点例外，完成 TLS + OAuth + MCP focused proof | — |
+
+第 3–5 层的真实域名、服务器名、端口、证书指纹、SSH 别名和 DNS provider 只进入本地不跟踪的 operator receipt；Git 只记录模式、结果和占位符。任何未执行项明确写“未执行”或“阻塞”，不得由路径 B 推断为通过。
+
 ## 禁止
 
 - 不要点仍为 `unused` 的登录按钮。
@@ -154,6 +168,8 @@ POST /api/v1/setup → local active+admin（空库 OAuth 不得插用户）
 | 手册脚本（#28 后 ensureSetup） | 2026-08-26 | B `pnpm smoke:forge -- gitlab` / `gitea` | [Issue #9](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/issues/9) → [MR !7](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/merge_requests/7)，任务 `kt-2026-0001`，`clone_auth=gitlab-basic-oauth2`，`已完成` | [Issue #12](https://gitea.com/KaolaBrother/kaola-tasks-smoke/issues/12) → [PR #13](https://gitea.com/KaolaBrother/kaola-tasks-smoke/pulls/13)，任务 `kt-2026-0001`，`clone_auth=envelope`，`已完成` |
 | 手册脚本（B 自填进程 env） | 2026-08-26 | B `ensureSimulatedAuthEnv`（未再开真实 Issue） | 空 PAT → `missing env GITLAB_TOKEN`（不是缺 `SESSION_SECRET`）；无 session/vault/OAuth 时 `buildApp`+`ensureSetup` 成功 | 同左 |
 | Claim MCP 完整闭环（#31–#40 后） | 2026-09-01 | B 生产 stdio bridge + 临时本机 listener；先 release/recover，再完整 Workflow/PR 闭环 | [Issue #15](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/issues/15) → [MR !11](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/merge_requests/11)，`request_id`/`claim_id`/跨进程恢复/同设备 fencing/`report_progress`/`release_task`/`submit_pr` 均通过，`clone_auth=gitlab-basic-oauth2`，`已完成` | [Issue #20](https://gitea.com/KaolaBrother/kaola-tasks-smoke/issues/20) → [PR #21](https://gitea.com/KaolaBrother/kaola-tasks-smoke/pulls/21)，同一组 Claim 验证通过，`clone_auth=envelope`，`已完成` |
+| Codex 亲验 Forge 闭环 | 2026-09-01 | B `pnpm smoke:forge -- gitlab` / `gitea`；读取本地 gitignored PAT，未输出令牌 | [Issue #16](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/issues/16) → [MR !12](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/merge_requests/12)，任务 `kt-2026-0001`，`clone_auth=gitlab-basic-oauth2`，`已完成` | [Issue #22](https://gitea.com/KaolaBrother/kaola-tasks-smoke/issues/22) → [PR #23](https://gitea.com/KaolaBrother/kaola-tasks-smoke/pulls/23)，任务 `kt-2026-0001`，`clone_auth=envelope`，`已完成` |
+| Codex 亲验本机浏览器闭环 | 2026-09-01 | A 隔离 SQLite + Safari；初始向导、GitLab OAuth 发布者、真实凭证档案、Issue 下拉导入、发布、未绑定 pending、管理员绑定、同设备生产 MCP、Git/PR、合并与回写；令牌未输出 | [Issue #17](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/issues/17) → [MR !13](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/merge_requests/13)，任务 `kt-2026-0001`，`clone_auth=gitlab-basic-oauth2`，`已完成`，源 Issue 恰有三条状态回写 | [Issue #24](https://gitea.com/KaolaBrother/kaola-tasks-smoke/issues/24) → [PR #25](https://gitea.com/KaolaBrother/kaola-tasks-smoke/pulls/25)，任务 `kt-2026-0002`，`clone_auth=envelope`，`已完成`，源 Issue 恰有三条状态回写；Issue 下拉为异步加载，服务端先返回数据后页面恢复 |
 
 GitHub 发布冒烟已停（此前仓 [Issue #1](https://github.com/KaolaBrother/kaola-tasks-smoke/issues/1) 开过、未走认领，已标 `not_planned` 关闭）。stdio 桥回放 `mcp-session-id` 已进 `main`；另窗 UAT 曾用短提示词走完认领到 `submit_pr`。
 

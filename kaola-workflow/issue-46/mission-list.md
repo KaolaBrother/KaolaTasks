@@ -39,3 +39,11 @@
   status: done
   dispatched: self → kaola-workflow/issue-46/.cache/validation.md
   result: kaola-workflow/issue-46/.cache/validation.md — `rg`/`git grep` clean; lint/typecheck/test/build exit 0; node 843/843, vitest 131/131. No live mutation. No unexecuted platform claims.
+
+- item: Use the owner-authorized server session to deploy the selected debug TLS mode with backup, configuration validation, reload, and rollback evidence; keep all real environment identifiers in a local untracked operator receipt.
+  status: in-flight
+  dispatched: self → user-local operator receipt outside the repository
+
+- item: Complete browser login/OAuth, pending-device binding, and post-bind MCP `list_tasks` smoke against the deployed endpoint, recording only deployment-neutral acceptance in the repository.
+  status: in-flight
+  dispatched: self via Computer Use → local isolated Path A first; deployed endpoint after strict TLS is repaired
