@@ -71,7 +71,7 @@ sequenceDiagram
 
 ## Agent 怎么接单
 
-本机跑 `kaola-mcp --url http://localhost:31415`（或 `KAOLA_URL`）。桥代签；MCP 配置里不要放 forge token、设备私钥或 `ktk_`。换任务不改配置，再调 `claim_task`。未绑定的电脑不能列出或认领，先在工作台「电脑」页绑定。
+本机跑 `kaola-mcp --url http://localhost:31415`（或 `KAOLA_URL`；生产用 `${PUBLIC_URL}`）。桥代签；MCP 配置里不要放 forge token、设备私钥、`ktk_` 或根私钥。`--url` 为 `https://…` 时走运行时默认 TLS 校验，不要设 `NODE_TLS_REJECT_UNAUTHORIZED=0`。`DEBUG_PRIVATE_CA` 下可在**用户本机、仅该 MCP server 进程**的 env 中设置 `NODE_EXTRA_CA_CERTS`，只指向已核验的公开根 CA 证书（不含私钥）；本机路径和环境值不得提交到仓库共享配置。换任务不改配置，再调 `claim_task`。未绑定的电脑不能列出或认领，先在工作台「电脑」页绑定。
 
 ```json
 {
@@ -150,13 +150,14 @@ Gitea 回调：`http://localhost:31415/login/gitea/callback`（Scopes 勾 **`rea
 
 内网跑考拉和本地 GitLab / Gitea；公网 IP（或主机名）当入口。不要把云开发机当生产。本机开发仍用上一节。
 
-浏览器 / `kaola-mcp` → 公网反代 80/443 → `127.0.0.1:31415`
+浏览器 / `kaola-mcp` → 公网 TLS 反代 `<https-port>` → `127.0.0.1:31415`（不要假设入站 80；HTTP-01 在动态名 + 无 80 时不可行）
 
-1. 复制 `.env.example` 为 `.env`，填密钥和 `PUBLIC_URL`（团队浏览器打开的地址，不带尾斜杠；有 HTTPS 写 `https://…`）。OAuth 回调、`kaola-mcp --url`、回写链接都跟它。
+1. 复制 `.env.example` 为 `.env`，填密钥和 `PUBLIC_URL`（团队浏览器打开的地址，不带尾斜杠）。`DEBUG_PRIVATE_CA` 用 `https://<public-host>:<https-port>`；`STABLE_PUBLIC_CA` 优先 `https://<production-subdomain>`。真实值只进 gitignore 的 `.env`、操作者配置或用户本机 MCP 配置，不得写进仓库。OAuth 回调、`kaola-mcp --url`、回写链接都跟它。
 2. OAuth Redirect URI：`${PUBLIC_URL}/login/gitlab/callback`（Gitea 同形）。可与 localhost 回调并存。`OAUTH_*_BASE_URL` 填服务器访问 forge 的**内网**地址。不要配 GitHub 登录回调（该路径 404）。
 3. 反代转到 `127.0.0.1:31415`，不要把 31415 放到公网。HTTPS 时用对外 scheme **覆盖** `X-Forwarded-Proto`。
-4. `docker compose up -d --build`。库在卷 `/data/kaola.sqlite`。密钥不要进 git。
-5. 成员本机：`kaola-mcp --url ${PUBLIC_URL}`，管理员在「电脑」页绑定设备。同机默认每分钟轮询完结任务。空库只许向导；之后 GitLab / Gitea 登录成为发布者。
+4. 证书按 [DESIGN §12](docs/DESIGN.md) 双模式：`DEBUG_PRIVATE_CA` 用受控开发根 CA 签发 **SAN 含 `<public-host>`** 的 leaf，只把**公开根 CA 证书（不含私钥）**装进已登记机器，`NODE_EXTRA_CA_CERTS` 仅本机桥；这只证明已登记测试机，不是干净机器公网信任。`STABLE_PUBLIC_CA` 用 ACME **DNS-01**（`<acme-dns-provider>` API；无 API 时手工 DNS-01 仅临时；可选 `_acme-challenge` CNAME 委派）在 `<https-port>` 上发送 fullchain，自动续期，配置测试后再 reload。CN-only 自签名 leaf 不是交付物。禁止 `NODE_TLS_REJECT_UNAUTHORIZED=0` 与把 `curl -k` 当验收。
+5. `docker compose up -d --build`。库在卷 `/data/kaola.sqlite`。密钥、主机名、证书、DNS 提供商不要进 git。没有已证明的服务器授权、选定的 `<production-subdomain>` 和 `<acme-dns-provider>` 时，不要在活网上换证。
+6. 成员本机：`kaola-mcp --url ${PUBLIC_URL}`，保持默认 TLS 校验。管理员在「电脑」页绑定设备。同机默认每分钟轮询完结任务。空库只许向导；之后 GitLab / Gitea 登录成为发布者。
 
 Cookie / `trustProxy` / webhook 配置见 [docs/api.md](docs/api.md)。
 

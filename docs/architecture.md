@@ -9,8 +9,10 @@ Tree: `apps/web`, `apps/server`, `apps/mcp`, `packages/shared`, `packages/forge-
 ```
 browser / kaola-mcp
          →  local-dev advertised origin http://localhost:31415 (@kaola/server Fastify)
-         →  intranet deploy: PUBLIC_URL (https://… or http://公网IP, no trailing slash);
-            host reverse-proxy 80/443 → 127.0.0.1:31415; forge on the same LAN
+         →  intranet deploy: PUBLIC_URL (https://<public-host>:<https-port> or
+            https://<production-subdomain>, no trailing slash);
+            host TLS reverse-proxy <https-port> → 127.0.0.1:31415 (no inbound :80 assumed);
+            forge on the same LAN
          →  Vite 127.0.0.1:5173 is loopback-only under root pnpm dev (not the advertised origin)
                 GET /                            placeholder when naked buildApp();
                                                  SPA when webDist; Vite proxy when only viteDevTarget
@@ -161,4 +163,4 @@ Full design: [docs/decisions/0030-claim-mcp-workflow-runner-compatibility.md](de
 
 ## Deployment
 
-`docker-compose.yml`: service `server`, ports `"127.0.0.1:31415:31415"` (loopback only; intranet TLS terminator reaches 31415 locally), `env_file: .env`, `PORT: "31415"`, `HOST: 0.0.0.0`, `SQLITE_PATH: /data/kaola.sqlite`, pass-through `${PUBLIC_URL}` / `${SESSION_SECRET}` / `${VAULT_MASTER_KEY}` / nine `OAUTH_*`, volume `kaola-data:/data`. Image still `ENV WEB_DIST=/app/apps/web/dist` (not set in compose). `apps/server/src/index.ts` `SQLITE_PATH` default remains `':memory:'` when unset (non-compose). Dockerfile `node:22-bookworm-slim`, `RUN pnpm --filter @kaola/web build`, `ENV PORT=31415`, `ENV HOST=0.0.0.0`, `ENV WEB_DIST=/app/apps/web/dist`, `EXPOSE 31415`, `CMD pnpm --filter @kaola/server start`. Operator guide: root [README.md](../README.md) 「生产向部署」; DESIGN §12 topology (D4).
+`docker-compose.yml`: service `server`, ports `"127.0.0.1:31415:31415"` (loopback only; intranet TLS terminator reaches 31415 locally), `env_file: .env`, `PORT: "31415"`, `HOST: 0.0.0.0`, `SQLITE_PATH: /data/kaola.sqlite`, pass-through `${PUBLIC_URL}` / `${SESSION_SECRET}` / `${VAULT_MASTER_KEY}` / nine `OAUTH_*`, volume `kaola-data:/data`. Image still `ENV WEB_DIST=/app/apps/web/dist` (not set in compose). `apps/server/src/index.ts` `SQLITE_PATH` default remains `':memory:'` when unset (non-compose). Dockerfile `node:22-bookworm-slim`, `RUN pnpm --filter @kaola/web build`, `ENV PORT=31415`, `ENV HOST=0.0.0.0`, `ENV WEB_DIST=/app/apps/web/dist`, `EXPOSE 31415`, `CMD pnpm --filter @kaola/server start`. When `PUBLIC_URL` starts with `https:`, the host TLS terminator — not compose — follows DESIGN §12 #46 two-mode contract (`DEBUG_PRIVATE_CA` enrolled private root vs `STABLE_PUBLIC_CA` ACME DNS-01 fullchain on `<https-port>`). HTTP-01 / inbound port 80 is not assumed. Real host, public TLS port, IP, DNS provider, and cert identity stay in gitignored operator config. `kaola-mcp` keeps runtime-default TLS verification; `NODE_TLS_REJECT_UNAUTHORIZED=0` / `--insecure` are not product paths. On enrolled debug machines only, `NODE_EXTRA_CA_CERTS` may be set in the user-local MCP server process env and must point to the verified public root CA certificate; the local path/value is not committed. Operator guide: root [README.md](../README.md) 「生产向部署」; DESIGN §12 topology (D4).
