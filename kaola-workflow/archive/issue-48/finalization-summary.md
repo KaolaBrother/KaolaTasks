@@ -55,3 +55,10 @@ DOCKED — see `.cache/doc-updater.md` and `.cache/doc-docking.md`.
 Windows/Linux Claim-client UAT and `STABLE_PUBLIC_CA` clean-client validation are intentionally deferred by the owner. They are future verification opportunities, not defects discovered by this run, and no new issue is required for this closure.
 
 ## Status: READY TO ARCHIVE AND SINK
+
+## Sink Findings
+
+post_rebase_tests: skipped
+
+archived_paths:
+- kaola-workflow/archive/issue-48/finalization-summary.md
