@@ -28,7 +28,7 @@ sequenceDiagram
 
 1. 空库先走**初始向导**（用户名/密码）创建本地管理员。之后用本地密码登录，或用 GitLab / Gitea 登录成为发布者。没有 GitHub 登录按钮。
 2. 保存一份仓库凭证，填好任务后点「发布」。发布时会校验令牌能否读、推、开 PR。
-3. 认领者本机跑 `kaola-mcp --url http://localhost:31415`（或 `KAOLA_URL`）。不要把 token 写进 mcp.json。
+3. 认领者本机跑 `kaola-mcp --url http://localhost:31415`（或 `KAOLA_URL`）。不要把 token 写进 mcp.json。公网 `https://…` 入口先看「安装与证书信任」，不要为了连上而关闭 TLS。
 4. 管理员在工作台 **电脑** 页把 **待授权电脑** 绑到自己或 **认领者**。已绑定后 `claim_task` 才拿到该任务的可复用仓库凭证（并非按次铸造的一次性令牌）；Claim 租约默认 TTL 24 小时，到期只收回考拉侧的认领锁定，不吊销 forge 侧凭证本身。
 5. Agent 实现、推分支、开 PR，再 `submit_pr`。任务变为「待验收」。
 6. 你在 forge 上 review、合并。考拉默认每分钟看一次 PR；也可以配 webhook。
@@ -71,7 +71,7 @@ sequenceDiagram
 
 ## Agent 怎么接单
 
-本机跑 `kaola-mcp --url http://localhost:31415`（或 `KAOLA_URL`；生产用 `${PUBLIC_URL}`）。桥代签；MCP 配置里不要放 forge token、设备私钥、`ktk_` 或根私钥。`--url` 为 `https://…` 时走运行时默认 TLS 校验，不要设 `NODE_TLS_REJECT_UNAUTHORIZED=0`。`DEBUG_PRIVATE_CA` 下可在**用户本机、仅该 MCP server 进程**的 env 中设置 `NODE_EXTRA_CA_CERTS`，只指向已核验的公开根 CA 证书（不含私钥）；本机路径和环境值不得提交到仓库共享配置。换任务不改配置，再调 `claim_task`。未绑定的电脑不能列出或认领，先在工作台「电脑」页绑定。
+本机跑 `kaola-mcp --url http://localhost:31415`（或 `KAOLA_URL`；生产用 `${PUBLIC_URL}`）。桥代签；MCP 配置里不要放 forge token、设备私钥、`ktk_` 或根私钥。换任务不改配置，再调 `claim_task`。未绑定的电脑不能列出或认领，先在工作台「电脑」页绑定。`--url` 为 `https://…` 时保持严格 TLS（运行时默认信任库），不要设 `NODE_TLS_REJECT_UNAUTHORIZED=0`。按下面「安装与证书信任」选择公开 CA 或私有 CA 路径：`STABLE_PUBLIC_CA` 不装额外 CA，也不要把 `NODE_EXTRA_CA_CERTS` 写进 MCP 配置；`DEBUG_PRIVATE_CA` 先用 `kaola-mcp trust install` 核验公开根证书，launcher 只从本机已核验 state 注入桥进程。调用方环境里的 `NODE_EXTRA_CA_CERTS` 不是信任源。
 
 ```json
 {
@@ -155,11 +155,106 @@ Gitea 回调：`http://localhost:31415/login/gitea/callback`（Scopes 勾 **`rea
 1. 复制 `.env.example` 为 `.env`，填密钥和 `PUBLIC_URL`（团队浏览器打开的地址，不带尾斜杠）。`DEBUG_PRIVATE_CA` 用 `https://<public-host>:<https-port>`；`STABLE_PUBLIC_CA` 优先 `https://<production-subdomain>`。真实值只进 gitignore 的 `.env`、操作者配置或用户本机 MCP 配置，不得写进仓库。OAuth 回调、`kaola-mcp --url`、回写链接都跟它。
 2. OAuth Redirect URI：`${PUBLIC_URL}/login/gitlab/callback`（Gitea 同形）。可与 localhost 回调并存。`OAUTH_*_BASE_URL` 填服务器访问 forge 的**内网**地址。不要配 GitHub 登录回调（该路径 404）。
 3. 反代转到 `127.0.0.1:31415`，不要把 31415 放到公网。HTTPS 时用对外 scheme **覆盖** `X-Forwarded-Proto`。
-4. 证书按 [DESIGN §12](docs/DESIGN.md) 双模式：`DEBUG_PRIVATE_CA` 用受控开发根 CA 签发 **SAN 含 `<public-host>`** 的 leaf，只把**公开根 CA 证书（不含私钥）**装进已登记机器，`NODE_EXTRA_CA_CERTS` 仅本机桥；这只证明已登记测试机，不是干净机器公网信任。`STABLE_PUBLIC_CA` 用 ACME **DNS-01**（`<acme-dns-provider>` API；无 API 时手工 DNS-01 仅临时；可选 `_acme-challenge` CNAME 委派）在 `<https-port>` 上发送 fullchain，自动续期，配置测试后再 reload。CN-only 自签名 leaf 不是交付物。禁止 `NODE_TLS_REJECT_UNAUTHORIZED=0` 与把 `curl -k` 当验收。
+4. 证书按 [DESIGN §12](docs/DESIGN.md) 双模式：`DEBUG_PRIVATE_CA` 用受控开发根 CA 签发 **SAN 含 `<public-host>`** 的 leaf，已登记机器用 `kaola-mcp trust install` 装入**公开根 CA 证书（不含私钥）**，launcher 只给本机桥注入额外 CA；这只证明已登记测试机，不是干净机器公网信任。`STABLE_PUBLIC_CA` 用 ACME **DNS-01**（`<acme-dns-provider>` API；无 API 时手工 DNS-01 仅临时；可选 `_acme-challenge` CNAME 委派）在 `<https-port>` 上发送 fullchain，自动续期，配置测试后再 reload。CN-only 自签名 leaf 不是交付物。禁止 `NODE_TLS_REJECT_UNAUTHORIZED=0` 与把 `curl -k` 当验收。
 5. `docker compose up -d --build`。库在卷 `/data/kaola.sqlite`。密钥、主机名、证书、DNS 提供商不要进 git。没有已证明的服务器授权、选定的 `<production-subdomain>` 和 `<acme-dns-provider>` 时，不要在活网上换证。
-6. 成员本机：`kaola-mcp --url ${PUBLIC_URL}`，保持默认 TLS 校验。管理员在「电脑」页绑定设备。同机默认每分钟轮询完结任务。空库只许向导；之后 GitLab / Gitea 登录成为发布者。
+6. 成员本机：`kaola-mcp --url ${PUBLIC_URL}`，保持严格 TLS。HTTPS 时先按下一节「安装与证书信任」选对证书模式再绑定（`STABLE_PUBLIC_CA` 不装额外 CA；`DEBUG_PRIVATE_CA` 先 `kaola-mcp trust install`，仅本机桥进程）。管理员在「电脑」页绑定设备。同机默认每分钟轮询完结任务。空库只许向导；之后 GitLab / Gitea 登录成为发布者。
 
 Cookie / `trustProxy` / webhook 配置见 [docs/api.md](docs/api.md)。
+
+## 安装与证书信任
+
+公网 HTTPS 入口只有两种模式。**先问管理员当前入口属于哪一种**，再选对应安装路径。模式写在未跟踪的本地运维配置里，不要根据第一次 TLS 报错去下载服务器给出的 CA。
+
+| 模式 | 何时用 | 本机要做什么 |
+|------|--------|--------------|
+| `STABLE_PUBLIC_CA` | 叶子由公开 CA 签发，操作系统默认根证书库就能验证 | 只装 MCP、只配 `--url`。不装额外 CA，不设 `NODE_EXTRA_CA_CERTS` |
+| `DEBUG_PRIVATE_CA` | 入口由受控开发根 CA 签发；默认根证书库不含该根 | **每台纳管电脑**都要信任同一份**公开根证书**（不是根私钥） |
+
+真实域名、服务器名、端口、证书指纹、DNS 提供商和本机路径不得写入本仓库。下文只用占位符：`<kaola-origin>`、`<dev-root-ca.pem>`、`<sha256-fingerprint>`。根私钥永远只留在签发端。
+
+产品合同见 [docs/DESIGN.md](docs/DESIGN.md) §16 / §16.7。服务端怎么签发、续期公网证书由 [#46](https://github.com/KaolaBrother/KaolaTasks/issues/46) 拥有，本节不复制。信任引导是 package bin 子命令 `kaola-mcp trust …`，不是新的 MCP 工具。系统/浏览器装证仍要操作者自己提权。
+
+### 方案 1：公开 CA（默认，干净电脑）
+
+为什么不需要安装证书：操作系统已经内置公开 CA 的根。再装私有根只会扩大信任面。
+
+1. 安装 `kaola-mcp`。
+2. 配置 `kaola-mcp --url <kaola-origin>`（或 `KAOLA_URL`）。`PUBLIC_URL` 与这个 origin 一致。
+3. 不要设置 `NODE_EXTRA_CA_CERTS`，不要 `NODE_TLS_REJECT_UNAUTHORIZED=0`，不要 `--insecure`，不要 `curl -k`，不要点浏览器证书例外。
+4. 若本机 MCP 配置或进程环境还留着 `NODE_EXTRA_CA_CERTS`，或系统信任库还留着测试私有根，说明还没从测试模式迁完，先按下面「卸载、轮换、迁移」清掉再连。
+
+浏览器 OAuth、MCP `authorization_required`、管理员绑定、绑定后 `list_tasks` 都走系统默认信任链。
+
+### 方案 2：私有 CA（测试，每台电脑都要配）
+
+为什么每台电脑都要信任引导：开发根不在操作系统默认库里。只在一台机器上装过，其它电脑照样 TLS 失败。
+
+先从带外材料拿到同一份公开根证书 PEM（`<dev-root-ca.pem>`）和它的 SHA-256（`<sha256-fingerprint>`）。**不要**用第一次连 `<kaola-origin>` 时服务器返回的 CA 当信任锚。
+
+#### 核验指纹（所有电脑，连之前）
+
+```bash
+openssl x509 -in <dev-root-ca.pem> -noout -fingerprint -sha256
+```
+
+输出必须与带外 `<sha256-fingerprint>` 一致（去掉冒号、大小写不敏感）。PEM 必须恰好一块 `CERTIFICATE`，且是 CA；文件里若出现 `PRIVATE KEY` 立刻丢掉——根私钥不得出现在客户端。
+
+#### 只跑 Agent 的电脑（MCP 进程级信任）
+
+核验通过后安装到用户级 Kaola 目录（PEM + host-neutral state，不是系统信任，浏览器读不到）：
+
+```bash
+kaola-mcp trust install --pem <dev-root-ca.pem> --fingerprint <sha256-fingerprint>
+```
+
+或用发布者签名清单（PEM 的 DER 上的 Ed25519）。清单里的 `publicKeySpki` 与签名在同一文件，不是产品内置公钥钉：只有整份清单来自安装包或其它已认证带外渠道时才代表该渠道身份，任意自带密钥的 JSON 不能当独立信任锚。否则请用上面的 `--fingerprint`。
+
+```bash
+kaola-mcp trust install --pem <dev-root-ca.pem> --manifest <trust-manifest.json>
+```
+
+然后重启 MCP，再用原来的配置启动桥（仓库示例仍只有 `command` + `--url`，不要把 `NODE_EXTRA_CA_CERTS`、PEM、指纹或私钥写进 mcp.json）：
+
+```json
+{
+  "mcpServers": {
+    "kaola-tasks": {
+      "command": "kaola-mcp",
+      "args": ["--url", "<kaola-origin>"]
+    }
+  }
+}
+```
+
+`kaola-mcp --url` 只从已核验 state 给桥子进程注入额外 CA。调用方环境里的 `NODE_EXTRA_CA_CERTS` 不是信任源；公开 CA 模式下若仍设置它，launcher 会拒绝启动。安装、轮换或卸载之后必须**重启 MCP 客户端**。禁止 `NODE_TLS_REJECT_UNAUTHORIZED=0`。
+
+查看状态 / 打印系统提权命令（只打印，不执行）。`system-plan` 只有本机信任已核验 ready 时才输出提权命令；未安装或 PEM 被替换时失败且不打印 `security` / `certutil` / `update-ca-certificates` / `trust anchor`。
+
+```bash
+kaola-mcp trust status
+kaola-mcp trust system-plan
+```
+
+Linux 必须显式传 `--platform linux-debian` 或 `--platform linux-fedora`，不要把两套命令混用。
+
+#### 需要浏览器 / OAuth / 管理员绑定的电脑
+
+进程级 `NODE_EXTRA_CA_CERTS` 不够。还要显式把同一份已核验公开根装进操作系统（或浏览器）信任库。这是第二次授权，涉及提权时不得静默：
+
+- macOS：系统钥匙串 / `security add-trusted-cert`（需管理员认证）
+- Windows：本机受信任根 / `certutil -addstore Root`（需 UAC）
+- Linux：发行版各异。Debian/Ubuntu 用 `update-ca-certificates`；Fedora/RHEL 用 `trust anchor`。二者不要混用。需 root。
+
+未完成系统信任时，浏览器 / OAuth 必须失败。点证书例外不算通过。
+
+### 卸载、轮换、退出团队、迁到公开 CA
+
+- **核验**：`kaola-mcp trust status`，或用上面的 `openssl` 命令对照带外指纹。不一致就停止连接。
+- **卸载 MCP 额外 CA**：`kaola-mcp trust uninstall`，然后重启 MCP。不要删 `device.json` / receipts。卸载后公开 CA 路径不得再注入额外 CA；调用方若仍设置 `NODE_EXTRA_CA_CERTS`，launcher 必须拒绝。
+- **卸载系统/浏览器信任**：按各 OS 提权命令手工删除该根；卸载 MCP 信任不会同时撤系统信任。
+- **根 CA 轮换**：先带外分发新根的指纹或签名清单；各电脑再跑 `kaola-mcp trust install`，重启 MCP；若曾做系统信任则同步替换；再作废旧根。新旧根的私钥都不分发。
+- **电脑退出团队**：管理员解除该设备；本机 `kaola-mcp trust uninstall`；若曾做系统信任则再撤系统根。
+- **迁到 `STABLE_PUBLIC_CA`**：入口改为公开 CA 链之后，每台电脑卸载私有根（MCP 进程级 + 若装过的系统级）、重启 MCP，只保留 `--url <kaola-origin>`。
 
 ## 给开发者
 
@@ -174,7 +269,7 @@ pnpm build
 
 ## 文档
 
-- [设计文档](docs/DESIGN.md) — 产品与架构源头
+- [设计文档](docs/DESIGN.md) — 产品与架构源头（§16 冻结双模式 MCP 安装与证书信任）
 - [GitLab / Gitea 冒烟手册](docs/smoke-test.md) — 浏览器 **配合** vs 脚本 B（B 只模拟考拉进程；`GITLAB_TOKEN` / `GITEA_TOKEN` 仍须真实 PAT）
 - [文档索引](docs/README.md)
 - [变更日志](CHANGELOG.md)
