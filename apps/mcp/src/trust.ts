@@ -639,7 +639,21 @@ export function inspectInstalledTrust(kaolaHome: string): InspectedTrust {
  * absent pair → public mode (refuse caller extra CA); verified pair → inject only the
  * installed PEM path; any inconsistency → fail closed.
  */
+/** Direct-run argv that DESIGN §16.4 forbids as a success path. */
+export function forbiddenLauncherArgv(argv: readonly string[]): string | null {
+  for (const token of argv) {
+    if (token === '--insecure' || token === '-k') return token
+  }
+  return null
+}
+
 export function resolveLauncherTrust(env: NodeJS.ProcessEnv): LauncherTrust {
+  if (callerDisabledTlsVerification(env)) {
+    return {
+      ok: false,
+      message: 'NODE_TLS_REJECT_UNAUTHORIZED=0/false is not a success path',
+    }
+  }
   const inspected = inspectInstalledTrust(resolveKaolaHome(env))
   const callerExtra = env.NODE_EXTRA_CA_CERTS
   const hasCallerExtra = typeof callerExtra === 'string' && callerExtra.trim().length > 0
@@ -962,6 +976,13 @@ function hostNeutralStateJson(state: TrustStateV1): string {
     body.publicKeySpki = state.publicKeySpki
   }
   return `${JSON.stringify(body)}\n`
+}
+
+function callerDisabledTlsVerification(env: NodeJS.ProcessEnv): boolean {
+  const raw = env.NODE_TLS_REJECT_UNAUTHORIZED
+  if (raw == null) return false
+  const value = String(raw).trim().toLowerCase()
+  return value === '0' || value === 'false'
 }
 
 function isSecureUnixMode(path: string, expected: number): boolean {

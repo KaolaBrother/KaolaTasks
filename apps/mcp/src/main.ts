@@ -28,7 +28,12 @@ import tls from 'node:tls'
 import { fileURLToPath } from 'node:url'
 import { deviceProofCanonical } from '@kaola/shared'
 import { resolveCarrierIntent, runnerSessionLocator, type CarrierIntent } from './runner-carrier.ts'
-import { readVerifiedExtraCaPem, resolveLauncherTrust, runTrustCli } from './trust.ts'
+import {
+  forbiddenLauncherArgv,
+  readVerifiedExtraCaPem,
+  resolveLauncherTrust,
+  runTrustCli,
+} from './trust.ts'
 
 const DEFAULT_ORIGIN = 'http://localhost:31415'
 const MCP_PATH = '/api/mcp'
@@ -962,6 +967,11 @@ function isDirectRun(): boolean {
 
 if (isDirectRun()) {
   const argv = process.argv.slice(2)
+  const forbiddenArg = forbiddenLauncherArgv(argv)
+  if (forbiddenArg != null) {
+    process.stderr.write(`${forbiddenArg} is not permitted\n`)
+    process.exit(1)
+  }
   if (argv[0] === 'trust') {
     try {
       process.exit(runTrustCli(argv.slice(1), process.env))

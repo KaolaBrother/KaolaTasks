@@ -2,9 +2,10 @@
 // Independent acceptance suite; test custody only, no production code here.
 //
 // Contract source: docs/DESIGN.md §16 + §7 TLS / NODE_EXTRA_CA_CERTS sentences, and
-// README.md「安装与证书信任」. DESIGN does not freeze installer CLI grammar, disk-layout
-// filenames, or a state file — this suite pins observable behavior only. When an install
-// API returns a PEM path, assertions use that return value rather than an invented relative
+// README.md「安装与证书信任」. This suite pins library seams (verify/install/export and
+// in-process runStdioBridge). Package-bin CLI, `$KAOLA_HOME/trust/` layout, and state.json
+// are frozen in DESIGN §16.7 and exercised by trust-cli.test.ts. When an install API
+// returns a PEM path, assertions use that return value rather than an invented relative
 // path.
 //
 // Production seams this suite imports (missing export = RED):
