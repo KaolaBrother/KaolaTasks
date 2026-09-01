@@ -172,7 +172,7 @@ Cookie / `trustProxy` / webhook 配置见 [docs/api.md](docs/api.md)。
 
 真实域名、服务器名、端口、证书指纹、DNS 提供商和本机路径不得写入本仓库。下文只用占位符：`<kaola-origin>`、`<dev-root-ca.pem>`、`<sha256-fingerprint>`。根私钥永远只留在签发端。
 
-产品合同见 [docs/DESIGN.md](docs/DESIGN.md) §16。服务端怎么签发、续期公网证书由 [#46](https://github.com/KaolaBrother/KaolaTasks/issues/46) 拥有，本节不复制。安装器 CLI 与专用磁盘布局仍是 #48 未交付的 frontier；下面是现在就能执行的操作者步骤。
+产品合同见 [docs/DESIGN.md](docs/DESIGN.md) §16。服务端怎么签发、续期公网证书由 [#46](https://github.com/KaolaBrother/KaolaTasks/issues/46) 拥有，本节不复制。安装器 CLI 仍未交付。`kaola-mcp` 会把进程环境里的 `NODE_EXTRA_CA_CERTS` 当作本机已核验公开根（加到默认信任库，不关闭 TLS）；系统/浏览器装证仍要操作者自己提权。下面是现在就能执行的操作者步骤。
 
 ### 方案 1：公开 CA（默认，干净电脑）
 

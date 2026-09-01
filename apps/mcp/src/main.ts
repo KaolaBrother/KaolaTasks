@@ -18,14 +18,17 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
+import { request as httpsRequest } from 'node:https'
 import { homedir } from 'node:os'
 import { hostname } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
 import type { Readable, Writable } from 'node:stream'
+import tls from 'node:tls'
 import { fileURLToPath } from 'node:url'
 import { deviceProofCanonical } from '@kaola/shared'
 import { resolveCarrierIntent, runnerSessionLocator, type CarrierIntent } from './runner-carrier.ts'
+import { readVerifiedExtraCaPem } from './trust.ts'
 
 const DEFAULT_ORIGIN = 'http://localhost:31415'
 const MCP_PATH = '/api/mcp'
@@ -521,6 +524,87 @@ type ForwardInput = {
   stderr?: Writable
   sessionId?: string
   onSessionId?: (sessionId: string) => void
+  extraCaPem?: string
+}
+
+type McpHttpResponse = {
+  status: number
+  headers: { get(name: string): string | null }
+  text(): Promise<string>
+}
+
+function defaultRuntimeCaCerts(): string[] {
+  // Named ESM import of getCACertificates throws at module load on Node 22.0–22.14
+  // (API added v22.15.0). Read it off the namespace so older engines still start.
+  const getCACertificates = (
+    tls as typeof tls & { getCACertificates?: (type?: string) => string[] }
+  ).getCACertificates
+  if (typeof getCACertificates === 'function') return getCACertificates('default')
+  return [...tls.rootCertificates]
+}
+
+/**
+ * HTTPS POST that adds `extraCaPem` to the runtime default roots (does not replace them)
+ * and leaves verification on. Used when the bridge env supplies an extra CA: Node only
+ * honors NODE extra-CA at process start, so in-process `runStdioBridge(argv, env)` must
+ * apply the PEM per request rather than mutating process-global TLS state.
+ */
+function requestHttpsWithExtraCa(
+  url: string,
+  init: { method: string; headers: Record<string, string>; body: Buffer },
+  extraCaPem: string,
+): Promise<McpHttpResponse> {
+  const headers: Record<string, string> = {
+    ...init.headers,
+    'content-length': String(init.body.length),
+  }
+  return new Promise((resolve, reject) => {
+    const req = httpsRequest(
+      url,
+      {
+        method: init.method,
+        headers,
+        ca: [...defaultRuntimeCaCerts(), extraCaPem],
+      },
+      (res) => {
+        const chunks: Buffer[] = []
+        res.on('data', (chunk: Buffer) => {
+          chunks.push(chunk)
+        })
+        res.on('end', () => {
+          const raw = res.headers
+          const body = Buffer.concat(chunks).toString('utf8')
+          resolve({
+            status: res.statusCode ?? 0,
+            headers: {
+              get(name: string): string | null {
+                const value = raw[name.toLowerCase()]
+                if (value == null) return null
+                return Array.isArray(value) ? value.join(', ') : value
+              },
+            },
+            async text() {
+              return body
+            },
+          })
+        })
+      },
+    )
+    req.on('error', reject)
+    req.write(init.body)
+    req.end()
+  })
+}
+
+async function mcpHttpPost(
+  url: string,
+  init: { method: 'POST'; headers: Record<string, string>; body: Buffer },
+  extraCaPem?: string,
+): Promise<McpHttpResponse> {
+  if (extraCaPem != null && extraCaPem.length > 0 && url.startsWith('https:')) {
+    return requestHttpsWithExtraCa(url, init, extraCaPem)
+  }
+  return fetch(url, init)
 }
 
 async function performMcpRequest(input: ForwardInput): Promise<{ status: number; parsed: unknown }> {
@@ -532,11 +616,15 @@ async function performMcpRequest(input: ForwardInput): Promise<{ status: number;
     headers['mcp-session-id'] = input.sessionId
   }
 
-  const res = await fetch(`${origin}${MCP_PATH}`, {
-    method: 'POST',
-    headers,
-    body: bodyBuf,
-  })
+  const res = await mcpHttpPost(
+    `${origin}${MCP_PATH}`,
+    {
+      method: 'POST',
+      headers,
+      body: bodyBuf,
+    },
+    input.extraCaPem,
+  )
 
   const fromHeader = res.headers.get('mcp-session-id')?.trim()
   if (fromHeader) {
@@ -608,6 +696,7 @@ type BridgeCtx = {
   sessionId?: string
   lastInitializeBody?: unknown
   carrierIntent: CarrierIntent
+  extraCaPem?: string
 }
 
 const KNOWN_TOOLS = new Set([
@@ -640,6 +729,7 @@ async function dispatch(ctx: BridgeCtx, body: unknown): Promise<unknown> {
       stdout: ctx.stdout,
       stderr: ctx.stderr,
       sessionId: ctx.sessionId,
+      extraCaPem: ctx.extraCaPem,
       onSessionId: (id) => {
         ctx.sessionId = id
       },
@@ -679,6 +769,7 @@ async function reinitialize(ctx: BridgeCtx): Promise<boolean> {
       body: initBody,
       stdout: ctx.stdout,
       stderr: ctx.stderr,
+      extraCaPem: ctx.extraCaPem,
       onSessionId: (id) => {
         ctx.sessionId = id
       },
@@ -787,6 +878,18 @@ async function handleLine(ctx: BridgeCtx, rawBody: unknown): Promise<unknown> {
   return dispatch(ctx, rawBody)
 }
 
+function extraCaPemFromBridgeEnv(env: NodeJS.ProcessEnv): string | undefined {
+  const configured = env.NODE_EXTRA_CA_CERTS
+  if (typeof configured !== 'string' || configured.trim().length === 0) return undefined
+  const verified = readVerifiedExtraCaPem(configured)
+  if (!verified.ok) {
+    throw new Error(
+      `extra CA file is not a single public CA certificate (${verified.code}): ${verified.message}`,
+    )
+  }
+  return verified.pem
+}
+
 export async function runStdioBridge(
   argv: readonly string[] = process.argv.slice(2),
   env: NodeJS.ProcessEnv = process.env,
@@ -813,7 +916,8 @@ export async function runStdioBridge(
   if (carrierIntent.carrier === 'advisory') {
     writeStderr(stderr, carrierIntent.observation)
   }
-  const ctx: BridgeCtx = { kaolaHome, url, stdout, stderr, carrierIntent }
+  const extraCaPem = extraCaPemFromBridgeEnv(env)
+  const ctx: BridgeCtx = { kaolaHome, url, stdout, stderr, carrierIntent, extraCaPem }
   const rl = createInterface({ input: stdin, crlfDelay: Infinity })
   for await (const line of rl) {
     const trimmed = line.trim()
