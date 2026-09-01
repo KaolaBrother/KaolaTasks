@@ -2,6 +2,7 @@
 
 - [User guide](../README.md) — how to log in, publish tasks, and connect an Agent
 - [生产向部署](../README.md#生产向部署) — 内网 + 公网入口短清单；#46 双模式 `DEBUG_PRIVATE_CA` / `STABLE_PUBLIC_CA`（文档只用占位符）
+- [安装与证书信任](../README.md#安装与证书信任) — #48 双模式 MCP 安装：公开 CA 默认路径 vs 私有 CA 进程级 `NODE_EXTRA_CA_CERTS`（DESIGN §16；系统/浏览器提权另一次）
 - [Design (source of truth)](DESIGN.md)
 - [Architecture](architecture.md)
 - [API](api.md)

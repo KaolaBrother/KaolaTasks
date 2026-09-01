@@ -120,7 +120,8 @@ POST /api/v1/setup → local active+admin（空库 OAuth 不得插用户）
 ### `DEBUG_PRIVATE_CA` — 已登记设备冒烟
 
 - Leaf 由受控开发根 CA 签发，SAN 含 `<public-host>`（不是 CN-only 自签名 leaf）。
-- 只在已登记的 macOS / Windows / Linux / 浏览器里安装**公开根 CA 证书（不含私钥）**；`NODE_EXTRA_CA_CERTS` 只给本机 `kaola-mcp`，指向同一份已核验指纹的公开根 CA 证书。
+- 客户端信任分两次（DESIGN §16），不要把 MCP 额外 CA 当成系统信任：本机 `kaola-mcp` **只**设进程级 `NODE_EXTRA_CA_CERTS` 指向同一份已核验指纹的公开根 CA 证书（不含私钥）；stdio 桥 fail-closed 核验后把该 PEM 加到运行时默认根库（不替换、不 TOFU、不关 TLS）。浏览器 / OAuth 读系统（或浏览器）信任库，不读该环境变量。
+- 需要工作台或 OAuth 的已登记 macOS / Windows / Linux：另做显式系统/浏览器提权，把同一份公开根装进 OS/浏览器；考拉进程不得静默执行装证命令。
 - 通过只证明这些已登记机器上的工作台、OAuth、MCP initialize → `authorization_required`、管理员绑定、绑定后 `list_tasks`。**不**证明干净机器的默认公网信任。
 - 禁止 `NODE_TLS_REJECT_UNAUTHORIZED=0`；禁止把 `curl -k` 当验收。
 
