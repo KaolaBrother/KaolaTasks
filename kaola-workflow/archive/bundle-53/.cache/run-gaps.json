@@ -1,0 +1,15 @@
+{
+  "project": "bundle-53",
+  "sweptClasses": [
+    {
+      "reasonClass": "manual:unverified-head-sha",
+      "sample": "submit_revision / submit_pr record the Agent-supplied head_sha; the poller backfills only when the stored value is null, so a push made after 交回 and before 「通过」 is not detected (security review residual, 4875bd7).",
+      "count": 1
+    },
+    {
+      "reasonClass": "manual:smoke-residue",
+      "sample": "first #53 smoke attempts left GitLab MR !15 (Issue #19) and Gitea PR #29 (Issue #28) open in 待修改 on the public smoke repos after a smoke-script rev-parse bug (fixed 9fb9099); the second attempts merged.",
+      "count": 1
+    }
+  ]
+}
