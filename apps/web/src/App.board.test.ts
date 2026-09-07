@@ -8,6 +8,10 @@
 // credential `{ profile_id }` XOR `{ inline: true }`). Timeline synthesizes 发布 from
 // created_at + poster; there is no events HTTP. Filters are client-side; the list URL stays
 // exactly `/api/v1/tasks` so App.form.test.ts's defensive stub keeps working.
+//
+// #53 widens the column enumeration from six statuses to the eight canonical ones in
+// docs/DESIGN.md §5 (待修改 / 待合并 inserted after 待验收) and adds the card surface for
+// review_round / parent_task_id / SSE progress. The pre-#53 assertions are otherwise untouched.
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
@@ -22,7 +26,16 @@ const HTTPS_ISSUE_URL = 'https://github.com/org/app/issues/12'
 const JS_ISSUE_URL = 'javascript:alert(1)'
 const FILTER_ALL = ''
 
-const STATUSES = ['待认领', '进行中', '待验收', '已完成', '已退回', '已取消'] as const
+const STATUSES = [
+  '待认领',
+  '进行中',
+  '待验收',
+  '待修改',
+  '待合并',
+  '已完成',
+  '已退回',
+  '已取消',
+] as const
 
 const ME_FULL = {
   id: 7,
@@ -70,13 +83,15 @@ type Brief = {
   acceptance_criteria: string[]
   test_command: string
   constraints: { allowed_paths: string[]; forbidden_paths: string[] }
-  pr_convention: { branch_prefix: string; title_prefix: string }
+  pr_convention: { branch_prefix: string; title_prefix: string; draft: boolean }
   credential: { profile_id: string } | { inline: true }
   priority: string
   tags: string[]
   poster: string
   status: string
   created_at: string
+  parent_task_id: string | null
+  review_round: number
 }
 
 function makeBrief(
@@ -99,13 +114,15 @@ function makeBrief(
     acceptance_criteria: [],
     test_command: '',
     constraints: { allowed_paths: [], forbidden_paths: [] },
-    pr_convention: { branch_prefix: `kaola/${id}-`, title_prefix: `[${id}] ` },
+    pr_convention: { branch_prefix: `kaola/${id}-`, title_prefix: `[${id}] `, draft: true },
     credential: { profile_id: '3' },
     priority: 'P2',
     tags: [],
     poster: 'zhang.wei',
     status: '待认领',
     created_at: '2026-08-21T08:00:00Z',
+    parent_task_id: null,
+    review_round: 0,
     ...rest,
   }
 }
@@ -457,8 +474,8 @@ describe('任务看板 — GET /api/v1/tasks', () => {
   })
 })
 
-describe('任务看板 — 六个状态列', () => {
-  it('看板默认六列按枚举顺序，空列保留，卡片落在对应 status', async () => {
+describe('任务看板 — 八个状态列（#53）', () => {
+  it('看板默认八列按枚举顺序，空列保留，卡片落在对应 status', async () => {
     const { wrapper } = await mountBoard()
     expect(node(wrapper, 'board-kanban').exists()).toBe(true)
     expect(node(wrapper, 'board-list').exists()).toBe(false)
@@ -479,6 +496,8 @@ describe('任务看板 — 六个状态列', () => {
       cardId(TASK_CANCELLED.id),
     ])
     expect(cardsIn(wrapper, '待验收')).toHaveLength(0)
+    expect(cardsIn(wrapper, '待修改')).toHaveLength(0)
+    expect(cardsIn(wrapper, '待合并')).toHaveLength(0)
     expect(cardsIn(wrapper, '已完成')).toHaveLength(0)
     expect(cardsIn(wrapper, '已退回')).toHaveLength(0)
 
@@ -486,7 +505,7 @@ describe('任务看板 — 六个状态列', () => {
     expect(textOf(wrapper, cardId(TASK_CANCELLED.id))).toContain(TASK_CANCELLED.title)
   })
 
-  it('空列表仍渲染六个空列，并给出暂无任务。', async () => {
+  it('空列表仍渲染八个空列，并给出暂无任务。', async () => {
     const { wrapper } = await mountBoard(ME_FULL, [])
     expect(columnOrder(wrapper)).toEqual(STATUSES.map((status) => columnId(status)))
     for (const status of STATUSES) {
@@ -704,5 +723,187 @@ describe('任务看板 — 中文文案', () => {
     await openDetail(wrapper, TASK_OPEN.id)
     expect(textOf(wrapper, 'board-detail-close')).toContain('关闭')
     expect(textOf(wrapper, 'board-detail')).not.toContain('Timeline')
+  })
+})
+
+// =============================================================================================
+// #53：评审循环给看板带来的新表面 —— 两列、卡片上的轮次 / 子任务 / 进度，以及 SSE。
+
+const TASK_REVISING = makeBrief({
+  id: 'kt-2026-0005',
+  title: '按第二轮意见修订导出接口',
+  status: '待修改',
+  tags: ['backend'],
+  review_round: 2,
+  parent_task_id: 'kt-2026-0001',
+  created_at: '2026-08-22T03:00:00Z',
+})
+
+const TASK_MERGING = makeBrief({
+  id: 'kt-2026-0006',
+  title: '等 forge 合并的账单改动',
+  status: '待合并',
+  tags: ['frontend'],
+  review_round: 3,
+  created_at: '2026-08-22T04:00:00Z',
+})
+
+const REVIEW_BOARD_TASKS = [TASK_OPEN, TASK_REVISING, TASK_MERGING]
+
+// happy-dom 没有 EventSource（20.11.6 上 `typeof EventSource === 'undefined'`），App.vue 因此
+// 在测试里默认不订阅。这个替身把连接和事件都摆到台面上，好让断言直接驱动它们。
+type FakeStreamListener = (event: { data: string }) => void
+
+class FakeEventSource {
+  static instances: FakeEventSource[] = []
+
+  readonly url: string
+  closed = false
+  onerror: ((event: unknown) => void) | null = null
+  private readonly listeners = new Map<string, FakeStreamListener[]>()
+
+  constructor(url: string) {
+    this.url = url
+    FakeEventSource.instances.push(this)
+  }
+
+  addEventListener(name: string, listener: FakeStreamListener) {
+    const bucket = this.listeners.get(name)
+    if (bucket == null) this.listeners.set(name, [listener])
+    else bucket.push(listener)
+  }
+
+  removeEventListener(name: string, listener: FakeStreamListener) {
+    const bucket = this.listeners.get(name)
+    if (bucket == null) return
+    this.listeners.set(
+      name,
+      bucket.filter((candidate) => candidate !== listener),
+    )
+  }
+
+  close() {
+    this.closed = true
+  }
+
+  emit(name: string, payload: unknown) {
+    for (const listener of this.listeners.get(name) ?? []) {
+      listener({ data: JSON.stringify(payload) })
+    }
+  }
+}
+
+function installEventSource() {
+  FakeEventSource.instances = []
+  ;(globalThis as unknown as Record<string, unknown>).EventSource = FakeEventSource
+}
+
+function uninstallEventSource() {
+  delete (globalThis as unknown as Record<string, unknown>).EventSource
+}
+
+afterEach(() => {
+  uninstallEventSource()
+})
+
+describe('任务看板 — 待修改 / 待合并 两列（#53）', () => {
+  it('两列出现在待验收之后，卡片按 status 落位，列头带球权副标题', async () => {
+    const { wrapper } = await mountBoard(ME_FULL, REVIEW_BOARD_TASKS)
+
+    expect(columnOrder(wrapper)).toEqual(STATUSES.map((status) => columnId(status)))
+    expect(columnOrder(wrapper).indexOf(columnId('待修改'))).toBe(
+      columnOrder(wrapper).indexOf(columnId('待验收')) + 1,
+    )
+    expect(columnOrder(wrapper).indexOf(columnId('待合并'))).toBe(
+      columnOrder(wrapper).indexOf(columnId('待修改')) + 1,
+    )
+
+    expect(cardsIn(wrapper, '待修改').map((card) => card.attributes('data-testid'))).toEqual([
+      cardId(TASK_REVISING.id),
+    ])
+    expect(cardsIn(wrapper, '待合并').map((card) => card.attributes('data-testid'))).toEqual([
+      cardId(TASK_MERGING.id),
+    ])
+
+    expect(textOf(wrapper, columnId('待验收'))).toContain('球在评审者手里')
+    expect(textOf(wrapper, columnId('待修改'))).toContain('球在 Agent 手里 · 可认领')
+    expect(textOf(wrapper, columnId('待合并'))).toContain('等 forge 合并')
+    expect(textOf(wrapper, columnId('待认领'))).not.toContain('球在')
+  })
+
+  it('状态筛选下拉认得两个新状态', async () => {
+    const { wrapper } = await mountBoard(ME_FULL, REVIEW_BOARD_TASKS)
+    expect(optionValues(wrapper, 'board-filter-status')).toEqual([FILTER_ALL, ...STATUSES])
+
+    await setSelect(wrapper, 'board-filter-status', '待合并')
+    expect(node(wrapper, cardId(TASK_MERGING.id)).exists()).toBe(true)
+    expect(node(wrapper, cardId(TASK_REVISING.id)).exists()).toBe(false)
+    expect(node(wrapper, cardId(TASK_OPEN.id)).exists()).toBe(false)
+  })
+})
+
+describe('任务看板 — 卡片上的轮次与子任务（#53）', () => {
+  it('review_round > 0 的卡片写「第 N 轮」，子任务写「子任务 · 父 …」；review_round 0 两者都不写', async () => {
+    const { wrapper } = await mountBoard(ME_FULL, REVIEW_BOARD_TASKS)
+
+    const revising = textOf(wrapper, cardId(TASK_REVISING.id))
+    expect(revising).toContain('第 2 轮')
+    expect(revising).toContain(`子任务 · 父 ${TASK_OPEN.id}`)
+
+    const merging = textOf(wrapper, cardId(TASK_MERGING.id))
+    expect(merging).toContain('第 3 轮')
+    expect(merging).not.toContain('子任务')
+
+    const open = textOf(wrapper, cardId(TASK_OPEN.id))
+    expect(open).not.toContain('轮')
+    expect(open).not.toContain('子任务')
+  })
+})
+
+describe('任务看板 — SSE /api/v1/stream（#53）', () => {
+  it('进入工作台就订阅 /api/v1/stream；progress 事件把 percent 与 phase 写到卡片上', async () => {
+    installEventSource()
+    const { wrapper } = await mountBoard(ME_FULL, REVIEW_BOARD_TASKS)
+
+    expect(FakeEventSource.instances).toHaveLength(1)
+    expect(FakeEventSource.instances[0].url).toBe('/api/v1/stream')
+
+    expect(textOf(wrapper, cardId(TASK_REVISING.id))).not.toContain('40%')
+
+    FakeEventSource.instances[0].emit('progress', {
+      task_id: TASK_REVISING.id,
+      percent: 40,
+      phase: '跑测试',
+    })
+    await settle()
+
+    const card = textOf(wrapper, cardId(TASK_REVISING.id))
+    expect(card).toContain('40%')
+    expect(card).toContain('跑测试')
+    expect(textOf(wrapper, cardId(TASK_MERGING.id))).not.toContain('40%')
+  })
+
+  it('task_updated 事件重新拉一次 GET /api/v1/tasks', async () => {
+    installEventSource()
+    const { calls } = await mountBoard(ME_FULL, REVIEW_BOARD_TASKS)
+    expect(listGets(calls)).toHaveLength(1)
+
+    FakeEventSource.instances[0].emit('task_updated', {
+      task_id: TASK_REVISING.id,
+      status: '进行中',
+    })
+    await settle()
+
+    expect(listGets(calls)).toHaveLength(2)
+    expect(listGets(calls)[1].url).toBe('/api/v1/tasks')
+  })
+
+  it('卸载时关闭连接，不留悬挂订阅', async () => {
+    installEventSource()
+    const { wrapper } = await mountBoard(ME_FULL, REVIEW_BOARD_TASKS)
+    expect(FakeEventSource.instances[0].closed).toBe(false)
+
+    wrapper.unmount()
+    expect(FakeEventSource.instances[0].closed).toBe(true)
   })
 })

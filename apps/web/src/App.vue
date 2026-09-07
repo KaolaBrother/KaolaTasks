@@ -145,6 +145,12 @@
                             :style="{ '--i': index }"
                           >
                             <n-text strong>{{ status }}</n-text>
+                            <n-text
+                              v-if="columnSubtitle(status) !== ''"
+                              class="board-column-subtitle"
+                              depth="3"
+                              :title="columnSubtitle(status)"
+                            >{{ columnSubtitle(status) }}</n-text>
                             <div
                               v-for="task in tasksForColumn(status)"
                               :key="task.id"
@@ -159,6 +165,9 @@
                             >
                               <span class="slip-title">{{ task.title }}</span>
                               <span class="slip-id">{{ task.id }}</span>
+                              <span v-if="taskRoundText(task) !== ''" class="slip-meta">{{ taskRoundText(task) }}</span>
+                              <span v-if="taskParentText(task) !== ''" class="slip-meta">{{ taskParentText(task) }}</span>
+                              <span v-if="taskProgressText(task.id) !== ''" class="slip-meta">{{ taskProgressText(task.id) }}</span>
                               <span class="slip-dot" :data-priority="task.priority ?? 'P2'" />
                             </div>
                           </div>
@@ -178,6 +187,9 @@
                           >
                             <span class="slip-title">{{ task.title }}</span>
                             <span class="slip-id">{{ task.id }}</span>
+                            <span v-if="taskRoundText(task) !== ''" class="slip-meta">{{ taskRoundText(task) }}</span>
+                            <span v-if="taskParentText(task) !== ''" class="slip-meta">{{ taskParentText(task) }}</span>
+                            <span v-if="taskProgressText(task.id) !== ''" class="slip-meta">{{ taskProgressText(task.id) }}</span>
                             <span class="slip-dot" :data-priority="task.priority ?? 'P2'" />
                           </div>
                         </div>
@@ -232,6 +244,141 @@
                             <div data-testid="board-timeline-item">
                               发布 {{ selectedTask.poster }} {{ selectedTask.created_at }}
                             </div>
+                          </div>
+                          <div data-testid="review-panel" class="review-panel">
+                            <n-text strong>评审</n-text>
+                            <n-text
+                              v-if="!reviewPanelApplies"
+                              data-testid="review-empty"
+                              class="empty-copy"
+                            >尚未提交 PR，暂无评审</n-text>
+                            <template v-else>
+                              <div data-testid="review-header" class="review-header">
+                                <span v-if="reviewPrUrl !== ''" data-testid="review-pr-url">
+                                  <a
+                                    v-if="reviewPrUrlIsHttp"
+                                    :href="reviewPrUrl"
+                                    target="_blank"
+                                    rel="noreferrer noopener"
+                                  >{{ reviewPrUrl }}</a>
+                                  <template v-else>{{ reviewPrUrl }}</template>
+                                </span>
+                                <span v-if="reviewHeadShaShort !== ''" data-testid="review-head-sha">
+                                  <code>{{ reviewHeadShaShort }}</code>
+                                </span>
+                                <span data-testid="review-round">第 {{ reviewRoundNumber }} 轮</span>
+                                <span data-testid="review-ball">球在谁手里：{{ reviewBallLabel }}</span>
+                              </div>
+                              <n-text
+                                v-if="reviewActionMessage"
+                                data-testid="review-action-message"
+                                class="task-fail"
+                              >{{ reviewActionMessage }}</n-text>
+                              <n-space v-if="canReviewAct" data-testid="review-actions" class="review-actions">
+                                <n-button
+                                  v-if="selectedTask.status === '待验收'"
+                                  data-testid="review-submit-round"
+                                  class="has-ripple primary-fill"
+                                  type="primary"
+                                  :loading="reviewActing"
+                                  @pointerdown="onRipple"
+                                  @click="runReviewAction('rounds')"
+                                >提交本轮意见</n-button>
+                                <n-button
+                                  v-if="selectedTask.status === '待验收'"
+                                  data-testid="review-approve"
+                                  class="has-ripple"
+                                  :loading="reviewActing"
+                                  @pointerdown="onRipple"
+                                  @click="runReviewAction('approve')"
+                                >通过</n-button>
+                                <n-button
+                                  v-if="selectedTask.status === '待合并'"
+                                  data-testid="review-withdraw"
+                                  class="has-ripple"
+                                  :loading="reviewActing"
+                                  @pointerdown="onRipple"
+                                  @click="runReviewAction('withdraw')"
+                                >撤回通过</n-button>
+                                <n-button
+                                  v-if="reviewActionsApply"
+                                  data-testid="review-terminate"
+                                  class="has-ripple"
+                                  :loading="reviewActing"
+                                  @pointerdown="onRipple"
+                                  @click="runReviewAction('terminate')"
+                                >终止本次交付</n-button>
+                              </n-space>
+                              <div data-testid="review-thread" class="review-thread">
+                                <n-text v-if="reviewGroups.length === 0" class="empty-copy">暂无评审意见。</n-text>
+                                <div
+                                  v-for="group in reviewGroups"
+                                  :key="group.key"
+                                  :data-testid="'review-group-' + group.key"
+                                  class="review-group"
+                                >
+                                  <n-text strong class="review-group-label">{{ group.label }}</n-text>
+                                  <div
+                                    v-for="message in group.messages"
+                                    :key="message.id"
+                                    :data-testid="'review-message-' + message.id"
+                                    class="review-message"
+                                  >
+                                    <span class="review-badges">
+                                      <span class="review-badge">{{ reviewAuthorLabel(message.author_kind) }}</span>
+                                      <span class="review-badge">{{ reviewKindLabel(message.kind) }}</span>
+                                      <span v-if="message.resolved" class="review-badge">已解决</span>
+                                    </span>
+                                    <div class="review-body">{{ message.body_md }}</div>
+                                    <div
+                                      v-if="message.anchor != null"
+                                      :data-testid="'review-anchor-' + message.id"
+                                      class="review-anchor"
+                                    >
+                                      <a
+                                        v-if="anchorIsHttp(message.anchor)"
+                                        :href="message.anchor.url"
+                                        target="_blank"
+                                        rel="noreferrer noopener"
+                                      >{{ anchorLabel(message.anchor) }}</a>
+                                      <template v-else>{{ anchorLabel(message.anchor) }}</template>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                              <n-space
+                                v-if="canReviewAct"
+                                data-testid="review-composer"
+                                class="review-composer"
+                                vertical
+                              >
+                                <n-input
+                                  data-testid="review-composer-body"
+                                  type="textarea"
+                                  v-model:value="reviewComposerBody"
+                                  placeholder="写一条评审意见"
+                                />
+                                <n-select
+                                  data-testid="review-composer-kind"
+                                  v-model:value="reviewComposerKind"
+                                  :options="reviewKindOptions"
+                                  style="width: 140px"
+                                />
+                                <n-input
+                                  data-testid="review-composer-anchor"
+                                  v-model:value="reviewComposerAnchor"
+                                  placeholder="代码锚点（可选）：粘贴 forge 文件链接"
+                                />
+                                <n-button
+                                  data-testid="review-composer-send"
+                                  class="has-ripple primary-fill"
+                                  type="primary"
+                                  :loading="reviewSending"
+                                  @pointerdown="onRipple"
+                                  @click="sendReviewMessage"
+                                >发送</n-button>
+                              </n-space>
+                            </template>
                           </div>
                         </n-space>
                       </div>
@@ -368,6 +515,13 @@
                         />
                       </n-form-item>
                     </template>
+                    <n-form-item label="拆为子任务">
+                      <n-select
+                        data-testid="task-parent"
+                        v-model:value="taskParentId"
+                        :options="taskParentOptions"
+                      />
+                    </n-form-item>
                   </section>
                   <n-button
                     data-testid="task-submit"
@@ -739,10 +893,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { dateZhCN, zhCN } from 'naive-ui'
 import './theme.css'
 import { ensureRootTokens, themeOverrides } from './theme'
+import { parseAnchorLink } from './review-anchor'
 
 ensureRootTokens()
 
@@ -814,7 +969,41 @@ type BoardTask = {
   created_at: string
   credential: { profile_id: string } | { inline: true }
   priority?: string
+  parent_task_id?: string | null
+  review_round?: number
 }
+
+// 评审面板（#53）。只保留界面真正渲染的字段：reply_to / resolves 不上屏，就不进客户端模型。
+type ReviewAnchor = { path?: string; line?: number; head_sha?: string; url?: string }
+
+type ReviewMessage = {
+  id: number
+  round: number | null
+  author_kind: string
+  kind: string
+  body_md: string
+  anchor: ReviewAnchor | null
+  resolved: boolean
+  created_at: string
+}
+
+type ReviewRound = {
+  round: number
+  kind: string
+  verdict: string | null
+}
+
+type ReviewBody = {
+  task_id: string
+  status: string
+  pr_url: string | null
+  head_sha: string | null
+  round: number
+  rounds: ReviewRound[]
+  messages: ReviewMessage[]
+}
+
+type TaskProgress = { percent: number | null; phase: string | null }
 
 type EventRow = {
   id: number
@@ -845,6 +1034,44 @@ const SYSTEM_ACTOR_LABEL = '系统'
 // Shared audit event vocabulary — kept in sync with server writers (tasks.ts/claim.ts/poller.ts/
 // webhook.ts) so the 类型 filter never silently drops a live event type.
 const LIVE_EVENT_TYPES = ['token 揭示', '状态迁移', '心跳', '变更', '回写', '认领待确认', '认领已确认']
+
+// 评审面板只在任务已经有过 PR 的状态里出现；待认领 / 进行中 不请求 GET …/review。
+const REVIEW_PANEL_STATUSES = ['待验收', '待修改', '待合并', '已完成', '已退回']
+// 评审者可以动手的三个状态（docs/api.md「Review loop REST」）。
+const REVIEW_ACTION_STATUSES = ['待验收', '待修改', '待合并']
+const REVIEW_BALL_LABELS: Record<string, string> = {
+  待验收: '评审者',
+  待修改: 'Agent',
+  待合并: '等 forge 合并',
+  已完成: '已合并',
+  已退回: '已退回',
+}
+const REVIEW_AUTHOR_LABELS: Record<string, string> = {
+  reviewer: '评审者',
+  agent: 'Agent',
+  system: '系统',
+  forge: 'forge',
+}
+const REVIEW_KIND_LABELS: Record<string, string> = {
+  blocking: '阻塞',
+  suggestion: '建议',
+  question: '提问',
+  answer: '回答',
+  note: '备注',
+  resolution: '已解决',
+}
+const REVIEW_VERDICT_LABELS: Record<string, string> = {
+  changes_requested: '需修改',
+  approved: '通过',
+  withdrawn: '已撤回',
+  terminated: '已终止',
+}
+// 服务端对这两个码不一定带 message（docs/api.md），界面必须自己有中文兜底。
+const REVIEW_ERROR_MESSAGES: Record<string, string> = {
+  no_pending_messages: '没有待提交的评审意见。',
+  parent_not_completed: '父任务尚未完成，不能通过子任务。',
+}
+const REVIEW_TERMINATE_CONFIRM = '终止本次交付后任务会转为「已退回」，确定继续吗？'
 
 const me = ref<Me | null>(null)
 const loaded = ref(false)
@@ -891,12 +1118,29 @@ const taskCredentialProfileId = ref<number | null>(null)
 const taskCredentialToken = ref('')
 const listedIssues = ref<ListedIssue[]>([])
 let listedIssuesRequest = 0
+const taskParentId = ref('')
 const taskCreating = ref(false)
 const taskMessage = ref('')
 const taskOk = ref(false)
 const taskCredentialFeedback = ref('')
 
-const BOARD_STATUSES = ['待认领', '进行中', '待验收', '已完成', '已退回', '已取消'] as const
+const BOARD_STATUSES = [
+  '待认领',
+  '进行中',
+  '待验收',
+  '待修改',
+  '待合并',
+  '已完成',
+  '已退回',
+  '已取消',
+] as const
+
+// 只有 #53 新增的三列带球权语义（docs/DESIGN.md §5「看板列语义」），其余列没有副标题。
+const BOARD_COLUMN_SUBTITLES: Record<string, string> = {
+  待验收: '球在评审者手里',
+  待修改: '球在 Agent 手里 · 可认领',
+  待合并: '等 forge 合并',
+}
 const boardTasks = ref<BoardTask[]>([])
 const boardLayout = ref<'kanban' | 'list'>('kanban')
 const boardFilterStatus = ref('')
@@ -905,6 +1149,15 @@ const boardFilterForge = ref('')
 const selectedTaskId = ref<string | null>(null)
 const flashedTaskId = ref<string | null>(null)
 const boardDetailActionMessage = ref('')
+const taskProgress = ref<Record<string, TaskProgress>>({})
+const review = ref<ReviewBody | null>(null)
+const reviewActionMessage = ref('')
+const reviewActing = ref(false)
+const reviewSending = ref(false)
+const reviewComposerBody = ref('')
+const reviewComposerKind = ref('blocking')
+const reviewComposerAnchor = ref('')
+let reviewRequest = 0
 const workbenchPane = ref<WorkbenchPane>('board')
 const statsCompletedDisplay = ref(0)
 let statsCountRaf = 0
@@ -943,6 +1196,14 @@ const boardStatusFilterOptions = [
 ]
 
 const boardForgeFilterOptions = [{ label: '全部', value: '' }, ...forgeOptions]
+
+// 评审者只写这四种；answer / resolution 是 Agent 侧 MCP 的 kind。
+const reviewKindOptions = [
+  { label: '阻塞', value: 'blocking' },
+  { label: '建议', value: 'suggestion' },
+  { label: '提问', value: 'question' },
+  { label: '备注', value: 'note' },
+]
 
 const view = computed(() => {
   if (!loaded.value || me.value == null) return 'login'
@@ -1015,6 +1276,14 @@ const listedIssueOptions = computed(() =>
   })),
 )
 
+// 父任务候选：已经在看板列表里的、未终态的任务（docs/DESIGN.md §17.4：父为终态直接 409）。
+const taskParentOptions = computed(() => [
+  { label: '无', value: '' },
+  ...boardTasks.value
+    .filter((task) => task.status !== '已完成' && task.status !== '已取消')
+    .map((task) => ({ label: `${task.id} ${task.title}`, value: task.id })),
+])
+
 const showImportedIssueCard = computed(
   () => taskSourceType.value === 'imported' && taskImportReady.value,
 )
@@ -1053,6 +1322,62 @@ const currentKanbanStatus = computed(() => {
   if (selectedTask.value != null) return selectedTask.value.status
   if (boardFilterStatus.value !== '') return boardFilterStatus.value
   return '待认领'
+})
+
+const reviewPanelApplies = computed(() => {
+  const task = selectedTask.value
+  return task != null && REVIEW_PANEL_STATUSES.includes(task.status)
+})
+
+const reviewActionsApply = computed(() => {
+  const task = selectedTask.value
+  return task != null && REVIEW_ACTION_STATUSES.includes(task.status)
+})
+
+// 评审者 = active 且 admin / full（canPublish，docs/DESIGN.md §17.2），且任务停在
+// 待验收 / 待修改 / 待合并 —— 已完成 / 已退回 的面板只读。
+const canReviewAct = computed(() => canPublish.value && reviewActionsApply.value)
+
+const reviewPrUrl = computed(() => review.value?.pr_url ?? '')
+
+const reviewPrUrlIsHttp = computed(() => urlLooksHttp(reviewPrUrl.value))
+
+const reviewHeadShaShort = computed(() => (review.value?.head_sha ?? '').slice(0, 12))
+
+const reviewRoundNumber = computed(() => review.value?.round ?? 0)
+
+const reviewBallLabel = computed(() => {
+  const status = selectedTask.value?.status ?? ''
+  return REVIEW_BALL_LABELS[status] ?? status
+})
+
+// 轮次倒序，未归轮的「本轮草稿」永远排在最后。
+const reviewGroups = computed(() => {
+  const body = review.value
+  if (body == null) return []
+  const rounded = new Map<number, ReviewMessage[]>()
+  const draft: ReviewMessage[] = []
+  for (const message of body.messages) {
+    if (message.round == null) {
+      draft.push(message)
+      continue
+    }
+    const bucket = rounded.get(message.round)
+    if (bucket == null) rounded.set(message.round, [message])
+    else bucket.push(message)
+  }
+  const groups: { key: string; label: string; messages: ReviewMessage[] }[] = []
+  for (const round of [...rounded.keys()].sort((left, right) => right - left)) {
+    groups.push({
+      key: String(round),
+      label: reviewRoundLabel(round),
+      messages: rounded.get(round) ?? [],
+    })
+  }
+  if (draft.length > 0) {
+    groups.push({ key: 'draft', label: '本轮草稿（未提交）', messages: draft })
+  }
+  return groups
 })
 
 const canPosterCancel = computed(() => {
@@ -1245,6 +1570,54 @@ const statsByUsername = computed(() => {
   return Object.entries(map).map(([username, count]) => ({ username, count }))
 })
 
+function columnSubtitle(status: string): string {
+  return BOARD_COLUMN_SUBTITLES[status] ?? ''
+}
+
+function taskRoundText(task: BoardTask): string {
+  const round = task.review_round ?? 0
+  return round > 0 ? `第 ${round} 轮` : ''
+}
+
+function taskParentText(task: BoardTask): string {
+  const parent = task.parent_task_id
+  return parent == null || parent === '' ? '' : `子任务 · 父 ${parent}`
+}
+
+function taskProgressText(id: string): string {
+  const progress = taskProgress.value[id]
+  if (progress == null) return ''
+  const parts: string[] = []
+  if (progress.percent != null) parts.push(`${progress.percent}%`)
+  if (progress.phase != null && progress.phase !== '') parts.push(progress.phase)
+  return parts.join(' ')
+}
+
+function reviewAuthorLabel(authorKind: string): string {
+  return REVIEW_AUTHOR_LABELS[authorKind] ?? authorKind
+}
+
+function reviewKindLabel(kind: string): string {
+  return REVIEW_KIND_LABELS[kind] ?? kind
+}
+
+function reviewRoundLabel(round: number): string {
+  const row = review.value?.rounds.find((candidate) => candidate.round === round)
+  const verdict = row?.verdict == null ? undefined : REVIEW_VERDICT_LABELS[row.verdict]
+  return verdict == null ? `第 ${round} 轮` : `第 ${round} 轮 · ${verdict}`
+}
+
+function anchorLabel(anchor: ReviewAnchor): string {
+  if (anchor.path != null && anchor.path !== '') {
+    return anchor.line == null ? anchor.path : `${anchor.path}:${anchor.line}`
+  }
+  return anchor.url ?? ''
+}
+
+function anchorIsHttp(anchor: ReviewAnchor): boolean {
+  return anchor.url != null && urlLooksHttp(anchor.url)
+}
+
 function tasksForColumn(status: string): BoardTask[] {
   return filteredBoardTasks.value.filter((task) => task.status === status)
 }
@@ -1252,11 +1625,18 @@ function tasksForColumn(status: string): BoardTask[] {
 function openBoardDetail(id: string) {
   selectedTaskId.value = id
   boardDetailActionMessage.value = ''
+  resetReviewComposer()
+  review.value = null
+  void refreshReviewPanel()
 }
 
 function closeBoardDetail() {
   selectedTaskId.value = null
   boardDetailActionMessage.value = ''
+  resetReviewComposer()
+  reviewRequest += 1
+  review.value = null
+  reviewActionMessage.value = ''
 }
 
 function credentialChrome(credential: BoardTask['credential']): string {
@@ -1387,6 +1767,14 @@ function asBoardTask(raw: Record<string, unknown>, fallback?: BoardTask): BoardT
     created_at: typeof raw.created_at === 'string' ? raw.created_at : (fallback?.created_at ?? ''),
     credential: asCredential(raw.credential, fallback?.credential ?? { inline: true }),
     priority: typeof raw.priority === 'string' ? raw.priority : fallback?.priority,
+    parent_task_id:
+      typeof raw.parent_task_id === 'string'
+        ? raw.parent_task_id
+        : raw.parent_task_id === null
+          ? null
+          : (fallback?.parent_task_id ?? null),
+    review_round:
+      typeof raw.review_round === 'number' ? raw.review_round : (fallback?.review_round ?? 0),
   }
 }
 
@@ -1473,6 +1861,7 @@ onMounted(async () => {
     loaded.value = true
   }
   if (view.value === 'member') {
+    openStream()
     await loadTasks()
     await loadEvents()
     await loadStats()
@@ -1495,6 +1884,7 @@ async function applyMeFromResponse(res: Response) {
   trustedAutomation.value = me.value?.trusted_automation === true
   setupComplete.value = true
   if (view.value === 'member') {
+    openStream()
     await loadTasks()
     await loadEvents()
     await loadStats()
@@ -1776,6 +2166,275 @@ async function loadTasks() {
   }
 }
 
+function resetReviewComposer() {
+  reviewComposerBody.value = ''
+  reviewComposerKind.value = 'blocking'
+  reviewComposerAnchor.value = ''
+}
+
+function asReviewAnchor(value: unknown): ReviewAnchor | null {
+  if (value == null || typeof value !== 'object') return null
+  const raw = value as Record<string, unknown>
+  const anchor: ReviewAnchor = {}
+  if (typeof raw.path === 'string') anchor.path = raw.path
+  if (typeof raw.line === 'number') anchor.line = raw.line
+  if (typeof raw.head_sha === 'string') anchor.head_sha = raw.head_sha
+  if (typeof raw.url === 'string') anchor.url = raw.url
+  return Object.keys(anchor).length === 0 ? null : anchor
+}
+
+function asReviewMessage(value: unknown): ReviewMessage | null {
+  if (value == null || typeof value !== 'object') return null
+  const raw = value as Record<string, unknown>
+  if (typeof raw.id !== 'number') return null
+  return {
+    id: raw.id,
+    round: typeof raw.round === 'number' ? raw.round : null,
+    author_kind: typeof raw.author_kind === 'string' ? raw.author_kind : '',
+    kind: typeof raw.kind === 'string' ? raw.kind : '',
+    body_md: typeof raw.body_md === 'string' ? raw.body_md : '',
+    anchor: asReviewAnchor(raw.anchor),
+    resolved: raw.resolved === true,
+    created_at: typeof raw.created_at === 'string' ? raw.created_at : '',
+  }
+}
+
+function asReviewRound(value: unknown): ReviewRound | null {
+  if (value == null || typeof value !== 'object') return null
+  const raw = value as Record<string, unknown>
+  if (typeof raw.round !== 'number') return null
+  return {
+    round: raw.round,
+    kind: typeof raw.kind === 'string' ? raw.kind : '',
+    verdict: typeof raw.verdict === 'string' ? raw.verdict : null,
+  }
+}
+
+function asReviewBody(body: Record<string, unknown> | null, taskId: string): ReviewBody | null {
+  if (body == null) return null
+  const messages: ReviewMessage[] = []
+  if (Array.isArray(body.messages)) {
+    for (const item of body.messages) {
+      const message = asReviewMessage(item)
+      if (message != null) messages.push(message)
+    }
+  }
+  const rounds: ReviewRound[] = []
+  if (Array.isArray(body.rounds)) {
+    for (const item of body.rounds) {
+      const round = asReviewRound(item)
+      if (round != null) rounds.push(round)
+    }
+  }
+  return {
+    task_id: typeof body.task_id === 'string' ? body.task_id : taskId,
+    status: typeof body.status === 'string' ? body.status : '',
+    pr_url: typeof body.pr_url === 'string' ? body.pr_url : null,
+    head_sha: typeof body.head_sha === 'string' ? body.head_sha : null,
+    round: typeof body.round === 'number' ? body.round : 0,
+    rounds,
+    messages,
+  }
+}
+
+// 评审失败信封：先走本应用自己的类型化 message（#45 的判别），再补两个服务端可能不带 message
+// 的码，最后才是「…（状态码）」。英文原文永远不上屏。
+function reviewFailureMessage(
+  body: Record<string, unknown> | null,
+  status: number,
+  fallback: string,
+): string {
+  const typed = typedErrorMessage(body)
+  if (typed != null) return typed
+  const code = typeof body?.error === 'string' ? body.error : ''
+  return REVIEW_ERROR_MESSAGES[code] ?? `${fallback}（${status}）`
+}
+
+async function loadReview(id: string) {
+  const request = ++reviewRequest
+  try {
+    const res = await fetch(`/api/v1/tasks/${id}/review`, {
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+    })
+    const body = await readJson(res)
+    if (request !== reviewRequest) return
+    if (!res.ok) {
+      review.value = null
+      reviewActionMessage.value = reviewFailureMessage(body, res.status, '评审加载失败')
+      return
+    }
+    review.value = asReviewBody(body, id)
+  } catch {
+    if (request !== reviewRequest) return
+    review.value = null
+    reviewActionMessage.value = '评审加载失败'
+  }
+}
+
+// 待认领 / 进行中 的任务还没有 PR，面板只写「尚未提交 PR，暂无评审」，不发请求。
+async function refreshReviewPanel() {
+  const task = selectedTask.value
+  if (task == null || !REVIEW_PANEL_STATUSES.includes(task.status)) {
+    reviewRequest += 1
+    review.value = null
+    return
+  }
+  await loadReview(task.id)
+}
+
+async function sendReviewMessage() {
+  const task = selectedTask.value
+  if (task == null) return
+  const text = reviewComposerBody.value.trim()
+  if (text === '') return
+  reviewSending.value = true
+  reviewActionMessage.value = ''
+  try {
+    const payload: Record<string, unknown> = { body_md: text, kind: reviewComposerKind.value }
+    const anchorText = reviewComposerAnchor.value.trim()
+    if (anchorText !== '') payload.anchor = parseAnchorLink(anchorText)
+    const res = await postJson(`/api/v1/tasks/${task.id}/review/messages`, payload)
+    const body = await readJson(res)
+    if (!res.ok) {
+      reviewActionMessage.value = reviewFailureMessage(body, res.status, '发送失败')
+      return
+    }
+    resetReviewComposer()
+    await refreshReviewPanel()
+  } catch {
+    reviewActionMessage.value = '发送失败'
+  } finally {
+    reviewSending.value = false
+  }
+}
+
+async function runReviewAction(action: 'rounds' | 'approve' | 'withdraw' | 'terminate') {
+  const task = selectedTask.value
+  if (task == null) return
+  if (action === 'terminate' && !window.confirm(REVIEW_TERMINATE_CONFIRM)) return
+  reviewActing.value = true
+  reviewActionMessage.value = ''
+  try {
+    const res = await postJson(`/api/v1/tasks/${task.id}/review/${action}`, {})
+    const body = await readJson(res)
+    if (!res.ok) {
+      reviewActionMessage.value = reviewFailureMessage(body, res.status, '操作失败')
+      return
+    }
+    const updated = body?.task
+    if (updated != null && typeof updated === 'object') {
+      applyBriefUpdate(updated as Record<string, unknown>)
+    }
+    await refreshReviewPanel()
+  } catch {
+    reviewActionMessage.value = '操作失败'
+  } finally {
+    reviewActing.value = false
+  }
+}
+
+// --- SSE（GET /api/v1/stream，docs/api.md §17.5）-----------------------------------------
+
+let streamSource: EventSource | null = null
+let streamRetryTimer = 0
+
+function streamPayload(event: Event): Record<string, unknown> | null {
+  const data = (event as MessageEvent).data
+  if (typeof data !== 'string') return null
+  try {
+    const parsed = JSON.parse(data) as unknown
+    if (parsed == null || typeof parsed !== 'object') return null
+    return parsed as Record<string, unknown>
+  } catch {
+    return null
+  }
+}
+
+function streamTaskId(payload: Record<string, unknown> | null): string | null {
+  const id = payload?.task_id
+  return typeof id === 'string' ? id : null
+}
+
+async function onStreamTaskUpdated(event: Event) {
+  const id = streamTaskId(streamPayload(event))
+  await loadTasks()
+  if (id != null && id === selectedTaskId.value) await refreshReviewPanel()
+}
+
+function onStreamProgress(event: Event) {
+  const payload = streamPayload(event)
+  const id = streamTaskId(payload)
+  if (id == null) return
+  taskProgress.value = {
+    ...taskProgress.value,
+    [id]: {
+      percent: typeof payload?.percent === 'number' ? payload.percent : null,
+      phase: typeof payload?.phase === 'string' ? payload.phase : null,
+    },
+  }
+}
+
+async function onStreamReview(event: Event) {
+  const id = streamTaskId(streamPayload(event))
+  if (id == null || id !== selectedTaskId.value) return
+  await refreshReviewPanel()
+}
+
+function openStream() {
+  // 测试环境（happy-dom）没有 EventSource；没有就安静地不订阅，其余功能照常。
+  if (typeof EventSource === 'undefined') return
+  if (streamSource != null) return
+  let source: EventSource
+  try {
+    source = new EventSource('/api/v1/stream')
+  } catch {
+    return
+  }
+  streamSource = source
+  source.addEventListener('task_updated', (event) => {
+    void onStreamTaskUpdated(event)
+  })
+  source.addEventListener('progress', onStreamProgress)
+  source.addEventListener('review_round', (event) => {
+    void onStreamReview(event)
+  })
+  source.addEventListener('discussion_message', (event) => {
+    void onStreamReview(event)
+  })
+  source.onerror = () => {
+    reconnectStream()
+  }
+}
+
+// 有界重连：一次错误关掉连接并只排一个 3s 定时器，重连成功前不再排第二个。
+function reconnectStream() {
+  if (streamSource != null) {
+    streamSource.close()
+    streamSource = null
+  }
+  if (streamRetryTimer !== 0) return
+  streamRetryTimer = window.setTimeout(() => {
+    streamRetryTimer = 0
+    openStream()
+  }, 3000)
+}
+
+function closeStream() {
+  if (streamRetryTimer !== 0) {
+    window.clearTimeout(streamRetryTimer)
+    streamRetryTimer = 0
+  }
+  if (streamSource != null) {
+    streamSource.close()
+    streamSource = null
+  }
+}
+
+onUnmounted(() => {
+  closeStream()
+})
+
 async function loadEvents() {
   try {
     const res = await fetch('/api/v1/events', {
@@ -1951,6 +2610,17 @@ async function createTask() {
       ? { token: taskCredentialToken.value }
       : { profile_id: taskCredentialProfileId.value as number }
 
+  // 「无」时整把 key 不出现在请求体里 —— 服务端只在带 parent_task_id 时才做父任务校验。
+  const payload: Record<string, unknown> = {
+    title,
+    description_md: taskDescription.value,
+    source,
+    repo,
+    credential,
+  }
+  const parentId = taskParentId.value.trim()
+  if (parentId !== '') payload.parent_task_id = parentId
+
   taskCreating.value = true
   taskMessage.value = ''
   taskOk.value = false
@@ -1960,13 +2630,7 @@ async function createTask() {
       method: 'POST',
       credentials: 'include',
       headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title,
-        description_md: taskDescription.value,
-        source,
-        repo,
-        credential,
-      }),
+      body: JSON.stringify(payload),
     })
     const body = await readJson(res)
     if (!res.ok) {

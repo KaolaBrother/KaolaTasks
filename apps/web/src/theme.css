@@ -281,6 +281,88 @@ body {
   color: var(--bark);
 }
 
+.board-column-subtitle {
+  display: block;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--bark);
+}
+
+.slip-meta {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--bark);
+}
+
+.review-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid color-mix(in srgb, var(--bark) 25%, transparent);
+}
+
+.review-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--bark);
+}
+
+.review-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.review-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.review-group-label {
+  font-size: 12px;
+}
+
+.review-message {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--slip) 70%, transparent);
+}
+
+.review-badges {
+  display: flex;
+  gap: 6px;
+}
+
+.review-badge {
+  padding: 0 6px;
+  border-radius: 10px;
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--bark);
+  background: color-mix(in srgb, var(--bark) 12%, transparent);
+}
+
+/* body_md 只按纯文本换行渲染 —— 这个应用没有 markdown 依赖，也不打算引入。 */
+.review-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.review-anchor {
+  font-family: ui-monospace, 'IBM Plex Mono', monospace;
+  font-size: 12px;
+}
+
 .slip-dot {
   width: 8px;
   height: 8px;
