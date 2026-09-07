@@ -327,7 +327,7 @@ GitHub 发布冒烟已停（此前仓 [Issue #1](https://github.com/KaolaBrother
 | 备用 HTML 表单缺陷 | Safari `/login` 原表单 POST 返回 **415 FST_ERR_CTP_INVALID_MEDIA_TYPE**，空库向导同样缺少解析。先补测试复现，再修复仅 setup/login 的 urlencoded parser，成功以 303 回工作台，保留 JSON 201/200；拒绝跨 origin 表单。修复后 Safari 实际表单登录并跳转成功 |
 | 修复回归 | 新增四项测试：表单向导与一次性门闩、正确／错误密码、跨 origin 不建用户或会话、其他 API 不接受表单格式；定向 auth/cookie **25/25**。lint、typecheck、build 全通过 |
 
-完整 Web 回归首次有一项 `App.error-envelope.test.ts` 的 403 发布提示断言报 `missing [data-testid="task-message"]`（165/166）；该文件及 Web 产品代码未改。原样单文件复查 **11/11** 通过。随后原样完整 Web 复查 **166/166、9/9 文件通过**。保留首轮失败，不把重跑写成从未失败；该单次异步提示断言波动的根因未在本轮认定。
+完整 Web 回归首次有一项 `App.error-envelope.test.ts` 的 403 发布提示断言报 `missing [data-testid="task-message"]`（165/166）；该文件及 Web 产品代码未改。原样单文件复查 **11/11** 通过。随后原样完整 Web 复查 **166/166、9/9 文件通过**。保留首轮失败，不把重跑写成从未失败；该单次异步提示断言波动的根因未在本轮认定，后续调查记录为 [#61](https://github.com/KaolaBrother/KaolaTasks/issues/61)。
 
 ### VPS 已按后续指令卸载清理
 

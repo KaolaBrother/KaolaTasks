@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `#60` 修复 `/login` 备用向导／登录表单返回 415：仅 setup/login 接受 urlencoded，成功建立会话后 303 回工作台，JSON 201/200 不变；跨 origin 表单返回 403。补齐 GitLab/Gitea 真实 OAuth、macOS/Linux 设备、评审循环与 restack 的综合 UAT 记录；Web 单次异步提示波动另见 #61。
+
 - 冒烟 Path C 合并后等待进程内「完成」回写落地再断言 `回写` 事件（`settleWritebacks` + `retryPendingWritebacks`）。2s poller 与脚本第二路 sqlite 竞态时，forge 评论可能已在、事件行尚未写入。仅 harness。
 - `#58` 冒烟 `waitForForgeHead`：外层仍 90s；每次 `getPullRequest` 仍走 #37 `DEFAULT_TIMEOUT_MS` 10s。单次 `TimeoutError` / abort-timeout 不再整段失败，继续 poll 到 90s 截止。`KAOLA_FORGE_TIMEOUT_MS` 仍未实现，不是活旋钮。不改生产 adapter 默认。仅 harness。
 - `#57` 冒烟 listen：路径 B 始终 `127.0.0.1`（忽略 `UAT_WEB_HOST`），临时端口；路径 C `--web` 默认 `127.0.0.1`，`UAT_WEB_HOST` 非空才覆盖（仍可显式 `0.0.0.0`）。浏览器 URL 仍是 `http://localhost:${UAT_WEB_PORT}`（cookie host），与 listen 地址分开。不改生产 `HOST` / compose `127.0.0.1:31415:31415`。仅 harness。

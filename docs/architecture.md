@@ -19,8 +19,8 @@ browser / kaola-mcp
                 /login*                          HTML wizard or login; GitLab/Gitea OAuth start+callback;
                                                  GET /login/github and /login/github/callback are 404
                 GET /api/v1/setup                public { setup_complete }
-                POST /api/v1/setup               first local admin (201)
-                POST /api/v1/login               local password session
+                POST /api/v1/setup               first local admin (JSON 201 / HTML form 303)
+                POST /api/v1/login               local password session (JSON 200 / HTML form 303)
                 /api/v1/me                       session user (+ trusted_automation, #16; permission_level admin|full|claim_only)
                 /api/v1/me/settings              session PUT { trusted_automation } (#16; admin only)
                 GET /api/v1/users                session admin list (no hashes)
