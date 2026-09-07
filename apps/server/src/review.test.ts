@@ -1277,4 +1277,62 @@ describe('issue #54 head_sha anchoring', { concurrency: false }, () => {
     assert.equal(view.head_stale, true)
     assertNoSecrets('view exposure', view)
   })
+
+  // Security review R1 (#54): the live head check is an await, so the 待验收 guard is a stale
+  // snapshot by commit time. The transaction must re-check and refuse rather than overwrite a
+  // terminal transition that landed during the forge round-trip.
+  test('approve refuses (409 illegal_transition) when the task left 待验收 during the live head check; no round, no 评审通过, no 翻ready', async (t) => {
+    const { app, stub, admin, db } = await boot(t)
+    const d = await deliverDraft(app, stub, admin, { prNumber: 611, headSha: 'sha-611-1' })
+    stub.pr.set(d.prNumber, { body: prBody(611, { head: { sha: 'sha-611-1', ref: 'kaola/branch-611' } }) })
+    const pk = taskRow(db, d.brief.id).id
+
+    // While approve's getPullRequest is in flight, a poller / webhook terminal transition lands.
+    const stubbedFetch = globalThis.fetch
+    let interleaved = 0
+    globalThis.fetch = async (input, init) => {
+      const url = requestUrl(input)
+      if (isPrEndpoint(url) && interleaved === 0) {
+        interleaved += 1
+        db.$client.prepare("UPDATE tasks SET status = '已退回' WHERE id = ?").run(pk)
+        db.$client.prepare("UPDATE submissions SET pr_state = 'closed' WHERE task_id = ?").run(pk)
+      }
+      return stubbedFetch(input, init)
+    }
+    t.after(() => {
+      globalThis.fetch = stubbedFetch
+    })
+
+    const approved = await reviewPost(app, admin.cookies, d.brief.id, 'approve')
+    assert.equal(interleaved, 1, 'setup: the terminal transition must have interleaved with the live check')
+    assert.equal(approved.statusCode, 409, approved.body)
+    assert.equal(jsonBody(approved).error, 'illegal_transition')
+    assert.equal(taskRow(db, d.brief.id).status, '已退回', 'the racing terminal transition must win')
+    assert.equal(db.$client.prepare('SELECT COUNT(*) AS n FROM review_rounds WHERE task_id = ?').get(pk).n, 0)
+    assert.equal(eventsFor(db, d.brief.id, '评审通过').length, 0)
+    await settleWritebacks()
+    assert.ok(
+      !stub.requests.some((r) => (r.method === 'PATCH' || r.method === 'PUT') && r.url.includes('/611')),
+      'no Draft → ready flip may be attempted for a task that left 待验收',
+    )
+  })
+
+  test('two concurrent 「通过」 on the same task: exactly one 200, the other a clean 409 (never a 500 from the review_rounds unique index)', async (t) => {
+    const { app, stub, admin, db } = await boot(t)
+    const d = await deliverDraft(app, stub, admin, { prNumber: 612, headSha: 'sha-612-1' })
+    stub.pr.set(d.prNumber, { body: prBody(612, { head: { sha: 'sha-612-1', ref: 'kaola/branch-612' } }) })
+    const pk = taskRow(db, d.brief.id).id
+
+    const [a, b] = await Promise.all([
+      reviewPost(app, admin.cookies, d.brief.id, 'approve'),
+      reviewPost(app, admin.cookies, d.brief.id, 'approve'),
+    ])
+    const codes = [a.statusCode, b.statusCode].sort()
+    assert.deepEqual(codes, [200, 409], `${a.body} / ${b.body}`)
+    const refused = a.statusCode === 409 ? a : b
+    assert.equal(jsonBody(refused).error, 'illegal_transition')
+    assert.equal(taskRow(db, d.brief.id).status, '待合并')
+    assert.equal(db.$client.prepare('SELECT COUNT(*) AS n FROM review_rounds WHERE task_id = ?').get(pk).n, 1)
+    assert.equal(eventsFor(db, d.brief.id, '评审通过').length, 1)
+  })
 })

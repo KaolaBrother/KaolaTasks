@@ -632,8 +632,11 @@ async function checkHeadAnchor(db: AppDb, task: Task, submission: Submission): P
     return { ok: false, recordedHeadSha: recorded, forgeHeadSha: live }
   }
   // The forge could not be read (or reported no head): fall back to the last stored observation
-  // (a prior poller tick or a prior approve attempt) rather than refusing blind.
-  const stored = submission.forgeHeadSha
+  // (a prior poller tick or a prior approve attempt) rather than refusing blind. Re-read it: a
+  // poller tick may have recorded a drifted head while the live call above was in flight.
+  const stored =
+    db.select({ forgeHeadSha: submissions.forgeHeadSha }).from(submissions).where(eq(submissions.id, submission.id)).get()
+      ?.forgeHeadSha ?? null
   if (stored != null && recorded != null && stored !== recorded) {
     return { ok: false, recordedHeadSha: recorded, forgeHeadSha: stored }
   }
@@ -671,28 +674,38 @@ export async function reviewerApprove(db: AppDb, user: User, publicId: string) {
 
   const now = unixNow()
   const to = transitionTaskStatus(row.task.status, '待合并') as TaskStatus
+  // Issue #54 (security review R1): the live head check above is an await, so the 待验收 guard
+  // at the top is a stale snapshot by the time we get here — a poller / webhook terminal
+  // transition (已退回) or a second 「通过」 may have landed meanwhile. Re-read inside the
+  // transaction and refuse unless the task is still 待验收 with the same, still-open submission.
   const outcome = db.transaction((tx) => {
-    if (headSha != null && headSha !== submission.headSha) {
+    const fresh = tx.select().from(tasks).where(eq(tasks.id, row.task.id)).get()
+    const freshSubmission = tx.select().from(submissions).where(eq(submissions.id, submission.id)).get()
+    if (fresh == null || fresh.status !== '待验收' || freshSubmission == null || freshSubmission.prState !== 'open') {
+      return { raced: true as const, status: fresh?.status ?? row.task.status }
+    }
+    if (headSha != null && headSha !== freshSubmission.headSha) {
       // Backfill: the approval anchored to the live forge head because none was recorded yet.
       tx.update(submissions).set({ headSha }).where(eq(submissions.id, submission.id)).run()
     }
     const round = openRound(tx, {
-      task: row.task,
-      submission,
+      task: fresh,
+      submission: freshSubmission,
       kind: 'review',
       verdict: 'approved',
       openedByUserId: user.id,
       openedByTaskId: null,
       now,
     })
-    const updated = setTaskStatus(tx, row.task, to, user.id, { round: round.round })
+    const updated = setTaskStatus(tx, fresh, to, user.id, { round: round.round })
     insertAuditEvent(tx, {
       type: REVIEW_APPROVED_EVENT,
       actorUserId: user.id,
       details: { task_id: publicId, round: round.round, pr_url: submission.prUrl, head_sha: headSha, head_verified: headVerified },
     })
-    return { round, updated }
+    return { raced: false as const, round, updated }
   })
+  if (outcome.raced) return illegal(outcome.status, '待合并')
   publishRound(publicId, outcome.round)
   publishTaskUpdated(outcome.updated)
   // Off the response path — never awaited here (same posture as claim.ts's 认领 write-back).
