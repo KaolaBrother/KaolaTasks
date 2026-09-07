@@ -498,7 +498,7 @@ async function createPendingReviewTask(app, stub, poster, key, { title, prNumber
 
 describe('issue #11 poller (pollPendingReviews)', { concurrency: false }, () => {
   describe('getPullRequest-driven terminal transitions', () => {
-    test('merged PR: 待验收 → 已完成, submissions.pr_state → merged, system 状态迁移 (actor_user_id null)', async (t) => {
+    test('merged PR: 待合并 → 已完成, submissions.pr_state → merged, system 状态迁移 (actor_user_id null)', async (t) => {
       const sqlitePath = sqliteFile(t)
       const { app, stub } = await boot(t, sqlitePath)
       const poster = await loginGitea(app, stub, 'poll-merged')
@@ -512,6 +512,9 @@ describe('issue #11 poller (pollPendingReviews)', { concurrency: false }, () => 
       stub.pr.set(setup.prNumber, { body: { number: 101, state: 'closed', merged: true } })
 
       const db = openDb(t, sqlitePath)
+      // Issue #53 (§5): a merge only completes a task Kaola已「通过」. Approving in Kaola is exactly
+      // this row write, so drive the task to 待合并 before the merge is observed.
+      forceStatus(db, setup.publicId, '待合并')
       const before = taskRow(db, setup.publicId)
       await pollPendingReviews(db)
 
@@ -524,13 +527,13 @@ describe('issue #11 poller (pollPendingReviews)', { concurrency: false }, () => 
 
       const migrated = statusTransitionEventsFor(db, setup.publicId).filter((event) => {
         const details = parseDetails(event)
-        return details?.from === '待验收' && details?.to === '已完成'
+        return details?.from === '待合并' && details?.to === '已完成'
       })
-      assert.equal(migrated.length, 1, `expected one system 状态迁移 待验收→已完成, got ${JSON.stringify(eventRows(db))}`)
+      assert.equal(migrated.length, 1, `expected one system 状态迁移 待合并→已完成, got ${JSON.stringify(eventRows(db))}`)
       assert.equal(migrated[0].actor_user_id, null, 'poller-driven transition must have actor_user_id null')
       assert.deepEqual(parseDetails(migrated[0]), {
         task_id: setup.publicId,
-        from: '待验收',
+        from: '待合并',
         to: '已完成',
         pr_url: setup.prUrl,
       })
@@ -610,6 +613,40 @@ describe('issue #11 poller (pollPendingReviews)', { concurrency: false }, () => 
         'an open PR must not write any 状态迁移 out of 待验收',
       )
     })
+
+    // Issue #53 (§5): 待验收 → 已完成 is no longer a legal edge. A human who merges a PR that Kaola
+    // never passed must not silently complete the task — the board keeps showing 待验收.
+    test('a merged PR observed while the task is still 待验收 is left unchanged (Kaola never approved it)', async (t) => {
+      const sqlitePath = sqliteFile(t)
+      const { app, stub } = await boot(t, sqlitePath)
+      const poster = await loginGitea(app, stub, 'poll-merged-unapproved')
+      const key = await mintAgentKey(app, poster.cookies, 'poller')
+
+      const setup = await createPendingReviewTask(app, stub, poster, key, {
+        title: '未通过即合并用例',
+        prNumber: 104,
+        summary: '考拉尚未通过',
+      })
+      stub.pr.set(setup.prNumber, { body: { number: 104, state: 'closed', merged: true } })
+
+      const db = openDb(t, sqlitePath)
+      const before = taskRow(db, setup.publicId)
+      assert.equal(before.status, '待验收', 'setup: the task must still be awaiting Kaola review')
+      await pollPendingReviews(db)
+
+      const after = taskRow(db, setup.publicId)
+      assert.equal(after.status, '待验收', `a merge without a Kaola 通过 must leave the task at 待验收, got ${JSON.stringify(after)}`)
+
+      const rows = submissionRows(db, before.id)
+      assert.equal(rows.length, 1)
+      assert.equal(rows[0].pr_state, 'open', 'pr_state must not be advanced to merged for an unapproved task')
+
+      assert.equal(
+        statusTransitionEventsFor(db, setup.publicId).filter((event) => parseDetails(event)?.to === '已完成').length,
+        0,
+        `no 状态迁移 may reach 已完成, got ${JSON.stringify(eventRows(db))}`,
+      )
+    })
   })
 
   describe('scope: only 待验收 tasks are ever fetched', () => {
@@ -653,7 +690,7 @@ describe('issue #11 poller (pollPendingReviews)', { concurrency: false }, () => 
   })
 
   describe('resilience', () => {
-    test('a fetch failure on one 待验收 task is skipped, and a sibling 待验收 task still completes', async (t) => {
+    test('a fetch failure on one 待验收 task is skipped, and a sibling 待合并 task still completes', async (t) => {
       const sqlitePath = sqliteFile(t)
       const { app, stub } = await boot(t, sqlitePath)
       const poster = await loginGitea(app, stub, 'poll-resilience')
@@ -674,6 +711,8 @@ describe('issue #11 poller (pollPendingReviews)', { concurrency: false }, () => 
       stub.pr.set(healthy.prNumber, { body: { number: 302, state: 'closed', merged: true } })
 
       const db = openDb(t, sqlitePath)
+      // Issue #53 (§5): only a task Kaola已「通过」(待合并) is completed by an observed merge.
+      forceStatus(db, healthy.publicId, '待合并')
       const brokenPk = taskRow(db, broken.publicId).id
       const healthyPk = taskRow(db, healthy.publicId).id
 
@@ -686,7 +725,7 @@ describe('issue #11 poller (pollPendingReviews)', { concurrency: false }, () => 
       assert.equal(submissionRows(db, brokenPk)[0].pr_state, 'open')
 
       const healthyAfter = taskRow(db, healthy.publicId)
-      assert.equal(healthyAfter.status, '已完成', 'a sibling 待验收 task must still complete')
+      assert.equal(healthyAfter.status, '已完成', 'a sibling 待合并 task must still complete')
       assert.equal(submissionRows(db, healthyPk)[0].pr_state, 'merged')
     })
   })
@@ -884,6 +923,7 @@ describe('issue #13: per-instance webhook-vs-poll config (pollPendingReviews hon
     ]
 
     const db = openDb(t, sqlitePath)
+    forceStatus(db, setup.publicId, '待合并')
     await pollPendingReviews(db, forgeInstances)
 
     const after = taskRow(db, setup.publicId)
@@ -923,6 +963,7 @@ describe('issue #13: per-instance webhook-vs-poll config (pollPendingReviews hon
     ]
 
     const db = openDb(t, sqlitePath)
+    forceStatus(db, setup.publicId, '待合并')
     await pollPendingReviews(db, forgeInstances)
 
     const after = taskRow(db, setup.publicId)
@@ -933,7 +974,7 @@ describe('issue #13: per-instance webhook-vs-poll config (pollPendingReviews hon
     )
   })
 
-  test('an explicit empty forgeInstances array polls every 待验收 task exactly as omitting the argument does', async (t) => {
+  test('an explicit empty forgeInstances array polls every 待合并 task exactly as omitting the argument does', async (t) => {
     const sqlitePath = sqliteFile(t)
     const { app, stub } = await boot(t, sqlitePath)
     const poster = await loginGitea(app, stub, 'skip-empty-array')
@@ -947,6 +988,7 @@ describe('issue #13: per-instance webhook-vs-poll config (pollPendingReviews hon
     stub.pr.set(setup.prNumber, { body: { number: 504, state: 'closed', merged: true } })
 
     const db = openDb(t, sqlitePath)
+    forceStatus(db, setup.publicId, '待合并')
     await pollPendingReviews(db, [])
 
     const after = taskRow(db, setup.publicId)

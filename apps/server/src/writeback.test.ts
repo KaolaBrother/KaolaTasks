@@ -328,6 +328,13 @@ function openDb(t, sqlitePath) {
   return db
 }
 
+// Issue #53 (§5): a merge only completes a task Kaola already passed (待合并 → 已完成). A Kaola
+// 「通过」 is exactly this row write, so a completion write-back test must approve first.
+function forceStatus(db, publicId, status) {
+  const info = db.$client.prepare('UPDATE tasks SET status = ? WHERE public_id = ?').run(status, publicId)
+  assert.equal(info.changes, 1, `expected to force ${publicId} into ${status}`)
+}
+
 async function loginGitea(app, stub, label = 'gitea') {
   void stub
   void label
@@ -949,6 +956,7 @@ describe('issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成)', 
       stub.pr.set('9011', { body: { number: 9011, state: 'closed', merged: true } })
 
       const db = openDb(t, sqlitePath)
+      forceStatus(db, brief.id, '待合并')
       await pollPendingReviews(db)
 
       const after = taskRow(db, brief.id)
@@ -987,6 +995,9 @@ describe('issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成)', 
       // backgrounded submit_pr write-back before the webhook delivery triggers the completion one.
       await settleWritebacks()
 
+      const db = openDb(t, sqlitePath)
+      forceStatus(db, brief.id, '待合并')
+
       const rawBody = JSON.stringify(giteaPrPayload({ merged: true, prUrl, fullName: GITEA_REPO_FULL_NAME }))
       const res = await app.inject({
         method: 'POST',
@@ -1000,7 +1011,6 @@ describe('issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成)', 
       })
       assert.equal(res.statusCode, 204, `webhook delivery: ${res.statusCode} ${res.body}`)
 
-      const db = openDb(t, sqlitePath)
       assert.equal(taskRow(db, brief.id).status, '已完成')
 
       const commentPosts = stub.commentRequests.filter((r) => r.url === giteaCommentUrl(522))
@@ -1069,6 +1079,7 @@ describe('issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成)', 
       stub.setNextCommentResponse({ status: 502 })
 
       const db = openDb(t, sqlitePath)
+      forceStatus(db, brief.id, '待合并')
       await pollPendingReviews(db)
 
       assert.equal(
@@ -1098,6 +1109,7 @@ describe('issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成)', 
 
       stub.pr.set('9031', { body: { number: 9031, state: 'closed', merged: true } })
       const db = openDb(t, sqlitePath)
+      forceStatus(db, brief.id, '待合并')
       await pollPendingReviews(db)
       assert.equal(taskRow(db, brief.id).status, '已完成')
 
@@ -1178,6 +1190,7 @@ describe('issue #14 write-back (commentOnIssue on 认领 / 提交PR / 完成)', 
       stub.setNextCommentResponse({ status: 502 })
 
       const db = openDb(t, sqlitePath)
+      forceStatus(db, brief.id, '待合并')
       await pollPendingReviews(db)
       assert.equal(taskRow(db, brief.id).status, '已完成', 'the completion itself must succeed even though its write-back comment failed')
       assert.equal(successfulWritebackEventsFor(db, brief.id, '完成').length, 0, 'setup: expected the completion comment to have failed')

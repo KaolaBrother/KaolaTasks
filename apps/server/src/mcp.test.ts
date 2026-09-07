@@ -37,13 +37,18 @@ const CLONE_TOKEN_USAGE =
   'token 请通过环境变量或 git -c http.extraHeader 按次传递，不要写入 remote URL（会落盘到 .git/config）。'
 const MCP_PATH = '/api/mcp'
 const MCP_PROTOCOL_VERSION = '2025-11-25'
+// Issue #53: the registered tool surface, in registration order (see apps/server/src/mcp.ts).
 const TOOL_NAMES = [
   'list_tasks',
   'get_task_brief',
   'claim_task',
   'report_progress',
-  'submit_pr',
   'release_task',
+  'submit_pr',
+  'submit_revision',
+  'get_review_feedback',
+  'post_discussion_message',
+  'open_review_round',
 ]
 
 const BRIEF_KEYS = [
@@ -890,7 +895,7 @@ describe('issue #10 MCP server', { concurrency: false }, () => {
       assertBearerUnauthorized(res)
     })
 
-    test('authenticated tools/list includes the six tools and claim_task describes token hygiene', async (t) => {
+    test('authenticated tools/list includes the ten tools and claim_task describes token hygiene', async (t) => {
       const { app, stub } = await boot(t)
       const poster = await loginGitea(app, stub, 'tools-list')
       const key = await mintAgentKey(app, poster.cookies, 'lister')

@@ -449,6 +449,13 @@ function submissionRows(db, taskPk) {
     .all(taskPk)
 }
 
+// Issue #53 (§5): a merge only completes a task Kaola already passed. A Kaola 「通过」 is exactly
+// this row write, so tests that want a merge to complete drive the task to 待合并 first.
+function forceStatus(db, publicId, status) {
+  const info = db.$client.prepare('UPDATE tasks SET status = ? WHERE public_id = ?').run(status, publicId)
+  assert.equal(info.changes, 1, `expected to force ${publicId} into ${status}`)
+}
+
 async function boot(t, sqlitePath, options = {}) {
   const app = await createApp(t, { sqlitePath, ...options })
   const stub = beginFetch(t)
@@ -577,7 +584,7 @@ describe('issue #13 webhook receiver (POST /api/v1/webhooks/:publicId)', { concu
     assert.equal(res.body, '', 'a 204 response must have an empty body')
   })
 
-  test('merge event with a matching 待验收 submission → 204, task 已完成, submissions.pr_state merged, system 状态迁移 event', async (t) => {
+  test('merge event with a matching 待合并 submission → 204, task 已完成, submissions.pr_state merged, system 状态迁移 event', async (t) => {
     const sqlitePath = sqliteFile(t)
     const { app, stub } = await boot(t, sqlitePath, {
       forgeInstances: [
@@ -588,13 +595,15 @@ describe('issue #13 webhook receiver (POST /api/v1/webhooks/:publicId)', { concu
     const key = await mintAgentKey(app, poster.cookies, 'webhook')
     const setup = await createPendingReviewTask(app, poster, key, { title: '合并用例', prNumber: 601, summary: '已提交' })
 
+    const db = openDb(t, sqlitePath)
+    forceStatus(db, setup.publicId, '待合并')
+
     const rawBody = JSON.stringify(giteaPrPayload({ merged: true, prUrl: setup.prUrl }))
     const res = await postGiteaWebhook(app, GITEA_INSTANCE_ID, { secret: GITEA_WEBHOOK_SECRET, rawBody })
 
     assert.equal(res.statusCode, 204, `expected 204 on a successful merge delivery, got ${res.statusCode}: ${res.body}`)
     assert.equal(res.body, '')
 
-    const db = openDb(t, sqlitePath)
     const after = taskRow(db, setup.publicId)
     assert.equal(after.status, '已完成', `expected 已完成, got ${JSON.stringify(after)}`)
 
@@ -604,13 +613,13 @@ describe('issue #13 webhook receiver (POST /api/v1/webhooks/:publicId)', { concu
 
     const migrated = statusTransitionEventsFor(db, setup.publicId).filter((event) => {
       const details = parseDetails(event)
-      return details?.from === '待验收' && details?.to === '已完成'
+      return details?.from === '待合并' && details?.to === '已完成'
     })
-    assert.equal(migrated.length, 1, `expected one system 状态迁移 待验收→已完成, got ${JSON.stringify(eventRows(db))}`)
+    assert.equal(migrated.length, 1, `expected one system 状态迁移 待合并→已完成, got ${JSON.stringify(eventRows(db))}`)
     assert.equal(migrated[0].actor_user_id, null, 'webhook-driven transition must have actor_user_id null (system-driven)')
     assert.deepEqual(parseDetails(migrated[0]), {
       task_id: setup.publicId,
-      from: '待验收',
+      from: '待合并',
       to: '已完成',
       pr_url: setup.prUrl,
     })
@@ -622,6 +631,38 @@ describe('issue #13 webhook receiver (POST /api/v1/webhooks/:publicId)', { concu
     )
     assert.equal(res.body.includes(INLINE_TOKEN), false)
     assert.equal(JSON.stringify(eventRows(db)).includes(INLINE_TOKEN), false, 'plaintext token must never reach events.details')
+  })
+
+  // Issue #53 (§5): 待验收 → 已完成 is no longer a legal edge. The receiver still acknowledges the
+  // delivery (204, idempotent), but a merge Kaola never passed must not complete the task.
+  test('a merged delivery for a task still in 待验收 answers 204 and leaves the task unchanged', async (t) => {
+    const sqlitePath = sqliteFile(t)
+    const { app, stub } = await boot(t, sqlitePath, {
+      forgeInstances: [
+        { publicId: GITEA_INSTANCE_ID, forge: 'gitea', baseUrl: FORGE_BASE_URL, syncMode: 'webhook', webhookSecret: GITEA_WEBHOOK_SECRET },
+      ],
+    })
+    const poster = await loginGitea(app, stub, 'merge-unapproved')
+    const key = await mintAgentKey(app, poster.cookies, 'webhook')
+    const setup = await createPendingReviewTask(app, poster, key, { title: '未通过即合并用例', prNumber: 606, summary: '考拉尚未通过' })
+
+    const db = openDb(t, sqlitePath)
+    assert.equal(taskRow(db, setup.publicId).status, '待验收', 'setup: the task must still be awaiting Kaola review')
+
+    const rawBody = JSON.stringify(giteaPrPayload({ merged: true, prUrl: setup.prUrl }))
+    const res = await postGiteaWebhook(app, GITEA_INSTANCE_ID, { secret: GITEA_WEBHOOK_SECRET, rawBody })
+
+    assert.equal(res.statusCode, 204, `expected 204 (acknowledged no-op), got ${res.statusCode}: ${res.body}`)
+    assert.equal(res.body, '')
+
+    const after = taskRow(db, setup.publicId)
+    assert.equal(after.status, '待验收', `a merge without a Kaola 通过 must leave the task at 待验收, got ${JSON.stringify(after)}`)
+    assert.equal(submissionRows(db, after.id)[0].pr_state, 'open', 'pr_state must not be advanced to merged for an unapproved task')
+    assert.equal(
+      statusTransitionEventsFor(db, setup.publicId).filter((e) => parseDetails(e)?.to === '已完成').length,
+      0,
+      `no 状态迁移 may reach 已完成, got ${JSON.stringify(eventRows(db))}`,
+    )
   })
 
   test('closed-unmerged event with a matching 待验收 submission → 204, task 已退回, submissions.pr_state closed', async (t) => {
@@ -701,11 +742,13 @@ describe('issue #13 webhook receiver (POST /api/v1/webhooks/:publicId)', { concu
     const key = await mintAgentKey(app, poster.cookies, 'webhook')
     const setup = await createPendingReviewTask(app, poster, key, { title: 'poll 模式仍接收用例', prNumber: 604, summary: '仍应完成' })
 
+    const db = openDb(t, sqlitePath)
+    forceStatus(db, setup.publicId, '待合并')
+
     const rawBody = JSON.stringify(giteaPrPayload({ merged: true, prUrl: setup.prUrl }))
     const res = await postGiteaWebhook(app, GITEA_INSTANCE_ID, { secret: GITEA_WEBHOOK_SECRET, rawBody })
 
     assert.equal(res.statusCode, 204)
-    const db = openDb(t, sqlitePath)
     assert.equal(taskRow(db, setup.publicId).status, '已完成', 'a poll-mode instance must still accept and act on an inbound webhook delivery')
   })
 
@@ -720,6 +763,9 @@ describe('issue #13 webhook receiver (POST /api/v1/webhooks/:publicId)', { concu
     const key = await mintAgentKey(app, poster.cookies, 'webhook')
     const setup = await createPendingReviewTask(app, poster, key, { title: '无鉴权用例', prNumber: 605, summary: '仅签名鉴权' })
 
+    const db = openDb(t, sqlitePath)
+    forceStatus(db, setup.publicId, '待合并')
+
     const rawBody = JSON.stringify(giteaPrPayload({ merged: true, prUrl: setup.prUrl }))
     const res = await app.inject({
       method: 'POST',
@@ -733,7 +779,6 @@ describe('issue #13 webhook receiver (POST /api/v1/webhooks/:publicId)', { concu
     })
 
     assert.equal(res.statusCode, 204, `a correctly-signed request with no cookies/Bearer must still succeed, got ${res.statusCode}: ${res.body}`)
-    const db = openDb(t, sqlitePath)
     assert.equal(taskRow(db, setup.publicId).status, '已完成')
   })
 

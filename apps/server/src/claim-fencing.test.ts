@@ -281,6 +281,14 @@ function openDb(t, sqlitePath) {
   return db
 }
 
+// Issue #53 (§5): a merge only completes a task Kaola already passed (待合并 → 已完成). A Kaola
+// 「通过」 is exactly this row write, so a canonicalization test that expects a completion approves
+// the task first — the URL matching under test is unchanged either way.
+function forceStatus(db, publicId, status) {
+  const info = db.$client.prepare('UPDATE tasks SET status = ? WHERE public_id = ?').run(status, publicId)
+  assert.equal(info.changes, 1, `expected to force ${publicId} into ${status}`)
+}
+
 // Installs a real SQLite trigger (via a second raw connection to the same file) that RAISEs on a
 // specific write, so a transaction write boundary genuinely fails instead of being stubbed.
 // Triggers live in sqlite_master, so they fire regardless of which connection performs the write.
@@ -1562,11 +1570,13 @@ describe('issue #31 claim fencing', { concurrency: false }, () => {
       const submitted = await mcpSubmitPr(app, setup.key.identity, { taskId: setup.brief.id, prUrl: `${bareUrl}?tab=diff`, summary: '装饰过的提交' })
       assertToolOk(submitted.result)
 
+      const db = openDb(t, sqlitePath)
+      forceStatus(db, setup.brief.id, '待合并')
+
       const rawBody = JSON.stringify(giteaPrPayload({ merged: true, prUrl: bareUrl }))
       const res = await postGiteaWebhook(app, GITEA_INSTANCE_ID, { secret: GITEA_WEBHOOK_SECRET, rawBody })
       assert.equal(res.statusCode, 204, `webhook delivery: ${res.statusCode} ${res.body}`)
 
-      const db = openDb(t, sqlitePath)
       assert.equal(
         taskRow(db, setup.brief.id).status,
         '已完成',
@@ -1598,11 +1608,13 @@ describe('issue #31 claim fencing', { concurrency: false }, () => {
       const submitted = await mcpSubmitPr(app, key.identity, { taskId: brief.id, prUrl: `${bareUrl}/`, summary: '装饰过的提交' })
       assertToolOk(submitted.result)
 
+      const db = openDb(t, sqlitePath)
+      forceStatus(db, brief.id, '待合并')
+
       const rawBody = JSON.stringify(githubPrPayload({ merged: true, prUrl: bareUrl }))
       const res = await postGithubWebhook(app, GITHUB_INSTANCE_ID, { secret: GITHUB_WEBHOOK_SECRET, rawBody })
       assert.equal(res.statusCode, 204, `webhook delivery: ${res.statusCode} ${res.body}`)
 
-      const db = openDb(t, sqlitePath)
       assert.equal(taskRow(db, brief.id).status, '已完成')
     })
 
@@ -1630,11 +1642,13 @@ describe('issue #31 claim fencing', { concurrency: false }, () => {
       const submitted = await mcpSubmitPr(app, key.identity, { taskId: brief.id, prUrl: `${bareUrl}#note_1`, summary: '装饰过的提交' })
       assertToolOk(submitted.result)
 
+      const db = openDb(t, sqlitePath)
+      forceStatus(db, brief.id, '待合并')
+
       const rawBody = JSON.stringify(gitlabMrPayload({ state: 'merged', mrUrl: bareUrl }))
       const res = await postGitlabWebhook(app, GITLAB_INSTANCE_ID, { secret: GITLAB_WEBHOOK_SECRET, rawBody })
       assert.equal(res.statusCode, 204, `webhook delivery: ${res.statusCode} ${res.body}`)
 
-      const db = openDb(t, sqlitePath)
       assert.equal(taskRow(db, brief.id).status, '已完成')
     })
   })
@@ -1654,6 +1668,7 @@ describe('issue #31 claim fencing', { concurrency: false }, () => {
 
       stub.pr.set('71', { status: 200, body: { merged: true, state: 'closed' } })
       const db = openDb(t, sqlitePath)
+      forceStatus(db, setup.brief.id, '待合并')
       await pollPendingReviews(db)
 
       assert.equal(
@@ -1689,6 +1704,7 @@ describe('issue #31 claim fencing', { concurrency: false }, () => {
 
       stub.pr.set('72', { status: 200, body: { merged: true, state: 'closed' } })
       const db = openDb(t, sqlitePath)
+      forceStatus(db, brief.id, '待合并')
       await pollPendingReviews(db)
 
       assert.equal(taskRow(db, brief.id).status, '已完成')
@@ -1720,6 +1736,7 @@ describe('issue #31 claim fencing', { concurrency: false }, () => {
 
       stub.pr.set('73', { status: 200, body: { state: 'merged' } })
       const db = openDb(t, sqlitePath)
+      forceStatus(db, brief.id, '待合并')
       await pollPendingReviews(db)
 
       assert.equal(taskRow(db, brief.id).status, '已完成')

@@ -80,7 +80,19 @@ import { injectSigned, pairDeviceToSelf } from './device-proof.test-helpers.ts'
 
 const MCP_PATH = '/api/mcp'
 const MCP_PROTOCOL_VERSION = '2025-11-25'
-const TOOL_NAMES = ['list_tasks', 'get_task_brief', 'claim_task', 'report_progress', 'release_task', 'submit_pr']
+// Issue #53: the registered tool surface, in registration order (see apps/server/src/mcp.ts).
+const TOOL_NAMES = [
+  'list_tasks',
+  'get_task_brief',
+  'claim_task',
+  'report_progress',
+  'release_task',
+  'submit_pr',
+  'submit_revision',
+  'get_review_feedback',
+  'post_discussion_message',
+  'open_review_round',
+]
 const FORBIDDEN_INPUT_FIELDS = [
   'carrier',
   'runner',
@@ -336,17 +348,17 @@ describe('Issue #33 MCP contract text — initialize instructions and tool surfa
     )
   })
 
-  test('tools/list still returns exactly six tools; none gains a carrier/runner/execution/capability-shaped input field', async (t) => {
+  test('tools/list still returns exactly ten tools; none gains a carrier/runner/execution/capability-shaped input field', async (t) => {
     const app = await bootApp(t)
     const { identity } = await pairDeviceToSelf(app, undefined, { hostname: 'contract-tools-list' })
     const { sessionId } = await initializeMcpSession(app, identity)
     const tools = await listMcpTools(app, identity, sessionId)
 
-    assert.equal(tools.length, 6, `expected exactly six tools, got ${tools.length}: ${tools.map((tool) => tool.name).join(', ')}`)
+    assert.equal(tools.length, 10, `expected exactly ten tools, got ${tools.length}: ${tools.map((tool) => tool.name).join(', ')}`)
     assert.deepEqual(
       tools.map((tool) => tool.name).sort(),
       [...TOOL_NAMES].sort(),
-      `tools/list must name exactly the existing six tools, no seventh: ${JSON.stringify(tools.map((tool) => tool.name))}`,
+      `tools/list must name exactly the ten registered tools, no eleventh: ${JSON.stringify(tools.map((tool) => tool.name))}`,
     )
     for (const tool of tools) {
       const fieldNames = Object.keys(tool.inputSchema?.properties ?? {})
@@ -429,7 +441,8 @@ describe('Issue #33 MCP contract text — initialize instructions and tool surfa
 
   // --- Issue #39 A3: submit_pr's own registered tool description must state it is the required
   // completion of the Workflow path. This must NOT change submit_pr's input schema (still asserted,
-  // unchanged, by the six-tools/no-new-field test above) and must NOT change the six-tool count.
+  // unchanged, by the ten-tools/no-new-field test above) and must NOT change the registered tool
+  // count (ten since Issue #53 added the review-round tools).
   // Baseline: submit_pr's description never mentions Workflow at all today, so this fails on missing
   // content — not a false-positive collision with its unrelated existing "claim_id is required for
   // a Claim minted with request_id" wording, which never mentions Workflow either. ---
@@ -439,7 +452,7 @@ describe('Issue #33 MCP contract text — initialize instructions and tool surfa
     const { identity } = await pairDeviceToSelf(app, undefined, { hostname: 'contract-submit-pr-required' })
     const { sessionId } = await initializeMcpSession(app, identity)
     const tools = await listMcpTools(app, identity, sessionId)
-    assert.equal(tools.length, 6, `expected exactly six tools, got ${tools.length}: ${tools.map((tool) => tool.name).join(', ')}`)
+    assert.equal(tools.length, 10, `expected exactly ten tools, got ${tools.length}: ${tools.map((tool) => tool.name).join(', ')}`)
 
     const submitPr = tools.find((tool) => tool.name === 'submit_pr')
     assert.ok(submitPr, 'submit_pr tool must still be registered')
