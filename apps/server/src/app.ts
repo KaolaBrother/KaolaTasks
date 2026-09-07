@@ -14,6 +14,8 @@ import { registerMcp } from './mcp.ts'
 import { getPlaceholderBody } from './placeholder.ts'
 import { pollPendingReviews, retryPendingWritebacks } from './poller.ts'
 import type { ForgeInstanceConfig } from './poller.ts'
+import { registerReview } from './review.ts'
+import { registerStream } from './stream.ts'
 import { registerTasks } from './tasks.ts'
 import { registerWebhooks } from './webhook.ts'
 
@@ -96,6 +98,8 @@ export function buildApp(options?: {
   registerDevices(app, db)
   registerClaimConfirmations(app, db)
   registerEvents(app, db)
+  registerReview(app, db)
+  registerStream(app, db)
   registerMcp(app, db)
   registerWebhooks(app, db, forgeInstances)
 

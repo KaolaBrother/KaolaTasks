@@ -12,13 +12,23 @@ import { attemptWriteback, decryptTaskToken } from './writeback.ts'
 // on for `decryptTaskToken`/`attemptWriteback`) and is re-exported here so callers/tests can
 // import it alongside `pollPendingReviews` from a single module, per this file's existing role
 // as the poller's public surface.
-export { retryPendingWritebacks } from './writeback.ts'
+import { retryPendingWritebacks as retryPendingIssueWritebacks } from './writeback.ts'
+import { notifyChildrenParentEnded, restackChildren, retryPendingMarkReady } from './review.ts'
+import { publishStreamEvent } from './stream.ts'
+
+// Issue #53: the same poller tick also retries a failed Draft → ready flip (review.ts).
+export async function retryPendingWritebacks(db: AppDb): Promise<void> {
+  await retryPendingIssueWritebacks(db)
+  await retryPendingMarkReady(db)
+}
 
 // Issue #11: the only driver of 待验收→已完成/已退回. Runs on-demand (tests call it directly) or on
 // a `buildApp({ pollIntervalMs })` timer (see app.ts). Mirrors `sweepExpiredLeases`'s pattern for
 // system-driven transitions: write the new status, then a `状态迁移` event with `actorUserId: null`.
 
-const PENDING_REVIEW_STATUS = '待验收'
+// Issue #53 (§17): the poller watches every task that holds an open PR — 待验收 (ball with the
+// reviewer), 待修改 (ball with the Agent), 待合并 (approved in Kaola, waiting for the human merge).
+export const OPEN_PR_STATUSES: ReadonlySet<string> = new Set(['待验收', '待修改', '待合并'])
 const STATUS_TRANSITION_EVENT = '状态迁移'
 
 // Issue #13: `buildApp({ forgeInstances })` config. `pollPendingReviews` skips a task whose
@@ -68,15 +78,26 @@ export function latestSubmission(db: AppDb, taskId: number) {
 // Issue #14: once the transaction is committed, a `merged` terminal additionally attempts a 完成
 // write-back comment on the source Issue (imported tasks only) — never on `closed` (已退回), and
 // never inside the transaction above (no SQLite write lock held across the outbound HTTP call).
+// Issue #53: `merged` only completes a task Kaola already approved (待合并 → 已完成). A merge
+// observed while the task is still 待验收 / 待修改 is not a legal edge (§5) and is left untouched
+// — the human merged something Kaola never passed; the board keeps showing the truth. `closed`
+// returns the task from any of the three open-PR states. Returns whether anything was written.
+export function prTerminalTarget(status: string, terminal: 'merged' | 'closed'): TaskStatus | undefined {
+  if (!OPEN_PR_STATUSES.has(status)) return undefined
+  if (terminal === 'closed') return '已退回'
+  return status === '待合并' ? '已完成' : undefined
+}
+
 export async function applyPrTerminalTransition(
   db: AppDb,
   task: Task,
   submissionId: number,
   terminal: 'merged' | 'closed',
   prUrl: string,
-): Promise<void> {
+): Promise<boolean> {
   const from = task.status as TaskStatus
-  const toChinese = terminal === 'merged' ? '已完成' : '已退回'
+  const toChinese = prTerminalTarget(from, terminal)
+  if (toChinese == null) return false
   const to = transitionTaskStatus(from, toChinese) as TaskStatus
   const prState = terminal === 'merged' ? 'merged' : 'closed'
 
@@ -92,9 +113,17 @@ export async function applyPrTerminalTransition(
     })
   })
 
+  const updated: Task = { ...task, status: to }
+  publishStreamEvent('task_updated', { task_id: task.publicId, status: to })
+
   if (terminal === 'merged') {
+    // Issue #53 (§17.4): children stack on this task; tell them the base moved.
+    restackChildren(db, updated, prUrl)
     await attemptWriteback(db, task, '完成', null, prUrl)
+  } else {
+    notifyChildrenParentEnded(db, updated)
   }
+  return true
 }
 
 async function fetchPrStatus(db: AppDb, task: Task, prUrl: string): Promise<PrStatus | undefined> {
@@ -108,12 +137,27 @@ async function fetchPrStatus(db: AppDb, task: Task, prUrl: string): Promise<PrSt
   }
 }
 
+// Issue #53: the poller's first look at a PR backfills head_sha / head_branch / is_draft on the
+// submission when they are still unknown (an Agent that omitted head_sha, or a legacy row).
+function backfillSubmissionHead(db: AppDb, submissionId: number, status: PrStatus): void {
+  const row = db.select().from(submissions).where(eq(submissions.id, submissionId)).get()
+  if (row == null) return
+  const patch: Partial<{ headSha: string; headBranch: string; isDraft: boolean }> = {}
+  if (row.headSha == null && status.head_sha !== '') patch.headSha = status.head_sha
+  if (row.headBranch == null && status.head_branch !== '') patch.headBranch = status.head_branch
+  if (row.isDraft !== status.draft) patch.isDraft = status.draft
+  if (Object.keys(patch).length === 0) return
+  db.update(submissions).set(patch).where(eq(submissions.id, submissionId)).run()
+}
+
 async function pollOneTask(db: AppDb, task: Task): Promise<void> {
   const submission = latestSubmission(db, task.id)
   if (submission == null) return
 
   const status = await fetchPrStatus(db, task, submission.prUrl)
-  if (status == null || status.state === 'open') return
+  if (status == null) return
+  backfillSubmissionHead(db, submission.id, status)
+  if (status.state === 'open') return
 
   await applyPrTerminalTransition(db, task, submission.id, status.state, submission.prUrl)
 }
@@ -132,7 +176,7 @@ export async function pollPendingReviews(
 ): Promise<void> {
   let pending: Task[]
   try {
-    pending = db.select().from(tasks).where(eq(tasks.status, PENDING_REVIEW_STATUS)).all()
+    pending = db.select().from(tasks).all().filter((task) => OPEN_PR_STATUSES.has(task.status))
   } catch {
     return
   }

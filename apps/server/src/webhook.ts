@@ -1,9 +1,8 @@
 import { WebhookSignatureError, createForgeAdapter } from '@kaola/forge-adapters'
 import type { ForgeEvent } from '@kaola/forge-adapters'
-import { eq } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import type { AppDb } from './db.ts'
-import { applyPrTerminalTransition, latestSubmission, taskMatchesForgeInstance } from './poller.ts'
+import { OPEN_PR_STATUSES, applyPrTerminalTransition, latestSubmission, taskMatchesForgeInstance } from './poller.ts'
 import type { ForgeInstanceConfig } from './poller.ts'
 import { type Task, tasks } from './schema.ts'
 
@@ -14,8 +13,6 @@ import { type Task, tasks } from './schema.ts'
 // decrypts a forge token and never calls `getPullRequest` — the payload is the source of truth
 // for merge/close, mirroring the poller's transaction (poller.ts's `applyPrTerminalTransition`)
 // without its forge round-trip.
-
-const PENDING_REVIEW_STATUS = '待验收'
 
 function headersFromRaw(raw: unknown): Headers {
   const headers = new Headers()
@@ -40,7 +37,9 @@ function findPendingReviewMatch(
   instance: ForgeInstanceConfig,
   prUrl: string,
 ): { task: Task; submissionId: number } | undefined {
-  const pending = db.select().from(tasks).where(eq(tasks.status, PENDING_REVIEW_STATUS)).all()
+  // Issue #53: any task holding an open PR (待验收 / 待修改 / 待合并) can be matched; whether the
+  // delivery's verdict is a legal edge for that state is decided by applyPrTerminalTransition.
+  const pending = db.select().from(tasks).all().filter((task) => OPEN_PR_STATUSES.has(task.status))
   for (const task of pending) {
     if (!taskMatchesForgeInstance(task, instance)) continue
     const submission = latestSubmission(db, task.id)

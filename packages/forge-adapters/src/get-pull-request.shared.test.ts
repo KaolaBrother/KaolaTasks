@@ -135,10 +135,21 @@ function assertAuthHeader(kind: ForgeKind, headers: Headers, token: string): voi
   }
 }
 
-function assertPrStatus(result: PrStatus, expected: 'open' | 'merged' | 'closed'): void {
+// Issue #53 widened `PrStatus` from `{ state }` to `{ state, head_sha, draft, head_branch }`.
+// `state` is still asserted by every pre-existing case below; the optional `fields` argument is
+// how the new cases pin the three added members without duplicating the state assertions.
+function assertPrStatus(
+  result: PrStatus,
+  expected: 'open' | 'merged' | 'closed',
+  fields?: Partial<Omit<PrStatus, 'state'>>,
+): void {
   assert.equal(typeof result, 'object')
   assert.ok(result !== null)
   assert.equal((result as { state: unknown }).state, expected)
+  if (fields === undefined) return
+  if (fields.head_sha !== undefined) assert.equal(result.head_sha, fields.head_sha)
+  if (fields.head_branch !== undefined) assert.equal(result.head_branch, fields.head_branch)
+  if (fields.draft !== undefined) assert.equal(result.draft, fields.draft)
 }
 
 function prUrlFor(kind: ForgeKind, baseUrl: string, ids: { owner?: string; repo?: string; namespace?: string; number: number }): string {
@@ -153,17 +164,96 @@ function apiUrlFor(kind: ForgeKind, baseUrl: string, ids: { owner?: string; repo
   return giteaApiUrl(baseUrl, ids.owner ?? 'acme', ids.repo ?? 'app', ids.number)
 }
 
+// #53 fixtures. Real forge payloads always carry the head commit and branch on an open PR/MR, so
+// the shared bodies below carry them too — the pre-#53 cases ignore them, the new cases assert
+// them.
+const HEAD_SHA = '9f1c2d3e4b5a60718293a4b5c6d7e8f90a1b2c3d'
+const HEAD_BRANCH = 'feature/kaola-53'
+const READY_TITLE = 'Add the review loop'
+
 function openBody(kind: ForgeKind, number: number): unknown {
-  if (kind === 'gitlab') return { iid: number, state: 'opened' }
-  return { number, state: 'open', merged: false }
+  if (kind === 'gitlab') {
+    return {
+      iid: number,
+      state: 'opened',
+      title: READY_TITLE,
+      sha: HEAD_SHA,
+      source_branch: HEAD_BRANCH,
+      draft: false,
+      work_in_progress: false,
+    }
+  }
+  return {
+    number,
+    state: 'open',
+    merged: false,
+    title: READY_TITLE,
+    draft: false,
+    head: { sha: HEAD_SHA, ref: HEAD_BRANCH },
+  }
 }
 
 function mergedBody(kind: ForgeKind, number: number): unknown {
-  if (kind === 'gitlab') return { iid: number, state: 'merged' }
-  return { number, state: 'closed', merged: true }
+  if (kind === 'gitlab') {
+    return { iid: number, state: 'merged', title: READY_TITLE, sha: HEAD_SHA, source_branch: HEAD_BRANCH }
+  }
+  return {
+    number,
+    state: 'closed',
+    merged: true,
+    title: READY_TITLE,
+    head: { sha: HEAD_SHA, ref: HEAD_BRANCH },
+  }
 }
 
 function closedBody(kind: ForgeKind, number: number): unknown {
+  if (kind === 'gitlab') {
+    return { iid: number, state: 'closed', title: READY_TITLE, sha: HEAD_SHA, source_branch: HEAD_BRANCH }
+  }
+  return {
+    number,
+    state: 'closed',
+    merged: false,
+    title: READY_TITLE,
+    head: { sha: HEAD_SHA, ref: HEAD_BRANCH },
+  }
+}
+
+// A draft/WIP PR/MR expressed the way each forge actually expresses it: GitHub a real `draft`
+// boolean, GitLab `draft`, Gitea a `WIP:` title prefix (its long-standing encoding).
+function draftBody(kind: ForgeKind, number: number): unknown {
+  if (kind === 'gitlab') {
+    return {
+      iid: number,
+      state: 'opened',
+      title: `Draft: ${READY_TITLE}`,
+      sha: HEAD_SHA,
+      source_branch: HEAD_BRANCH,
+      draft: true,
+    }
+  }
+  if (kind === 'github') {
+    return {
+      number,
+      state: 'open',
+      merged: false,
+      title: READY_TITLE,
+      draft: true,
+      head: { sha: HEAD_SHA, ref: HEAD_BRANCH },
+    }
+  }
+  return {
+    number,
+    state: 'open',
+    merged: false,
+    title: `WIP: ${READY_TITLE}`,
+    head: { sha: HEAD_SHA, ref: HEAD_BRANCH },
+  }
+}
+
+// A payload with no head commit / branch information at all — e.g. a closed PR whose source
+// branch has been deleted. The contract says these degrade to `''`, never to a rejection.
+function headlessBody(kind: ForgeKind, number: number): unknown {
   if (kind === 'gitlab') return { iid: number, state: 'closed' }
   return { number, state: 'closed', merged: false }
 }
@@ -256,6 +346,47 @@ describe('getPullRequest shared spec', () => {
           'an unparseable prUrl must reject before ever calling fetch',
         )
       })
+
+      // --- #53: the three added PrStatus members -------------------------------------------
+      it('#53: a ready pull/merge request reports head_sha, head_branch and draft: false', async (t) => {
+        const baseUrl = WEB_ORIGIN[kind]
+        installFetch(t, () => jsonResponse(openBody(kind, 51)))
+        const adapter = createAdapter(kind)
+        const result = await adapter.getPullRequest(credential(kind), prUrlFor(kind, baseUrl, { number: 51 }))
+        assertPrStatus(result, 'open', {
+          head_sha: HEAD_SHA,
+          head_branch: HEAD_BRANCH,
+          draft: false,
+        })
+      })
+
+      it('#53: a draft/WIP pull/merge request reports draft: true, still with head_sha and head_branch', async (t) => {
+        const baseUrl = WEB_ORIGIN[kind]
+        installFetch(t, () => jsonResponse(draftBody(kind, 52)))
+        const adapter = createAdapter(kind)
+        const result = await adapter.getPullRequest(credential(kind), prUrlFor(kind, baseUrl, { number: 52 }))
+        assertPrStatus(result, 'open', {
+          head_sha: HEAD_SHA,
+          head_branch: HEAD_BRANCH,
+          draft: true,
+        })
+      })
+
+      it('#53: a payload with no head commit/branch degrades to empty strings, not a rejection', async (t) => {
+        const baseUrl = WEB_ORIGIN[kind]
+        installFetch(t, () => jsonResponse(headlessBody(kind, 53)))
+        const adapter = createAdapter(kind)
+        const result = await adapter.getPullRequest(credential(kind), prUrlFor(kind, baseUrl, { number: 53 }))
+        assertPrStatus(result, 'closed', { head_sha: '', head_branch: '', draft: false })
+      })
+
+      it('#53: a merged pull/merge request still carries head_sha and head_branch', async (t) => {
+        const baseUrl = WEB_ORIGIN[kind]
+        installFetch(t, () => jsonResponse(mergedBody(kind, 54)))
+        const adapter = createAdapter(kind)
+        const result = await adapter.getPullRequest(credential(kind), prUrlFor(kind, baseUrl, { number: 54 }))
+        assertPrStatus(result, 'merged', { head_sha: HEAD_SHA, head_branch: HEAD_BRANCH })
+      })
     })
   }
 
@@ -338,6 +469,142 @@ describe('getPullRequest shared spec', () => {
         expected,
         `${kind} must use the constructor baseUrl as the API origin, not the prUrl host`,
       )
+    }
+  })
+
+  // --- #53: per-forge draft encodings, which genuinely differ between the three -----------------
+
+  it('#53 github: draft comes from the boolean flag only — a "WIP:" title is not a draft marker on GitHub', async (t) => {
+    installFetch(t, () =>
+      jsonResponse({
+        number: 61,
+        state: 'open',
+        merged: false,
+        title: 'WIP: not a GitHub draft marker',
+        head: { sha: HEAD_SHA, ref: HEAD_BRANCH },
+      }),
+    )
+    const adapter = createAdapter('github')
+    const result = await adapter.getPullRequest(credential('github'), githubPrUrl('acme', 'app', 61))
+    assertPrStatus(result, 'open', { draft: false, head_sha: HEAD_SHA, head_branch: HEAD_BRANCH })
+  })
+
+  it('#53 github: an absent draft field reads as draft: false', async (t) => {
+    installFetch(t, () =>
+      jsonResponse({ number: 62, state: 'open', merged: false, head: { sha: HEAD_SHA, ref: HEAD_BRANCH } }),
+    )
+    const adapter = createAdapter('github')
+    const result = await adapter.getPullRequest(credential('github'), githubPrUrl('acme', 'app', 62))
+    assertPrStatus(result, 'open', { draft: false })
+  })
+
+  it('#53 gitlab: the legacy work_in_progress flag alone marks the MR as draft', async (t) => {
+    const baseUrl = WEB_ORIGIN.gitlab
+    installFetch(t, () =>
+      jsonResponse({
+        iid: 63,
+        state: 'opened',
+        title: 'WIP: legacy marker',
+        sha: HEAD_SHA,
+        source_branch: HEAD_BRANCH,
+        work_in_progress: true,
+      }),
+    )
+    const adapter = createAdapter('gitlab')
+    const result = await adapter.getPullRequest(credential('gitlab'), gitlabMrUrl(baseUrl, 'acme/app', 63))
+    assertPrStatus(result, 'open', { draft: true })
+  })
+
+  it('#53 gitlab: neither flag set reads as draft: false even when the title still says Draft:', async (t) => {
+    const baseUrl = WEB_ORIGIN.gitlab
+    installFetch(t, () =>
+      jsonResponse({
+        iid: 64,
+        state: 'opened',
+        title: 'Draft: stale title, flags already cleared',
+        sha: HEAD_SHA,
+        source_branch: HEAD_BRANCH,
+        draft: false,
+        work_in_progress: false,
+      }),
+    )
+    const adapter = createAdapter('gitlab')
+    const result = await adapter.getPullRequest(credential('gitlab'), gitlabMrUrl(baseUrl, 'acme/app', 64))
+    assertPrStatus(result, 'open', { draft: false })
+  })
+
+  it('#53 gitlab: head_sha comes from `sha` and head_branch from `source_branch`, each "" when absent', async (t) => {
+    const baseUrl = WEB_ORIGIN.gitlab
+    installFetch(t, () => jsonResponse({ iid: 65, state: 'opened', source_branch: HEAD_BRANCH }))
+    const adapter = createAdapter('gitlab')
+    const result = await adapter.getPullRequest(credential('gitlab'), gitlabMrUrl(baseUrl, 'acme/app', 65))
+    assertPrStatus(result, 'open', { head_sha: '', head_branch: HEAD_BRANCH })
+  })
+
+  it('#53 gitea: a "WIP:" title prefix marks the PR as draft, case-insensitively and after trimming', async (t) => {
+    const baseUrl = WEB_ORIGIN.gitea
+    for (const title of ['WIP: lowercase test', 'wip: lowercase test', '  WiP:   spaced', 'WIP:no-space']) {
+      installFetch(t, () =>
+        jsonResponse({
+          number: 66,
+          state: 'open',
+          merged: false,
+          title,
+          head: { sha: HEAD_SHA, ref: HEAD_BRANCH },
+        }),
+      )
+      const adapter = createAdapter('gitea')
+      const result = await adapter.getPullRequest(
+        credential('gitea'),
+        giteaPrUrl(baseUrl, 'acme', 'app', 66),
+      )
+      assertPrStatus(result, 'open', { draft: true })
+    }
+  })
+
+  it('#53 gitea: a title that merely mentions WIP later is not a draft', async (t) => {
+    const baseUrl = WEB_ORIGIN.gitea
+    installFetch(t, () =>
+      jsonResponse({
+        number: 67,
+        state: 'open',
+        merged: false,
+        title: 'Ship the WIP: banner component',
+        head: { sha: HEAD_SHA, ref: HEAD_BRANCH },
+      }),
+    )
+    const adapter = createAdapter('gitea')
+    const result = await adapter.getPullRequest(credential('gitea'), giteaPrUrl(baseUrl, 'acme', 'app', 67))
+    assertPrStatus(result, 'open', { draft: false })
+  })
+
+  it('#53 gitea: an explicit draft boolean also marks the PR as draft', async (t) => {
+    const baseUrl = WEB_ORIGIN.gitea
+    installFetch(t, () =>
+      jsonResponse({
+        number: 68,
+        state: 'open',
+        merged: false,
+        title: READY_TITLE,
+        draft: true,
+        head: { sha: HEAD_SHA, ref: HEAD_BRANCH },
+      }),
+    )
+    const adapter = createAdapter('gitea')
+    const result = await adapter.getPullRequest(credential('gitea'), giteaPrUrl(baseUrl, 'acme', 'app', 68))
+    assertPrStatus(result, 'open', { draft: true })
+  })
+
+  it('#53 github/gitea: head_sha and head_branch come from head.sha / head.ref, "" when head is absent', async (t) => {
+    for (const kind of ['github', 'gitea'] as const) {
+      const baseUrl = WEB_ORIGIN[kind]
+      installFetch(t, () => jsonResponse({ number: 69, state: 'open', merged: false, head: { ref: HEAD_BRANCH } }))
+      const adapter = createAdapter(kind)
+      const result = await adapter.getPullRequest(
+        credential(kind),
+        prUrlFor(kind, baseUrl, { number: 69 }),
+      )
+      assertPrStatus(result, 'open', { head_sha: '', head_branch: HEAD_BRANCH })
     }
   })
 })

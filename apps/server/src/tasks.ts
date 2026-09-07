@@ -8,6 +8,8 @@ import type { FastifyInstance } from 'fastify'
 import { getSessionUser, sendUnauthorized } from './auth.ts'
 import type { AppDb } from './db.ts'
 import { canPublish } from './permissions.ts'
+import { notifyChildrenParentEnded } from './review.ts'
+import { publishStreamEvent } from './stream.ts'
 import { sweepExpiredLeases } from './leases.ts'
 import { type NewTask, type Task, credentialProfiles, submissions, tasks, users } from './schema.ts'
 import {
@@ -27,6 +29,9 @@ const ISSUE_REPO_MISMATCH_MESSAGE = 'Issue 地址与仓库不匹配。'
 const IMPORT_ISSUE_NOT_FOUND_MESSAGE = '无法读取该 Issue。'
 const IMPORT_TOKEN_INVALID_MESSAGE = 'token 无效或无权读取该 Issue。'
 const IMPORT_FORGE_UNREACHABLE_MESSAGE = '无法连接 forge 导入 Issue。'
+const PARENT_MISSING_MESSAGE = '所选父任务不存在。'
+const PARENT_INVALID_MESSAGE = '父任务已是终态或与本任务不在同一仓库，不能作为父任务。'
+const TERMINAL_STATUSES = new Set(['已完成', '已取消'])
 const STATUS_TRANSITION_EVENT = '状态迁移'
 const TOKEN_REVEAL_EVENT = 'token 揭示'
 
@@ -74,6 +79,8 @@ type CreateTaskInput = {
   priority: TaskPriority
   tags: string[]
   credential: CredentialInput
+  // Issue #53 (D13): the parent's public id when publishing a dependent sub-task.
+  parentPublicId: string | null
 }
 
 export type TaskWithPoster = {
@@ -326,9 +333,16 @@ function readCreateBody(body: unknown): CreateTaskInput | undefined {
     priority?: unknown
     tags?: unknown
     credential?: unknown
+    parent_task_id?: unknown
   }
 
   if (typeof raw.title !== 'string' || raw.title === '') return undefined
+
+  let parentPublicId: string | null = null
+  if (raw.parent_task_id !== undefined && raw.parent_task_id !== null) {
+    if (typeof raw.parent_task_id !== 'string' || raw.parent_task_id === '') return undefined
+    parentPublicId = raw.parent_task_id
+  }
 
   const descriptionMd = raw.description_md === undefined ? '' : raw.description_md
   if (typeof descriptionMd !== 'string') return undefined
@@ -369,6 +383,7 @@ function readCreateBody(body: unknown): CreateTaskInput | undefined {
     priority: priority as TaskPriority,
     tags,
     credential,
+    parentPublicId,
   }
 }
 
@@ -584,6 +599,25 @@ export function registerTasks(app: FastifyInstance, db: AppDb) {
       })
     }
 
+    // Issue #53 (§17.4): a parent must exist, be non-terminal, and share the child's repo. A
+    // brand-new task has no descendants yet, so self-reference / cycles cannot arise here.
+    let parentTaskId: number | null = null
+    if (input.parentPublicId != null) {
+      const parent = db.select().from(tasks).where(eq(tasks.publicId, input.parentPublicId)).get()
+      if (parent == null) {
+        return reply.code(400).send({ error: 'invalid_body', message: PARENT_MISSING_MESSAGE })
+      }
+      if (
+        TERMINAL_STATUSES.has(parent.status) ||
+        parent.repoForge !== input.repo.forge ||
+        parent.repoBaseUrl !== input.repo.baseUrl ||
+        parent.repoFullName !== input.repo.fullName
+      ) {
+        return reply.code(409).send({ error: 'parent_invalid', message: PARENT_INVALID_MESSAGE })
+      }
+      parentTaskId = parent.id
+    }
+
     let credentialProfileId: number | null = null
     let inlineTokenEncrypted: string | null = null
     let plaintext: string
@@ -702,9 +736,11 @@ export function registerTasks(app: FastifyInstance, db: AppDb) {
       posterUserId: user.id,
       status: '待认领',
       createdAt: Math.floor(Date.now() / 1000),
+      parentTaskId,
     })
 
-    return reply.code(201).send(taskBrief({ task: inserted, posterUsername: user.username }))
+    const created = selectTask(db, inserted.publicId)
+    return reply.code(201).send(taskBrief(created ?? { task: inserted, posterUsername: user.username }))
   })
 
   // Issue #12: pre-publish draft. Does not persist a task and does not call validateToken.
@@ -860,7 +896,9 @@ export function registerTasks(app: FastifyInstance, db: AppDb) {
       actorUserId: user.id,
       details: { task_id: publicId, from, to },
     })
+    publishStreamEvent('task_updated', { task_id: publicId, status: to })
+    if (to === '已取消') notifyChildrenParentEnded(db, updated)
 
-    return reply.send(taskBrief({ task: updated, posterUsername: row.posterUsername }))
+    return reply.send(taskBrief({ ...row, task: updated }))
   })
 }

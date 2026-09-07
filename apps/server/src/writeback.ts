@@ -250,6 +250,12 @@ export async function attemptWriteback(
 // rejection risk); `settleWritebacks` below is the only way a caller observes it deterministically.
 const pendingWritebacks = new Set<Promise<void>>()
 
+// Issue #53: review.ts's Draft → ready flip after 「通过」 rides the same tracker so
+// `settleWritebacks` drains it deterministically in tests.
+export function trackBackgroundWork(promise: Promise<void>): void {
+  trackWriteback(promise)
+}
+
 function trackWriteback(promise: Promise<void>): void {
   const tracked = promise.finally(() => {
     pendingWritebacks.delete(tracked)

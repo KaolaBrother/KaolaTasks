@@ -16,8 +16,10 @@
  * Then: setup local admin → GitLab publisher OAuth stub → credential profile →
  * import Issue → publish → production stdio bridge → pair device (admin bind) →
  * request_id/claim_id recovery + same-device fencing → Workflow guidance → git clone
- * via the claim envelope → push branch → open PR → submit_pr → merge →
- * pollPendingReviews → 已完成 + 回写.
+ * via the claim envelope → push branch → open Draft PR → submit_pr(head_sha) → reviewer
+ * blocking round (REST) → 待修改 → revision claim → get_review_feedback → push a follow-up
+ * commit → submit_revision → 待验收 → 「通过」(REST) → 待合并 + Draft flipped to ready on the
+ * forge → merge → pollPendingReviews → 已完成 + 回写 (#53 review loop).
  *
  * Usage:
  *   node --experimental-strip-types scripts/forge-smoke.ts gitlab
@@ -40,6 +42,8 @@ import {
   pairDeviceToSelf,
 } from '../apps/server/src/device-proof.test-helpers.ts'
 import { pollPendingReviews } from '../apps/server/src/poller.ts'
+import { settleWritebacks } from '../apps/server/src/writeback.ts'
+import { createForgeAdapter } from '../packages/forge-adapters/src/index.ts'
 import { DEFAULT_SETUP, ensureSetup } from '../apps/server/src/auth.test-helpers.ts'
 import { runStdioBridge } from '../apps/mcp/src/main.ts'
 
@@ -350,7 +354,7 @@ async function openPull(
       spec.kind,
       token,
       'https://gitlab.com/api/v4/projects/KaolaBrother%2Fkaola-tasks-smoke/merge_requests',
-      { method: 'POST', body: { title, source_branch: branch, target_branch: 'main', description: 'Kaola Tasks live smoke.' } },
+      { method: 'POST', body: { title: `Draft: ${title}`, source_branch: branch, target_branch: 'main', description: 'Kaola Tasks live smoke.' } },
     )
     if (!res.ok) fail(`GitLab open MR ${res.status}: ${await res.text()}`)
     const json = (await res.json()) as { iid: number }
@@ -358,7 +362,7 @@ async function openPull(
   }
   const res = await forgeFetch(spec.kind, token, 'https://gitea.com/api/v1/repos/KaolaBrother/kaola-tasks-smoke/pulls', {
     method: 'POST',
-    body: { title, head: branch, base: 'main', body: 'Kaola Tasks live smoke.' },
+    body: { title: `WIP: ${title}`, head: branch, base: 'main', body: 'Kaola Tasks live smoke.' },
   })
   if (!res.ok) fail(`Gitea open PR ${res.status}: ${await res.text()}`)
   const json = (await res.json()) as { number: number }
@@ -448,7 +452,7 @@ function cloneAndPush(opts: {
   branch: string
   line: string
   secrets: string[]
-}): { cloneAuth: string; dir: string } {
+}): { cloneAuth: string; dir: string; header: string; headSha: string } {
   const attempts = cloneAttempts(opts.kind, opts.extra, opts.token)
   let last = ''
   for (const attempt of attempts) {
@@ -475,9 +479,27 @@ function cloneAndPush(opts: {
       last = push.output
       continue
     }
-    return { cloneAuth: attempt.label, dir }
+    return { cloneAuth: attempt.label, dir, header: attempt.header, headSha: headShaOf(dir, attempt.header, opts.secrets) }
   }
   fail(`git clone/push failed for ${opts.kind}: ${last.slice(0, 800)}`)
+}
+
+function headShaOf(dir: string, header: string, secrets: string[]): string {
+  const rev = runGit(['rev-parse', 'HEAD'], header, dir, secrets)
+  if (rev.status !== 0) fail(`git rev-parse failed: ${rev.output}`)
+  return String(rev.stdout ?? '').trim()
+}
+
+// Issue #53: the revision Claim pushes a follow-up commit onto the SAME branch (one task, one PR).
+function pushFollowUp(opts: { dir: string; header: string; branch: string; line: string; secrets: string[] }): string {
+  writeFileSync(join(opts.dir, 'README.md'), `${readFileSync(join(opts.dir, 'README.md'), 'utf8').trimEnd()}\n${opts.line}\n`)
+  const add = runGit(['add', 'README.md'], opts.header, opts.dir, opts.secrets)
+  if (add.status !== 0) fail(`git add (revision) failed: ${add.output}`)
+  const commit = runGit(['commit', '-m', opts.line], opts.header, opts.dir, opts.secrets)
+  if (commit.status !== 0) fail(`git commit (revision) failed: ${commit.output}`)
+  const push = runGit(['push', 'origin', `HEAD:${opts.branch}`], opts.header, opts.dir, opts.secrets)
+  if (push.status !== 0) fail(`git push (revision) failed: ${push.output}`)
+  return headShaOf(opts.dir, opts.header, opts.secrets)
 }
 
 function parseKind(argv: string[]): ForgeKind {
@@ -655,7 +677,7 @@ async function run(): Promise<void> {
 
     const branch = `kaola/${task.id}-smoke-${stamp}`
     const line = `Smoke ${kind} ${task.id} ${stamp}.`
-    const { cloneAuth } = cloneAndPush({
+    const pushed = cloneAndPush({
       kind,
       remoteUrl: clone.remote_url,
       extra: clone.extra_header,
@@ -665,6 +687,7 @@ async function run(): Promise<void> {
       line,
       secrets,
     })
+    const cloneAuth = pushed.cloneAuth
     console.log(`clone_auth ${cloneAuth}`)
 
     const pull = await openPull(spec, revealed, branch, `[${task.id}] ${line}`)
@@ -674,9 +697,83 @@ async function run(): Promise<void> {
       task_id: task.id,
       pr_url: pull.url,
       summary: line,
+      head_sha: pushed.headSha,
     })
     const submittedTask = submitted.task as { status?: string } | undefined
     if (submittedTask?.status !== '待验收') fail(`submit_pr expected 待验收: ${JSON.stringify(submitted)}`)
+
+    // #53 review loop, reviewer side (session REST): one blocking item, then 提交本轮意见.
+    const blocking = await app.inject({
+      method: 'POST',
+      url: `/api/v1/tasks/${task.id}/review/messages`,
+      cookies: setup.cookies,
+      headers: JSON_HEADERS,
+      payload: { body_md: `smoke: 请再补一行（${stamp}）`, kind: 'blocking' },
+    })
+    if (blocking.statusCode !== 201) fail(`review message ${blocking.statusCode}: ${blocking.body}`)
+    const rounded = await app.inject({
+      method: 'POST',
+      url: `/api/v1/tasks/${task.id}/review/rounds`,
+      cookies: setup.cookies,
+      headers: JSON_HEADERS,
+      payload: {},
+    })
+    if (rounded.statusCode !== 201) fail(`review round ${rounded.statusCode}: ${rounded.body}`)
+    const roundedTask = (rounded.json() as { task?: { status?: string } }).task
+    if (roundedTask?.status !== '待修改') fail(`提交本轮意见 expected 待修改, got ${JSON.stringify(roundedTask)}`)
+    console.log(`review_round 1 ${task.id} 待修改`)
+
+    // Revision Claim (any device may take it; the bridge re-claims with the same identity).
+    const reclaimed = await bridgeToolCall(bridgeUrl, kaolaHome, 'claim_task', { task_id: task.id })
+    const reclaimedTask = reclaimed.task as { status?: string; review_round?: number } | undefined
+    if (reclaimedTask?.status !== '进行中' || reclaimedTask.review_round !== 1) {
+      fail(`revision claim expected 进行中 / review_round 1: ${JSON.stringify(reclaimedTask)}`)
+    }
+    const revisionClaimId = (reclaimed.lease as { claim_id?: string } | undefined)?.claim_id
+    if (typeof revisionClaimId !== 'string') fail('revision claim missing claim_id')
+    const feedback = await bridgeToolCall(bridgeUrl, kaolaHome, 'get_review_feedback', { task_id: task.id })
+    const blockingItems = feedback.blocking as Array<{ id: number; resolved: boolean }> | undefined
+    if (!Array.isArray(blockingItems) || blockingItems.length !== 1 || blockingItems[0]?.resolved !== false) {
+      fail(`get_review_feedback expected one unresolved blocking item: ${JSON.stringify(feedback)}`)
+    }
+    if (JSON.stringify(feedback).includes(revealed)) fail('get_review_feedback leaked the forge token')
+    const revisionLine = `Smoke revision ${kind} ${task.id} ${stamp}.`
+    const revisionSha = pushFollowUp({ dir: pushed.dir, header: pushed.header, branch, line: revisionLine, secrets })
+    await bridgeToolCall(bridgeUrl, kaolaHome, 'post_discussion_message', {
+      task_id: task.id,
+      claim_id: revisionClaimId,
+      body_md: '已补一行。',
+      kind: 'resolution',
+      resolves: blockingItems[0]?.id,
+    })
+    const revised = await bridgeToolCall(bridgeUrl, kaolaHome, 'submit_revision', {
+      task_id: task.id,
+      claim_id: revisionClaimId,
+      pr_url: pull.url,
+      head_sha: revisionSha,
+      summary: revisionLine,
+    })
+    if ((revised.task as { status?: string } | undefined)?.status !== '待验收') {
+      fail(`submit_revision expected 待验收: ${JSON.stringify(revised)}`)
+    }
+    console.log(`submit_revision ${revisionSha.slice(0, 12)} 待验收`)
+
+    // 「通过」 → 待合并, then Kaola flips the Draft to ready on the forge (off the response path).
+    const approved = await app.inject({
+      method: 'POST',
+      url: `/api/v1/tasks/${task.id}/review/approve`,
+      cookies: setup.cookies,
+      headers: JSON_HEADERS,
+      payload: {},
+    })
+    if (approved.statusCode !== 200) fail(`approve ${approved.statusCode}: ${approved.body}`)
+    if ((approved.json() as { task?: { status?: string } }).task?.status !== '待合并') fail('approve expected 待合并')
+    await settleWritebacks()
+    const adapter = createForgeAdapter(kind, { baseUrl: spec.baseUrl })
+    const prStatus = await adapter.getPullRequest({ token: revealed }, pull.url)
+    if (prStatus.draft) fail(`PR still draft after 通过: ${JSON.stringify(prStatus)}`)
+    if (prStatus.head_sha !== revisionSha) fail(`forge head ${prStatus.head_sha} != submitted ${revisionSha}`)
+    console.log(`approved ${task.id} 待合并 draft=false`)
 
     await mergePull(spec, revealed, pull.number)
 
@@ -699,9 +796,11 @@ async function run(): Promise<void> {
           }
         }),
       )
-      for (const needed of ['认领', '提交PR', '完成']) {
+      for (const needed of ['认领', '提交PR', '完成', '翻ready']) {
         if (!transitions.has(needed)) fail(`missing 回写 ${needed}`)
       }
+      const dump = db.$client.prepare('SELECT details FROM events').all() as Array<{ details: string }>
+      if (dump.some((event) => event.details.includes(revealed))) fail('events.details leaked the forge token')
     } finally {
       db.$client.close()
     }

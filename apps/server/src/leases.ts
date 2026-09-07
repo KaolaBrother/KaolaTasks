@@ -3,7 +3,7 @@ import { transitionTaskStatus } from '@kaola/shared'
 import type { TaskStatus } from '@kaola/shared'
 import { and, eq, lte } from 'drizzle-orm'
 import type { AppDb } from './db.ts'
-import { type Lease, leases, tasks } from './schema.ts'
+import { type Lease, leases, submissions, tasks } from './schema.ts'
 import { insertAuditEvent } from './vault.ts'
 
 export const LEASE_TTL_SECONDS = 86400
@@ -146,12 +146,16 @@ export function sweepExpiredLeases(db: AppDb): void {
       tx.update(leases).set({ state: 'expired' }).where(eq(leases.id, lease.id)).run()
       const task = tx.select().from(tasks).where(eq(tasks.id, lease.taskId)).get()
       if (task == null || task.status !== '进行中') return
-      const to = transitionTaskStatus(task.status, '待认领') as TaskStatus
+      // Issue #53 (§5): an expired revision Claim (the task already has a submission) parks the
+      // task back in 待修改 so the next Agent can pick the revision up; a first Claim goes to 待认领.
+      const hasSubmission =
+        tx.select({ id: submissions.id }).from(submissions).where(eq(submissions.taskId, task.id)).get() != null
+      const to = transitionTaskStatus(task.status, hasSubmission ? '待修改' : '待认领') as TaskStatus
       tx.update(tasks).set({ status: to }).where(eq(tasks.id, task.id)).run()
       insertAuditEvent(tx, {
         type: STATUS_TRANSITION_EVENT,
         actorUserId: null,
-        details: { task_id: task.publicId, from: '进行中', to: '待认领' },
+        details: { task_id: task.publicId, from: '进行中', to },
       })
     })
   }

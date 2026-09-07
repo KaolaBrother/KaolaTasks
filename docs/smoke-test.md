@@ -97,8 +97,11 @@ POST /api/v1/setup → local active+admin（空库 OAuth 不得插用户）
 | 7 | 管理员一天内把电脑绑到自己 | **配合** | **自动** |
 | 8 | 人指定任务 id；`claim_task` 只传 `task_id`，bridge 自动补 `request_id` 并保存 `claim_id` receipt | **配合** 指定 / **自动** 认领 | **自动** |
 | 9 | 按 `clone` 四键 clone、改 README、推分支、开 PR | **自动**（人确认任务后） | **自动** |
-| 10 | `submit_pr` | **自动** | **自动** |
-| 11 | 合并 PR，看任务变已完成；源 Issue 三条回写 | **配合** 点 Merge；Agent 核 SQLite | **自动** 调 forge merge + `pollPendingReviews` |
+| 10 | 以 **Draft**（GitLab `Draft:` / Gitea `WIP:`）开 PR 后 `submit_pr`（可带 `head_sha`），任务 `待验收` | **自动** | **自动** |
+| 11 | 评审者在任务详情「评审」面板写一条阻塞意见并「提交本轮意见」，任务 `待修改` | **配合** 浏览器点按钮；看板经 SSE 自动变列 | **自动** `POST …/review/messages` + `POST …/review/rounds` |
+| 12 | 任意 Agent `claim_task` 认领 `待修改`（`review_round` 1），`get_review_feedback` 读阻塞项，在同一分支再推一提交，`post_discussion_message(resolution)`，`submit_revision`（新 `head_sha`）回 `待验收` | **自动** | **自动** 经生产 stdio bridge |
+| 13 | 评审者「通过」，任务 `待合并`；考拉用任务凭证把 Draft 翻 ready（forge 上 PR 不再是 Draft/WIP） | **配合** 点「通过」；在 forge 页面核对 | **自动** `POST …/review/approve` + `settleWritebacks` + `getPullRequest().draft === false` |
+| 14 | 合并 PR，看任务变已完成；源 Issue 三条回写 + `翻ready` 回写 | **配合** 点 Merge；Agent 核 SQLite | **自动** 调 forge merge + `pollPendingReviews` |
 
 导入用档案下拉，不要粘贴 GitLab 的 `/-/work_items/…`。inline token 回退才手填 URL。
 
@@ -174,6 +177,8 @@ POST /api/v1/setup → local active+admin（空库 OAuth 不得插用户）
 | Codex 亲验外部 `DEBUG_PRIVATE_CA` 全闭环 | 2026-09-01 | A 真实外部 Ubuntu 部署 + 已纳管 macOS；严格 TLS 负例、带外根核验、系统/浏览器信任、GitLab/Gitea OAuth、管理员绑定、共享凭证档案、生产 MCP、Git/PR、合并、部署进程轮询与回写；真实环境标识和令牌未输出或入库 | [Issue #18](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/issues/18) → [MR !14](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/merge_requests/14)，任务 `kt-2026-0001`，`clone_auth=gitlab-basic-oauth2`，`已完成`，源 Issue 恰有三条状态回写 | [Issue #26](https://gitea.com/KaolaBrother/kaola-tasks-smoke/issues/26) → [PR #27](https://gitea.com/KaolaBrother/kaola-tasks-smoke/pulls/27)，任务 `kt-2026-0002`，`clone_auth=envelope`，`已完成`，源 Issue 恰有三条状态回写 |
 
 外部 `DEBUG_PRIVATE_CA` 本轮还保留两条观察：Gitea 共享档案的 Issue 下拉在请求完成前短暂显示「无数据」，重开后列出真实 Issue；第一次导入收到一次瞬时 `forge_unreachable`，同一部署字节的生产 adapter 随后成功，UI 单次重试也成功。GitLab MR 长时间报告 `checking`，但 merge endpoint 返回 `200` / `merged`，部署进程随后把任务推进为 `已完成`。这些观察不改变两家最终闭环结果，也没有触发 TLS 降级或令牌输出。
+
+#53 评审循环后的「配合」项（未经真人执行不得写成已通过）：浏览器里的评审面板四个按钮、看板 / 面板经 SSE 自动刷新、发布向导「拆为子任务」、GitHub 仓库的 Draft → ready（GraphQL）翻转、以及真人在 forge 页面点 Merge。路径 B 只证明 REST / MCP / adapter 层的同一闭环。
 
 GitHub 发布冒烟已停（此前仓 [Issue #1](https://github.com/KaolaBrother/kaola-tasks-smoke/issues/1) 开过、未走认领，已标 `not_planned` 关闭）。stdio 桥回放 `mcp-session-id` 已进 `main`；另窗 UAT 曾用短提示词走完认领到 `submit_pr`。
 

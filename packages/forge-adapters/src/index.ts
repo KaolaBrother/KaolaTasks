@@ -31,7 +31,17 @@ export type ListedIssue = {
   title: string
   issue_url: string
 }
-export type PrStatus = { state: 'open' | 'merged' | 'closed' }
+// Issue #53: the review loop needs more than the terminal state. `head_sha` / `head_branch`
+// identify the exact revision under review (so a round can be anchored to a commit and a stale
+// review can be detected), and `draft` tells Kaola whether the PR is still an Agent-side draft or
+// already flipped to ready. Absent/wrong-typed fields degrade to `''` / `false` rather than
+// rejecting: a forge that omits `head` on a closed PR must not break the poller.
+export type PrStatus = {
+  state: 'open' | 'merged' | 'closed'
+  head_sha: string
+  draft: boolean
+  head_branch: string
+}
 
 // Issue #13: the only two terminal PR/MR outcomes a webhook (or the poller) ever needs to act on.
 // `parseWebhook` returns this or `null` — `null` means "ignore" (ping, non-terminal action/state,
@@ -62,6 +72,8 @@ export interface ForgeAdapter {
   importIssue(cred: Credential, issueUrl: string): Promise<ImportedIssue>
   listIssues(cred: Credential, repo: RepoRef): Promise<ListedIssue[]>
   getPullRequest(cred: Credential, prUrl: string): Promise<PrStatus>
+  markPullRequestReady(cred: Credential, prUrl: string): Promise<void>
+  commentOnPullRequest(cred: Credential, prUrl: string, body: string): Promise<void>
   registerWebhook(cred: Credential, repo: RepoRef, callback: string): Promise<void>
   parseWebhook(headers: Headers, body: unknown): ForgeEvent | null
   commentOnIssue(cred: Credential, issueRef: IssueRef, body: string): Promise<void>
@@ -97,6 +109,9 @@ export function createForgeAdapter(
     importIssue: (cred, issueUrl) => importIssue(kind, options, cred, issueUrl),
     listIssues: (cred, repo) => listIssues(kind, options, cred, repo),
     getPullRequest: (cred, prUrl) => getPullRequest(kind, options, cred, prUrl),
+    markPullRequestReady: (cred, prUrl) => markPullRequestReady(kind, options, cred, prUrl),
+    commentOnPullRequest: (cred, prUrl, body) =>
+      commentOnPullRequest(kind, options, cred, prUrl, body),
     registerWebhook: (cred, repo, callback) => registerWebhook(kind, options, cred, repo, callback),
     parseWebhook: (headers, body) => parseWebhook(kind, options, headers, body),
     commentOnIssue: (cred, issueRef, body) => commentOnIssue(kind, options, cred, issueRef, body),
@@ -251,6 +266,37 @@ function derivePrState(kind: ForgeKind, body: unknown): PrStatus['state'] {
   return 'open'
 }
 
+// Issue #53. Gitea has no first-class draft flag on older releases and encodes "still work in
+// progress" as a `WIP:` title prefix; GitLab historically used `work_in_progress` and now also
+// exposes `draft`. Both markers are read here, and the same prefix shapes are what
+// `markPullRequestReady` strips below — one source of truth for "what makes a PR a draft".
+const GITEA_WIP_PREFIX = /^\s*wip:\s*/iu
+const GITLAB_DRAFT_PREFIX = /^\s*(?:draft:|wip:|\[draft\]|\(draft\))\s*/iu
+
+function stringField(obj: Record<string, unknown> | undefined, key: string): string {
+  const raw = obj?.[key]
+  return typeof raw === 'string' ? raw : ''
+}
+
+function derivePrHeadSha(kind: ForgeKind, body: unknown): string {
+  const obj = asObject(body)
+  if (kind === 'gitlab') return stringField(obj, 'sha')
+  return stringField(asObject(obj?.head), 'sha')
+}
+
+function derivePrHeadBranch(kind: ForgeKind, body: unknown): string {
+  const obj = asObject(body)
+  if (kind === 'gitlab') return stringField(obj, 'source_branch')
+  return stringField(asObject(obj?.head), 'ref')
+}
+
+function derivePrDraft(kind: ForgeKind, body: unknown): boolean {
+  const obj = asObject(body)
+  if (kind === 'github') return obj?.draft === true
+  if (kind === 'gitlab') return obj?.draft === true || obj?.work_in_progress === true
+  return obj?.draft === true || GITEA_WIP_PREFIX.test(stringField(obj, 'title'))
+}
+
 async function getPullRequest(
   kind: ForgeKind,
   options: CreateForgeAdapterOptions | undefined,
@@ -263,7 +309,125 @@ async function getPullRequest(
     throw new Error(`getPullRequest: ${kind} responded ${res.status}`)
   }
   const body: unknown = await res.json()
-  return { state: derivePrState(kind, body) }
+  return {
+    state: derivePrState(kind, body),
+    head_sha: derivePrHeadSha(kind, body),
+    draft: derivePrDraft(kind, body),
+    head_branch: derivePrHeadBranch(kind, body),
+  }
+}
+
+// Issue #53: flip a Draft PR/MR to ready-for-review once Kaola's review passes. Every branch
+// first GETs the PR (same URL, host rule and auth as `getPullRequest`) because all three forges
+// need something off the current PR to mutate it — GitHub the GraphQL `node_id`, GitLab/Gitea the
+// current title — and because that read is also what makes the operation idempotent: an already
+// ready PR returns without any mutating request at all, so a retry after an ack loss is safe.
+async function markPullRequestReady(
+  kind: ForgeKind,
+  options: CreateForgeAdapterOptions | undefined,
+  cred: Credential,
+  prUrl: string,
+): Promise<void> {
+  const url = prApiUrl(kind, options, prUrl)
+  const res = await forgeGet(kind, url, cred.token, options)
+  if (!res.ok) {
+    throw new Error(`markPullRequestReady: ${kind} responded ${res.status}`)
+  }
+  const body: unknown = await res.json()
+  const obj = asObject(body)
+
+  if (kind === 'github') {
+    // GitHub's REST API cannot un-draft a PR at all (measured: `PATCH /pulls/:number` ignores
+    // `draft`); `markPullRequestReadyForReview` is GraphQL-only, hence the second hop and the
+    // `node_id` read above.
+    if (obj?.draft !== true) return
+    const nodeId = stringField(obj, 'node_id')
+    const graphqlRes = await forgePost(
+      kind,
+      `${GITHUB_API_ORIGIN}/graphql`,
+      cred.token,
+      {
+        query:
+          'mutation($id: ID!) { markPullRequestReadyForReview(input: { pullRequestId: $id }) { pullRequest { isDraft } } }',
+        variables: { id: nodeId },
+      },
+      options,
+    )
+    if (!graphqlRes.ok) {
+      throw new Error(`markPullRequestReady: ${kind} responded ${graphqlRes.status}`)
+    }
+    // GraphQL reports application-level failure (bad node id, missing scope, PR already merged)
+    // inside a 200 body, so an OK status alone is not success.
+    const graphqlBody: unknown = await graphqlRes.json()
+    const errors = asObject(graphqlBody)?.errors
+    if (Array.isArray(errors) && errors.length > 0) {
+      throw new Error(`markPullRequestReady: ${kind} responded ${graphqlRes.status}`)
+    }
+    return
+  }
+
+  if (kind === 'gitlab') {
+    if (obj?.draft !== true && obj?.work_in_progress !== true) return
+    const title = stringField(obj, 'title').replace(GITLAB_DRAFT_PREFIX, '')
+    const putRes = await forgeRequest(kind, 'PUT', url, cred.token, { title }, options)
+    if (!putRes.ok) {
+      throw new Error(`markPullRequestReady: ${kind} responded ${putRes.status}`)
+    }
+    return
+  }
+
+  const giteaTitle = stringField(obj, 'title')
+  if (!GITEA_WIP_PREFIX.test(giteaTitle)) return
+  const patchRes = await forgeRequest(
+    kind,
+    'PATCH',
+    url,
+    cred.token,
+    { title: giteaTitle.replace(GITEA_WIP_PREFIX, '') },
+    options,
+  )
+  if (!patchRes.ok) {
+    throw new Error(`markPullRequestReady: ${kind} responded ${patchRes.status}`)
+  }
+}
+
+// Issue #53: post a review-loop comment on the PR/MR itself (not on the imported Issue — that is
+// `commentOnIssue`'s job). GitHub/Gitea treat a PR as an issue for comment purposes, so the PR
+// number doubles as the issue number; GitLab has a dedicated MR `notes` collection.
+function prCommentApiUrl(
+  kind: ForgeKind,
+  options: CreateForgeAdapterOptions | undefined,
+  prUrl: string,
+): string {
+  if (kind === 'gitlab') {
+    return `${prApiUrl(kind, options, prUrl)}/notes`
+  }
+  if (kind === 'github') {
+    const parsed = parseGithubPrUrl(prUrl)
+    if (parsed == null) {
+      throw new Error(`unparseable GitHub pull request URL: ${prUrl}`)
+    }
+    return `${prApiOrigin(kind, options)}/repos/${encodeURIComponent(parsed.owner)}/${encodeURIComponent(parsed.repo)}/issues/${parsed.number}/comments`
+  }
+  const parsed = parseGiteaPrUrl(prUrl)
+  if (parsed == null) {
+    throw new Error(`unparseable Gitea pull request URL: ${prUrl}`)
+  }
+  return `${prApiOrigin(kind, options)}/api/v1/repos/${encodeURIComponent(parsed.owner)}/${encodeURIComponent(parsed.repo)}/issues/${parsed.number}/comments`
+}
+
+async function commentOnPullRequest(
+  kind: ForgeKind,
+  options: CreateForgeAdapterOptions | undefined,
+  cred: Credential,
+  prUrl: string,
+  body: string,
+): Promise<void> {
+  const url = prCommentApiUrl(kind, options, prUrl)
+  const res = await forgePost(kind, url, cred.token, { body }, options)
+  if (!res.ok) {
+    throw new Error(`commentOnPullRequest: ${kind} responded ${res.status}`)
+  }
 }
 
 // Issue #13: verify + parse an inbound webhook delivery, and register one with the forge.
@@ -378,12 +542,7 @@ async function forgePost(
   body: unknown,
   options?: CreateForgeAdapterOptions,
 ): Promise<Response> {
-  return globalThis.fetch(url, {
-    method: 'POST',
-    headers: { ...authHeaders(kind, token), 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(options?.timeoutMs ?? DEFAULT_TIMEOUT_MS),
-  })
+  return forgeRequest(kind, 'POST', url, token, body, options)
 }
 
 async function registerWebhook(
@@ -713,9 +872,30 @@ async function forgeGet(
   token: string,
   options?: CreateForgeAdapterOptions,
 ): Promise<Response> {
+  return forgeRequest(kind, 'GET', url, token, undefined, options)
+}
+
+// Issue #37 lived in `forgeGet` / `forgePost` alone; issue #53 added PUT (GitLab) and PATCH
+// (Gitea) mutations, so the abort deadline moved down one level into this single helper — every
+// outbound forge request, whatever its verb, now inherits the same bounded `AbortSignal` and the
+// same per-kind auth headers. A `body` of `undefined` sends no payload and no `Content-Type`,
+// which is what a GET needs.
+async function forgeRequest(
+  kind: ForgeKind,
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH',
+  url: string,
+  token: string,
+  body: unknown,
+  options?: CreateForgeAdapterOptions,
+): Promise<Response> {
+  const headers: Record<string, string> = authHeaders(kind, token)
+  if (body !== undefined) {
+    headers['Content-Type'] = 'application/json'
+  }
   return globalThis.fetch(url, {
-    method: 'GET',
-    headers: authHeaders(kind, token),
+    method,
+    headers,
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     signal: AbortSignal.timeout(options?.timeoutMs ?? DEFAULT_TIMEOUT_MS),
   })
 }

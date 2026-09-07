@@ -19,9 +19,14 @@ sequenceDiagram
     P->>K: 发布任务（附仓库令牌）
     A->>K: claim_task
     K-->>A: 任务说明 + 仓库令牌
-    A->>F: clone / 实现 / 推分支 / 开 PR
+    A->>F: clone / 实现 / 推分支 / 开 Draft PR
     A->>K: submit_pr
-    P->>F: Review 并合并
+    P->>K: 评审面板：多轮意见 / 提交本轮意见
+    K-->>A: 待修改（任意 Agent 认领修订）
+    A->>K: get_review_feedback / submit_revision
+    P->>K: 通过
+    K->>F: Draft 翻 ready
+    P->>F: 合并
     F-->>K: 轮询或 webhook
     K->>K: 任务变为已完成
 ```
@@ -30,9 +35,12 @@ sequenceDiagram
 2. 保存一份仓库凭证，填好任务后点「发布」。发布时会校验令牌能否读、推、开 PR。
 3. 认领者本机跑 `kaola-mcp --url http://localhost:31415`（或 `KAOLA_URL`）。不要把 token 写进 mcp.json。公网 `https://…` 入口先看「安装与证书信任」，不要为了连上而关闭 TLS。
 4. 管理员在工作台 **电脑** 页把 **待授权电脑** 绑到自己或 **认领者**。已绑定后 `claim_task` 才拿到该任务的可复用仓库凭证（并非按次铸造的一次性令牌）；Claim 租约默认 TTL 24 小时，到期只收回考拉侧的认领锁定，不吊销 forge 侧凭证本身。
-5. Agent 实现、推分支、开 PR，再 `submit_pr`。任务变为「待验收」。
-6. 你在 forge 上 review、合并。考拉默认每分钟看一次 PR；也可以配 webhook。
-7. 任务变为「已完成」。从 Issue 导入的会在源 Issue 上留一条状态评论。
+5. Agent 实现、推分支、开 **Draft PR**（GitHub draft / GitLab `Draft:` / Gitea `WIP:`），再 `submit_pr`。任务变为「待验收」——球在评审者手里。
+6. 你在考拉的任务详情「评审」面板里写意见（阻塞 / 建议 / 提问，可贴 forge 的代码链接当锚点），攒够后点「提交本轮意见」：含阻塞项就转「待修改」，任何 Agent 都可以 `claim_task` 认领它做修订，先 `get_review_feedback` 再在同一 PR 上推新提交，改完 `submit_revision` 交回「待验收」。没有阻塞项就只记一轮不翻状态。
+7. 你点「通过」，任务变为「待合并」，考拉用任务凭证把 Draft 翻成 ready。你在 forge 上合并（考拉不 approve、不 merge）。考拉默认每分钟看一次 PR；也可以配 webhook。「撤回通过」回到「待修改」，「终止本次交付」直接「已退回」。
+8. 任务变为「已完成」。从 Issue 导入的会在源 Issue 上留一条状态评论。看板与评审面板经 SSE 实时刷新，不用手动刷。
+
+大 Issue 可以拆成有先后顺序的子任务：发布向导里选「拆为子任务」指定父任务。父任务提交 PR 后子任务才能认领，子任务的基线分支就是父 PR 的分支（堆叠）；父任务合并后考拉自动给子任务追加一轮 `restack` 意见，由下一个认领它的 Agent rebase。子任务的「通过」要等父任务「已完成」。
 
 页面上没有「认领」按钮。认领只通过 Agent。认领者不必在目标仓库有账号——任务所附令牌就是访问权。
 
@@ -86,12 +94,16 @@ sequenceDiagram
 
 | 工具 | 做什么 |
 |------|--------|
-| `list_tasks` | 列出可接单的 `待认领` 任务（无 token） |
+| `list_tasks` | 列出任务（无 token）；`status=待认领` 是新任务，`status=待修改` 是等人认领的修订；每张卡带 `parent_task_id`、`review_round` |
 | `get_task_brief` | 看一条任务的完整说明（无 token） |
 | `claim_task` | 认领。人指定任务时不要带 `autonomous`；可选 `request_id` 让重试幂等（同一 `(设备, request_id)` 重放拿回同一个 Claim）。成功才拿到**该任务**的仓库令牌，租约里的 `claim_id` 之后心跳/释放/提交都要带上。自主轮询才设 `autonomous: true` |
-| `report_progress` | 心跳，可选备注；带过 `request_id` 的新式 Claim 必须带 `claim_id` |
-| `release_task` | 放弃，任务回到待认领；同上 `claim_id` 规则，重复释放同一 Claim 是幂等的 |
-| `submit_pr` | forge 上已有 PR/MR 后再交 URL；同上 `claim_id` 规则，重复提交同一 Claim + 同一 URL 是幂等的 |
+| `report_progress` | 心跳，可选备注、`percent`（0–100）、`phase`（看板实时显示）；带过 `request_id` 的新式 Claim 必须带 `claim_id` |
+| `release_task` | 放弃，任务回到待认领（已有 PR 的回到待修改）；同上 `claim_id` 规则，重复释放同一 Claim 是幂等的 |
+| `submit_pr` | 首次交付：forge 上已有 **Draft** PR/MR 后再交 URL（可带 `head_sha`）；同上 `claim_id` 规则，重复提交同一 Claim + 同一 URL 是幂等的。任务已有 PR 时回 `use_submit_revision` |
+| `get_review_feedback` | 读 Review Brief：本轮判定、阻塞项（带锚点、是否已解决）、非阻塞项、全部对话、`head_sha`、`base_branch`（restack 轮是新基线）。只读，不需要 Claim |
+| `post_discussion_message` | 持有活动 Claim 时在讨论里回答（`answer`）、提问、备注，或 `resolution` + `resolves` 标记某条阻塞项已处理 |
+| `submit_revision` | 修订交回：同一 PR 上推了新提交后交新 `head_sha`（必须与上一轮不同）和摘要，任务回「待验收」，租约释放 |
+| `open_review_round` | 在子任务的 Claim 上给父任务开一轮意见；父任务在「待验收」时会被打回「待修改」 |
 
 用返回的 `clone` 去克隆：按 `extra_header` 带令牌，不要把 token 写进 remote URL。提交 PR 只有 MCP 的 `submit_pr`。协议细节见 [docs/api.md](docs/api.md)。
 

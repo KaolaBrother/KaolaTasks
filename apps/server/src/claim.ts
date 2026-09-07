@@ -26,6 +26,7 @@ import {
   unixNow,
 } from './leases.ts'
 import { type Lease, type Task, credentialProfiles, events, leases, submissions, tasks } from './schema.ts'
+import { publishStreamEvent } from './stream.ts'
 import { selectTask, taskBrief } from './tasks.ts'
 import { decryptToken, insertAuditEvent, isVaultUnconfiguredError } from './vault.ts'
 import { scheduleWriteback } from './writeback.ts'
@@ -42,6 +43,13 @@ const STALE_CLAIM_MESSAGE = '提交的 claim_id 与当前认领不匹配。'
 const PR_URL_INVALID_MESSAGE = 'pr_url 无法解析，或与任务所属仓库不一致。'
 const PR_URL_CONFLICT_MESSAGE = '同一认领已提交过另一个 pr_url。'
 const PR_URL_TAKEN_MESSAGE = '该 pr_url 已被另一任务的进行中提交占用。'
+// Issue #53.
+const USE_SUBMIT_REVISION_MESSAGE = '任务已有首次提交；修订请认领「待修改」任务后调用 submit_revision。'
+const PARENT_NOT_READY_MESSAGE = '父任务尚未提交 PR，子任务暂不可认领。'
+const PERCENT_INVALID_MESSAGE = 'percent 必须是 0–100 的整数。'
+// DESIGN §17.4: a sub-task is claimable once its parent has a PR to stack on (or is merged).
+const PARENT_READY_STATUSES: ReadonlySet<string> = new Set(['待验收', '待修改', '待合并', '已完成'])
+const CLAIMABLE_STATUSES: ReadonlySet<string> = new Set(['待认领', '待修改'])
 const STATUS_TRANSITION_EVENT = '状态迁移'
 const TOKEN_REVEAL_EVENT = 'token 揭示'
 const HEARTBEAT_EVENT = '心跳'
@@ -59,7 +67,7 @@ export type AgentServiceResult<T> =
 // our read and our write. Caught immediately outside the transaction; never escapes claimTask.
 class ClaimCasLostError extends Error {}
 
-function illegalTransitionMessage(from: string, to: string): string {
+export function illegalTransitionMessage(from: string, to: string): string {
   return `任务状态不允许从「${from}」变更为「${to}」。`
 }
 
@@ -80,6 +88,15 @@ function leaseEnvelope(expiresAt: number) {
   }
 }
 
+function readProgressBody(body: unknown): ProgressExtras | undefined {
+  if (body == null || typeof body !== 'object') return undefined
+  const raw = body as Record<string, unknown>
+  const extras: ProgressExtras = {}
+  if (raw.percent !== undefined) extras.percent = raw.percent
+  if (raw.phase !== undefined) extras.phase = raw.phase
+  return extras
+}
+
 function readOptionalString(body: unknown, key: string): string | undefined {
   if (body == null || typeof body !== 'object') return undefined
   const value = (body as Record<string, unknown>)[key]
@@ -93,7 +110,7 @@ function readAutonomous(body: unknown): boolean | undefined {
   return typeof value === 'boolean' ? value : undefined
 }
 
-function actorUserId(auth: AgentPrincipal): number | null {
+export function actorUserId(auth: AgentPrincipal): number | null {
   return auth.owner.kind === 'user' ? auth.owner.user.id : null
 }
 
@@ -153,7 +170,7 @@ function fencingFailureResult<T>(failure: AgentServiceError2): AgentServiceResul
 // The active-lease-only resolver used by report_progress: a heartbeat only ever makes sense
 // against a currently active lease, so — unlike release_task/submit_pr below — there is no
 // terminal-Claim fallback here.
-function resolveActiveLeaseForMutation(
+export function resolveActiveLeaseForMutation(
   db: AppDb,
   auth: AgentPrincipal,
   taskId: number,
@@ -176,7 +193,7 @@ function resolveActiveLeaseForMutation(
 // resolve the Claim by identity instead, fenced by the exact same device+owner match the active
 // path uses. Omitted claim_id against a terminal Claim only ever resolves a legacy
 // (`request_id IS NULL`) one — a new-style Claim always requires it, even here.
-function resolveMutationLease(
+export function resolveMutationLease(
   db: AppDb,
   auth: AgentPrincipal,
   taskId: number,
@@ -233,7 +250,7 @@ function findTerminalLeaseForMutation(
 // suffix-stripped pathname) to derive the exact string to persist, independent of forge kind.
 const PR_URL_SUBPAGE_SUFFIX = /\/(?:files|commits|diffs)$/u
 
-function canonicalizePrUrl(prUrl: string): string | undefined {
+export function canonicalizePrUrl(prUrl: string): string | undefined {
   let parsed: URL
   try {
     parsed = new URL(prUrl)
@@ -455,7 +472,7 @@ export async function claimTask(
         },
       })
 
-      const brief = taskBrief({ task: row.task, posterUsername: row.posterUsername })
+      const brief = taskBrief(row)
       return {
         ok: true,
         httpStatus: 201,
@@ -491,11 +508,19 @@ export async function claimTask(
   if (from === '进行中') {
     return { ok: false, httpStatus: 409, body: { error: 'conflict', message: TASK_ALREADY_CLAIMED_MESSAGE } }
   }
-  if (from !== '待认领') {
+  // Issue #53 (D12): 待修改 is a claimable state too — a revision Claim, same envelope.
+  if (!CLAIMABLE_STATUSES.has(from)) {
     return {
       ok: false,
       httpStatus: 409,
       body: { error: 'illegal_transition', message: illegalTransitionMessage(from, '进行中') },
+    }
+  }
+  // Issue #53 (D13 / §17.4): a sub-task cannot be claimed until its parent has something to stack on.
+  if (row.task.parentTaskId != null) {
+    const parent = db.select({ status: tasks.status }).from(tasks).where(eq(tasks.id, row.task.parentTaskId)).get()
+    if (parent == null || !PARENT_READY_STATUSES.has(parent.status)) {
+      return { ok: false, httpStatus: 409, body: { error: 'parent_not_ready', message: PARENT_NOT_READY_MESSAGE } }
     }
   }
 
@@ -556,7 +581,7 @@ export async function claimTask(
       const updated = db
         .update(tasks)
         .set({ status: to })
-        .where(and(eq(tasks.id, row.task.id), eq(tasks.status, '待认领')))
+        .where(and(eq(tasks.id, row.task.id), eq(tasks.status, from)))
         .returning()
         .get()
       if (updated == null) {
@@ -600,9 +625,13 @@ export async function claimTask(
 
   // Off the response path: never awaited here, so a slow/unreachable forge cannot delay a
   // committed claim. settleWritebacks() (writeback.ts) is the deterministic seam for tests.
-  scheduleWriteback(db, outcome.updated, '认领', actorUserId(auth))
+  // A revision Claim (from 待修改) does not re-announce 认领 on the source Issue.
+  if (from === '待认领') {
+    scheduleWriteback(db, outcome.updated, '认领', actorUserId(auth))
+  }
+  publishStreamEvent('task_updated', { task_id: publicId, status: outcome.updated.status })
 
-  const brief = taskBrief({ task: outcome.updated, posterUsername: row.posterUsername })
+  const brief = taskBrief({ ...row, task: outcome.updated })
   return {
     ok: true,
     httpStatus: 201,
@@ -615,17 +644,41 @@ export async function claimTask(
   }
 }
 
+export type ProgressExtras = { percent?: unknown; phase?: unknown }
+
+// Issue #53 (D15): optional percent (0–100 integer) / phase (short text). Omitted keys leave the
+// heartbeat exactly as before; a present-but-invalid value is a 400.
+function readProgressExtras(extras: ProgressExtras | undefined): { percent?: number; phase?: string } | undefined {
+  const out: { percent?: number; phase?: string } = {}
+  if (extras?.percent !== undefined) {
+    const percent = extras.percent
+    if (typeof percent !== 'number' || !Number.isInteger(percent) || percent < 0 || percent > 100) return undefined
+    out.percent = percent
+  }
+  if (extras?.phase !== undefined) {
+    if (typeof extras.phase !== 'string') return undefined
+    out.phase = extras.phase
+  }
+  return out
+}
+
 export function reportProgress(
   db: AppDb,
   auth: AgentPrincipal,
   publicId: string,
   note?: string,
   claimId?: string,
+  extras?: ProgressExtras,
 ): AgentServiceResult<{
   task: ReturnType<typeof taskBrief>
   lease: ReturnType<typeof leaseEnvelope>
 }> {
   sweepExpiredLeases(db)
+
+  const progress = readProgressExtras(extras)
+  if (progress == null) {
+    return { ok: false, httpStatus: 400, body: { error: 'invalid_body', message: PERCENT_INVALID_MESSAGE } }
+  }
 
   const row = selectTask(db, publicId)
   if (row == null) {
@@ -647,10 +700,12 @@ export function reportProgress(
     insertAuditEvent(tx, {
       type: HEARTBEAT_EVENT,
       actorUserId: actorUserId(auth),
-      details: { task_id: publicId, note: note ?? '' },
+      details: { task_id: publicId, note: note ?? '', ...progress },
     })
     return renewed
   })
+  // The stream carries percent / phase only — never the free-text note.
+  publishStreamEvent('progress', { task_id: publicId, percent: progress.percent ?? null, phase: progress.phase ?? null })
 
   const fresh = selectTask(db, publicId)
   if (fresh == null) {
@@ -703,7 +758,9 @@ export function releaseTask(
   }
 
   const from = row.task.status
-  const to = transitionTaskStatus(from, '待认领') as TaskStatus
+  // Issue #53 (§5): a revision Claim abandoned mid-way goes back to 待修改, not 待认领.
+  const hasSubmission = db.select({ id: submissions.id }).from(submissions).where(eq(submissions.taskId, row.task.id)).get() != null
+  const to = transitionTaskStatus(from, hasSubmission ? '待修改' : '待认领') as TaskStatus
   const details =
     reason === undefined
       ? { task_id: publicId, from, to }
@@ -729,12 +786,13 @@ export function releaseTask(
     })
     return updatedTask
   })
+  publishStreamEvent('task_updated', { task_id: publicId, status: updated.status })
 
   return {
     ok: true,
     httpStatus: 200,
     body: {
-      task: taskBrief({ task: updated, posterUsername: row.posterUsername }),
+      task: taskBrief({ ...row, task: updated }),
     },
   }
 }
@@ -746,6 +804,7 @@ export async function submitPr(
   prUrl: string,
   summary: string,
   claimId?: string,
+  headSha?: string,
 ): Promise<AgentServiceResult<{
   task: ReturnType<typeof taskBrief>
   pr_url: string
@@ -796,6 +855,13 @@ export async function submitPr(
     }
   }
 
+  // Issue #53: submit_pr is the FIRST submission only. A task that already holds a submissions
+  // row is in its revision loop — the Agent must hand the new head back via submit_revision.
+  const priorSubmission = db.select({ id: submissions.id }).from(submissions).where(eq(submissions.taskId, row.task.id)).get()
+  if (priorSubmission != null) {
+    return { ok: false, httpStatus: 409, body: { error: 'use_submit_revision', message: USE_SUBMIT_REVISION_MESSAGE } }
+  }
+
   // Issue #31: no duplicate PR across tasks — a pr_url already held by another task's LIVE
   // (non-terminal pr_state) submission is a typed conflict, checked before any mutation.
   const duplicate = db
@@ -838,6 +904,11 @@ export async function submitPr(
         prUrl: canonicalPrUrl,
         summary,
         prState: 'open',
+        // Issue #53 (D10): delivered as a Draft; head_sha is recorded when supplied, else the
+        // poller backfills it from getPullRequest on its first look.
+        headSha: typeof headSha === 'string' && headSha !== '' ? headSha : null,
+        isDraft: true,
+        reviewRound: 0,
       })
       .run()
     insertAuditEvent(tx, {
@@ -847,6 +918,7 @@ export async function submitPr(
     })
     return updatedTask
   })
+  publishStreamEvent('task_updated', { task_id: publicId, status: updated.status })
 
   // Issue #38: off the response path, same as claim's 认领 write-back above — never awaited
   // here, so a slow/unreachable forge cannot delay a committed submit_pr response.
@@ -857,7 +929,7 @@ export async function submitPr(
     ok: true,
     httpStatus: 200,
     body: {
-      task: taskBrief({ task: updated, posterUsername: row.posterUsername }),
+      task: taskBrief({ ...row, task: updated }),
       pr_url: canonicalPrUrl,
       summary,
     },
@@ -898,6 +970,7 @@ export function registerClaim(app: FastifyInstance, db: AppDb) {
           publicId,
           readOptionalString(request.body, 'note'),
           readOptionalString(request.body, 'claim_id'),
+          readProgressBody(request.body),
         ),
       )
     })
