@@ -513,20 +513,54 @@ function pushFollowUp(opts: { dir: string; header: string; branch: string; line:
   return headShaOf(opts.dir, opts.header, opts.secrets)
 }
 
+export type ForgeHeadLookup = {
+  getPullRequest?: (credential: { token: string }, prUrl: string) => Promise<{ head_sha: string }>
+  getHead?: (credential: { token: string }, prUrl: string) => Promise<string>
+  deadlineMs?: number
+  pollDelayMs?: number
+}
+
 // Issue #54: a forge reports a pushed head on its PR object only eventually (GitLab refreshes the
 // MR `sha` in a background job after the push; observed lag of several seconds on gitlab.com).
 // Kaola's live check is correct against whatever the forge reports, so the smoke waits until the
 // forge itself has caught up before asking Kaola to notice the drift.
-async function waitForForgeHead(kind: ForgeKind, spec: ForgeSpec, token: string, prUrl: string, expected: string): Promise<void> {
-  const adapter = createForgeAdapter(kind, { baseUrl: spec.baseUrl })
-  const deadline = Date.now() + 90_000
+export async function waitForForgeHead(
+  kind: ForgeKind,
+  spec: ForgeSpec,
+  token: string,
+  prUrl: string,
+  expected: string,
+  options?: ForgeHeadLookup,
+): Promise<void> {
+  const readHead: () => Promise<string> = options?.getHead
+    ? () => options.getHead!({ token }, prUrl)
+    : options?.getPullRequest
+      ? async () => (await options.getPullRequest!({ token }, prUrl)).head_sha
+      : (() => {
+          const adapter = createForgeAdapter(kind, { baseUrl: spec.baseUrl })
+          return async () => (await adapter.getPullRequest({ token }, prUrl)).head_sha
+        })()
+  const deadline = Date.now() + (options?.deadlineMs ?? 90_000)
   let seen = ''
   while (Date.now() < deadline) {
-    seen = (await adapter.getPullRequest({ token }, prUrl)).head_sha
-    if (seen === expected) return
-    await new Promise((resolve) => setTimeout(resolve, 3_000))
+    try {
+      seen = await readHead()
+      if (seen === expected) return
+    } catch (err) {
+      if (!isAbortTimeout(err)) throw err
+    }
+    await new Promise((resolve) => setTimeout(resolve, options?.pollDelayMs ?? 3_000))
   }
   fail(`forge never reported pushed head ${expected.slice(0, 12)} within 90s (last seen ${seen.slice(0, 12)})`)
+}
+
+function isAbortTimeout(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err != null &&
+    'name' in err &&
+    (err as { name: unknown }).name === 'TimeoutError'
+  )
 }
 
 function parseArgs(argv: string[]): { kind: ForgeKind; web: boolean } {
@@ -551,6 +585,14 @@ function parseArgs(argv: string[]): { kind: ForgeKind; web: boolean } {
   return { kind, web }
 }
 
+/** Path C default is `UAT_WEB_HOST || '127.0.0.1'`; Path B is always loopback. */
+export function resolveSmokeListenHost(
+  web: boolean,
+  env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
+): string {
+  return web ? (env.UAT_WEB_HOST || '127.0.0.1') : '127.0.0.1'
+}
+
 function uatHoldDir(): string {
   return process.env.UAT_HOLD_DIR != null && process.env.UAT_HOLD_DIR !== ''
     ? process.env.UAT_HOLD_DIR
@@ -568,7 +610,7 @@ function writeUatState(dir: string, state: Record<string, unknown>): void {
   writeFileSync(join(dir, 'state.json'), `${JSON.stringify(state, null, 2)}\n`)
 }
 
-async function waitForUatFlag(dir: string, expected: string, secrets: string[]): Promise<void> {
+export async function waitForUatFlag(dir: string, expected: string, secrets: string[]): Promise<void> {
   const flag = join(dir, 'go')
   const deadline = Date.now() + uatHoldTimeoutMs()
   console.log(`uat_wait ${expected} timeout_ms=${uatHoldTimeoutMs()}`)
@@ -581,12 +623,16 @@ async function waitForUatFlag(dir: string, expected: string, secrets: string[]):
         return
       }
       if (got !== '') fail(`unexpected UAT flag ${JSON.stringify(got)} (want ${expected})`)
-    } catch {
-      // flag file missing
+    } catch (err) {
+      if (!isEnoent(err)) throw err
     }
     await new Promise((resolve) => setTimeout(resolve, 500))
   }
   fail(`timed out waiting for ${flag} to contain ${expected}`)
+}
+
+function isEnoent(err: unknown): boolean {
+  return typeof err === 'object' && err != null && 'code' in err && (err as { code: unknown }).code === 'ENOENT'
 }
 
 async function run(): Promise<void> {
@@ -624,7 +670,7 @@ async function run(): Promise<void> {
   try {
     const setup = await ensureSetup(app, DEFAULT_SETUP)
     const cookies = await loginGitlabStub(app)
-    const listenHost = web ? (process.env.UAT_WEB_HOST || '0.0.0.0') : '127.0.0.1'
+    const listenHost = resolveSmokeListenHost(web, process.env)
     const bridgeUrl = await app.listen({ host: listenHost, port: web ? webPort : 0 })
     const origin = web ? `http://localhost:${webPort}` : bridgeUrl
     if (web) console.log(`uat_origin ${origin}`)
