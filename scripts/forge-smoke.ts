@@ -49,7 +49,7 @@ import {
   injectSigned,
   pairDeviceToSelf,
 } from '../apps/server/src/device-proof.test-helpers.ts'
-import { pollPendingReviews } from '../apps/server/src/poller.ts'
+import { pollPendingReviews, retryPendingWritebacks } from '../apps/server/src/poller.ts'
 import { settleWritebacks } from '../apps/server/src/writeback.ts'
 import { createForgeAdapter } from '../packages/forge-adapters/src/index.ts'
 import { DEFAULT_SETUP, ensureSetup } from '../apps/server/src/auth.test-helpers.ts'
@@ -635,6 +635,58 @@ function isEnoent(err: unknown): boolean {
   return typeof err === 'object' && err != null && 'code' in err && (err as { code: unknown }).code === 'ENOENT'
 }
 
+const SMOKE_REQUIRED_WRITEBACKS = ['认领', '提交PR', '完成', '翻ready'] as const
+
+function readWritebackTransitions(db: ReturnType<typeof createDb>): Set<string | undefined> {
+  const writebacks = db.$client
+    .prepare(`SELECT details FROM events WHERE type = '回写' ORDER BY id`)
+    .all() as Array<{ details: string }>
+  return new Set(
+    writebacks.map((event) => {
+      try {
+        return (JSON.parse(event.details) as { transition?: string }).transition
+      } catch {
+        return undefined
+      }
+    }),
+  )
+}
+
+async function ensureSmokeCompletionWritebacks(
+  db: ReturnType<typeof createDb>,
+  taskPublicId: string,
+  revealed: string,
+): Promise<void> {
+  const deadline = Date.now() + 60_000
+  let waited = false
+  while (true) {
+    await settleWritebacks()
+    await pollPendingReviews(db)
+    await settleWritebacks()
+    await retryPendingWritebacks(db)
+    const row = db.$client.prepare('SELECT status FROM tasks WHERE public_id = ?').get(taskPublicId) as
+      | { status: string }
+      | undefined
+    const transitions = readWritebackTransitions(db)
+    if (row?.status === '已完成' && SMOKE_REQUIRED_WRITEBACKS.every((needed) => transitions.has(needed))) {
+      const dump = db.$client.prepare('SELECT details FROM events').all() as Array<{ details: string }>
+      if (dump.some((event) => event.details.includes(revealed))) fail('events.details leaked the forge token')
+      return
+    }
+    if (Date.now() >= deadline) {
+      if (row?.status !== '已完成') fail(`expected 已完成 after poll, got ${row?.status ?? 'missing'}`)
+      for (const needed of SMOKE_REQUIRED_WRITEBACKS) {
+        if (!transitions.has(needed)) fail(`missing 回写 ${needed}`)
+      }
+    }
+    if (!waited) {
+      console.log('writeback_wait')
+      waited = true
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500))
+  }
+}
+
 async function run(): Promise<void> {
   const { kind, web } = parseArgs(process.argv)
   const spec = FORGES[kind]
@@ -1039,28 +1091,12 @@ async function run(): Promise<void> {
 
     const db = createDb(sqlitePath)
     try {
-      await pollPendingReviews(db)
-      const row = db.$client.prepare('SELECT status FROM tasks WHERE public_id = ?').get(task.id) as
-        | { status: string }
-        | undefined
-      if (row?.status !== '已完成') fail(`expected 已完成 after poll, got ${row?.status ?? 'missing'}`)
-      const writebacks = db.$client
-        .prepare(`SELECT details FROM events WHERE type = '回写' ORDER BY id`)
-        .all() as Array<{ details: string }>
-      const transitions = new Set(
-        writebacks.map((event) => {
-          try {
-            return (JSON.parse(event.details) as { transition?: string }).transition
-          } catch {
-            return undefined
-          }
-        }),
-      )
-      for (const needed of ['认领', '提交PR', '完成', '翻ready']) {
-        if (!transitions.has(needed)) fail(`missing 回写 ${needed}`)
-      }
-      const dump = db.$client.prepare('SELECT details FROM events').all() as Array<{ details: string }>
-      if (dump.some((event) => event.details.includes(revealed))) fail('events.details leaked the forge token')
+      // Path C `--web` runs the in-process poller every 2s. That tick can mark 已完成 and start
+      // the 完成 comment while this script opens a second sqlite connection and reads events
+      // before `attemptWriteback` records the row (GitLab issue #30 had the forge comment, sqlite
+      // did not). Drain in-flight posts, then retry pending writebacks (listing recovers a
+      // comment that landed after a client timeout).
+      await ensureSmokeCompletionWritebacks(db, task.id, revealed)
     } finally {
       db.$client.close()
     }
