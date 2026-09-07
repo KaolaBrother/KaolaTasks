@@ -1068,3 +1068,201 @@ describe('issue #53 review loop — code-review repairs', { concurrency: false }
     assert.equal(stale.error, 'stale_claim')
   })
 })
+
+// -------------------------------------------------------------------------------------------
+// Issue #54 (DESIGN.md §17.7, docs/api.md "#54 head check") — evidentiary anchoring of 「通过」
+// to the recorded head_sha. Custody note: this describe block is the acceptance oracle for the
+// REST/MCP half of #54; an implementer may not weaken or reinterpret it to pass.
+//
+// Known interaction with the pre-existing #53 suite above (flagged, not fixed here — out of this
+// file's assigned scope, which is additive only): the full multi-round loop test's assertion at
+// `evensFor(db, publicId, '评审通过')[0].details` (currently `{ task_id, round, pr_url }`) and the
+// sub-task test's unstubbed `approve` after a `submit_revision` whose PR stub was never re-set to
+// the new head will both need mechanical updates once #54's live head check lands — the former
+// because the event gains `head_sha` / `head_verified` (§17.6, exactly as documented here), the
+// latter because that approve call's forge stub would otherwise disagree with the recorded head
+// and legitimately 409. Both are stub/assertion synchronization to the already-documented #54
+// contract, not a change in accepted meaning.
+// -------------------------------------------------------------------------------------------
+
+describe('issue #54 head_sha anchoring', { concurrency: false }, () => {
+  test('approve with an equal live forge head: 200, head_verified true, forge_head_sha persisted, and 评审通过 details carry head_sha + head_verified', async (t) => {
+    const { app, stub, admin, db } = await boot(t)
+    const d = await deliverDraft(app, stub, admin, { prNumber: 601, headSha: 'sha-601-1' })
+    // The live forge head equals the recorded head at approve time.
+    stub.pr.set(d.prNumber, { body: prBody(601, { head: { sha: 'sha-601-1', ref: 'kaola/branch-601' } }) })
+
+    const approved = await reviewPost(app, admin.cookies, d.brief.id, 'approve')
+    assert.equal(approved.statusCode, 200, approved.body)
+    const body = jsonBody(approved)
+    assert.equal(body.task.status, '待合并')
+    assert.equal(body.head_sha, 'sha-601-1')
+    assert.equal(body.head_verified, true)
+
+    const pk = taskRow(db, d.brief.id).id
+    assert.equal(submissionRow(db, pk).forge_head_sha, 'sha-601-1', 'approve must persist the live-checked head')
+    assert.ok(submissionRow(db, pk).forge_head_seen_at > 0)
+
+    const approvedEvent = eventsFor(db, d.brief.id, '评审通过')[0]
+    assert.deepEqual(approvedEvent.details, {
+      task_id: d.brief.id,
+      round: body.round.round,
+      pr_url: d.prUrl,
+      head_sha: 'sha-601-1',
+      head_verified: true,
+    })
+    assertNoSecrets('approve equal head', body, eventRows(db))
+  })
+
+  test('approve refuses when the live forge head differs from the recorded head_sha: 409 head_sha_stale, no state change, no new round, no 评审通过 event; the view then shows head_stale', async (t) => {
+    const { app, stub, admin, db } = await boot(t)
+    const d = await deliverDraft(app, stub, admin, { prNumber: 602, headSha: 'sha-602-1' })
+    stub.pr.set(d.prNumber, { body: prBody(602, { head: { sha: 'sha-602-2', ref: 'kaola/branch-602' } }) })
+
+    const pk = taskRow(db, d.brief.id).id
+    const roundsBefore = db.$client.prepare('SELECT COUNT(*) AS n FROM review_rounds WHERE task_id = ?').get(pk).n
+
+    const approved = await reviewPost(app, admin.cookies, d.brief.id, 'approve')
+    assert.equal(approved.statusCode, 409, approved.body)
+    const body = jsonBody(approved)
+    assert.equal(body.error, 'head_sha_stale')
+    assert.equal(body.recorded_head_sha, 'sha-602-1')
+    assert.equal(body.forge_head_sha, 'sha-602-2')
+    assert.equal(typeof body.message, 'string')
+    assert.ok(body.message.length > 0, 'the 409 must carry a non-empty Chinese message')
+
+    assert.equal(taskRow(db, d.brief.id).status, '待验收', 'task must not transition on a stale head')
+    const roundsAfter = db.$client.prepare('SELECT COUNT(*) AS n FROM review_rounds WHERE task_id = ?').get(pk).n
+    assert.equal(roundsAfter, roundsBefore, 'no new review_rounds row on a refused approve')
+    assert.equal(eventsFor(db, d.brief.id, '评审通过').length, 0, 'no 评审通过 event on a refused approve')
+
+    // The live check still persists what it observed even though it refuses the transition.
+    assert.equal(submissionRow(db, pk).forge_head_sha, 'sha-602-2')
+
+    const view = jsonBody(await reviewGet(app, admin.cookies, d.brief.id))
+    assert.equal(view.forge_head_sha, 'sha-602-2')
+    assert.equal(view.head_stale, true)
+    assertNoSecrets('approve stale head', body, view, eventRows(db))
+  })
+
+  test('approve with no recorded head_sha (poller never ran) backfills it from the live forge head and proceeds with head_verified true', async (t) => {
+    const { app, stub, admin, db } = await boot(t)
+    // deliverDraft without a headSha leaves submissions.head_sha NULL until something backfills it.
+    const d = await deliverDraft(app, stub, admin, { prNumber: 603 })
+    const pk = taskRow(db, d.brief.id).id
+    assert.equal(submissionRow(db, pk).head_sha, null, 'setup: no head_sha recorded yet')
+
+    stub.pr.set(d.prNumber, { body: prBody(603, { head: { sha: 'sha-603-1', ref: 'kaola/branch-603' } }) })
+    const approved = await reviewPost(app, admin.cookies, d.brief.id, 'approve')
+    assert.equal(approved.statusCode, 200, approved.body)
+    const body = jsonBody(approved)
+    assert.equal(body.head_sha, 'sha-603-1')
+    assert.equal(body.head_verified, true)
+    assert.equal(submissionRow(db, pk).head_sha, 'sha-603-1', 'head_sha must be backfilled from the live forge head')
+    assert.equal(taskRow(db, d.brief.id).status, '待合并')
+  })
+
+  test('approve proceeds fail-open (head_verified: false) when the forge is unreachable and no forge_head_sha was ever observed', async (t) => {
+    const { app, stub, admin, db } = await boot(t)
+    const d = await deliverDraft(app, stub, admin, { prNumber: 604, headSha: 'sha-604-1' })
+    const pk = taskRow(db, d.brief.id).id
+    assert.equal(submissionRow(db, pk).forge_head_sha, null, 'setup: the poller never ran')
+
+    stub.pr.set(d.prNumber, { unreachable: true })
+    const approved = await reviewPost(app, admin.cookies, d.brief.id, 'approve')
+    assert.equal(approved.statusCode, 200, approved.body)
+    const body = jsonBody(approved)
+    assert.equal(body.head_sha, 'sha-604-1', 'falls back to the recorded head when the forge cannot be read')
+    assert.equal(body.head_verified, false)
+    assert.equal(taskRow(db, d.brief.id).status, '待合并')
+
+    const approvedEvent = eventsFor(db, d.brief.id, '评审通过')[0]
+    assert.deepEqual(approvedEvent.details, {
+      task_id: d.brief.id,
+      round: body.round.round,
+      pr_url: d.prUrl,
+      head_sha: 'sha-604-1',
+      head_verified: false,
+    })
+  })
+
+  test('approve still refuses (409) when the forge is unreachable but a previously observed forge_head_sha differs from the recorded head', async (t) => {
+    const { app, stub, admin, db } = await boot(t)
+    const d = await deliverDraft(app, stub, admin, { prNumber: 605, headSha: 'sha-605-1' })
+    stub.pr.set(d.prNumber, { body: prBody(605, { head: { sha: 'sha-605-2', ref: 'kaola/branch-605' } }) })
+    await pollPendingReviews(db)
+
+    const pk = taskRow(db, d.brief.id).id
+    assert.equal(submissionRow(db, pk).forge_head_sha, 'sha-605-2', 'setup: the poller observed a different head earlier')
+
+    stub.pr.set(d.prNumber, { unreachable: true })
+    const approved = await reviewPost(app, admin.cookies, d.brief.id, 'approve')
+    assert.equal(approved.statusCode, 409, approved.body)
+    const body = jsonBody(approved)
+    assert.equal(body.error, 'head_sha_stale')
+    assert.equal(body.recorded_head_sha, 'sha-605-1')
+    assert.equal(body.forge_head_sha, 'sha-605-2')
+    assert.equal(taskRow(db, d.brief.id).status, '待验收')
+    assert.equal(eventsFor(db, d.brief.id, '评审通过').length, 0)
+  })
+
+  test('submit_revision resets forge_head_sha / forge_head_seen_at to null after a poller tick had recorded an observation', async (t) => {
+    const { app, stub, admin, db } = await boot(t)
+    const d = await deliverDraft(app, stub, admin, { prNumber: 606, headSha: 'sha-606-1' })
+    stub.pr.set(d.prNumber, { body: prBody(606, { head: { sha: 'sha-606-2', ref: 'kaola/branch-606' } }) })
+    await pollPendingReviews(db)
+
+    const pk = taskRow(db, d.brief.id).id
+    assert.ok(submissionRow(db, pk).forge_head_sha != null, 'setup: the poller recorded an observation')
+
+    await postReviewerMessage(app, admin.cookies, d.brief.id, { body_md: '阻塞', kind: 'blocking' })
+    assert.equal((await reviewPost(app, admin.cookies, d.brief.id, 'rounds')).statusCode, 201)
+
+    const revisor = await pairClaimantDevice(app, admin.cookies, 'revisor-606')
+    const revisionClaim = await claimOk(app, revisor.identity, d.brief.id)
+    const revMcp = await mcpClient(app, revisor.identity)
+    await revMcp.ok('submit_revision', {
+      task_id: d.brief.id,
+      claim_id: revisionClaim.lease.claim_id,
+      pr_url: d.prUrl,
+      head_sha: 'sha-606-3',
+      summary: '修订',
+    })
+
+    assert.equal(submissionRow(db, pk).forge_head_sha, null, 'submit_revision must clear the stale observation')
+    assert.equal(submissionRow(db, pk).forge_head_seen_at, null)
+    assert.equal(submissionRow(db, pk).head_sha, 'sha-606-3')
+
+    const view = jsonBody(await reviewGet(app, admin.cookies, d.brief.id))
+    assert.equal(view.forge_head_sha, null)
+    assert.equal(view.head_stale, false)
+    assertNoSecrets('submit_revision reset view', view)
+  })
+
+  test('GET …/review exposes forge_head_sha / forge_head_seen_at / head_stale; head_stale is true only when both are known and differ', async (t) => {
+    const { app, stub, admin, db } = await boot(t)
+    const d = await deliverDraft(app, stub, admin, { prNumber: 607, headSha: 'sha-607-1' })
+
+    // Before any observation: both new fields null, head_stale false.
+    let view = jsonBody(await reviewGet(app, admin.cookies, d.brief.id))
+    assert.equal(view.forge_head_sha, null)
+    assert.equal(view.forge_head_seen_at, null)
+    assert.equal(view.head_stale, false)
+
+    // The forge's observed head equals the recorded head: head_stale stays false.
+    stub.pr.set(d.prNumber, { body: prBody(607, { head: { sha: 'sha-607-1', ref: 'kaola/branch-607' } }) })
+    await pollPendingReviews(db)
+    view = jsonBody(await reviewGet(app, admin.cookies, d.brief.id))
+    assert.equal(view.forge_head_sha, 'sha-607-1')
+    assert.ok(view.forge_head_seen_at > 0)
+    assert.equal(view.head_stale, false)
+
+    // The forge's observed head diverges: head_stale flips true.
+    stub.pr.set(d.prNumber, { body: prBody(607, { head: { sha: 'sha-607-2', ref: 'kaola/branch-607' } }) })
+    await pollPendingReviews(db)
+    view = jsonBody(await reviewGet(app, admin.cookies, d.brief.id))
+    assert.equal(view.forge_head_sha, 'sha-607-2')
+    assert.equal(view.head_stale, true)
+    assertNoSecrets('view exposure', view)
+  })
+})

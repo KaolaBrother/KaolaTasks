@@ -1,6 +1,7 @@
 import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
+import { request as httpRequest } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createDb } from './db.ts'
@@ -993,5 +994,255 @@ describe('issue #13: per-instance webhook-vs-poll config (pollPendingReviews hon
 
     const after = taskRow(db, setup.publicId)
     assert.equal(after.status, '已完成', 'an empty forgeInstances array must behave like today: poll everything')
+  })
+})
+
+// -------------------------------------------------------------------------------------------
+// Issue #54 (§17.7 / docs/api.md "#54: every poll additionally records the observed head…").
+// Custody note: this describe block is the acceptance oracle for the poller half of #54 — every
+// pollPendingReviews tick records the forge-observed head (overwriting), never rewrites a
+// recorded submissions.head_sha, never changes task status on a head mismatch, and publishes SSE
+// task_updated when the observation changes. An implementer may not weaken or reinterpret it.
+// -------------------------------------------------------------------------------------------
+
+// Sets up one task through create → claim → submit_pr WITH an explicit head_sha (the plain
+// `createPendingReviewTask` above omits head_sha so the #53 backfill has something to fill in;
+// this variant is needed here to prove the poller never rewrites an already-recorded head_sha).
+async function createPendingReviewTaskWithHead(app, stub, poster, key, { title, prNumber, summary, headSha }) {
+  const brief = await createTaskOk(app, poster.cookies, taskPayload({ title }))
+  const claimed = await claimTaskHttp(app, { token: key.identity, publicId: brief.id })
+  assert.equal(claimed.statusCode, 201, `setup claim: ${claimed.statusCode} ${claimed.body}`)
+  const prUrl = `${FORGE_BASE_URL}/${REPO_FULL_NAME}/pulls/${prNumber}`
+  const client = await readyMcp(app, key.identity)
+  const called = await client.callTool(app, key.identity, 'submit_pr', {
+    task_id: brief.id,
+    pr_url: prUrl,
+    summary,
+    head_sha: headSha,
+  })
+  const submitted = assertToolOk(called.result)
+  assert.equal(submitted.task.status, '待验收', `setup submit_pr: ${JSON.stringify(submitted)}`)
+  return { publicId: brief.id, prUrl, prNumber: String(prNumber) }
+}
+
+function submissionRow(db, taskPk) {
+  return db.$client.prepare('SELECT * FROM submissions WHERE task_id = ? ORDER BY id DESC LIMIT 1').get(taskPk)
+}
+
+// A real network + node:http seam for the one test below that must observe an actual SSE frame.
+// `beginFetch` above monkey-patches `globalThis.fetch` for the forge stub; reusing the global
+// `fetch` to also open the SSE connection would route straight into that same stub instead of the
+// real server (it answers unrecognized URLs with a fake 500), so this goes around it via
+// node:http, a code path `beginFetch` never touches.
+async function listeningPollerApp(t, sqlitePath) {
+  const app = buildApp({ sqlitePath })
+  t.after(async () => {
+    await app.close()
+  })
+  await app.listen({ port: 0, host: '127.0.0.1' })
+  const address = app.server.address()
+  const port = typeof address === 'object' && address != null ? address.port : 0
+  assert.ok(port > 0, 'test server must be listening on an ephemeral port')
+  return { app, origin: `http://127.0.0.1:${port}` }
+}
+
+function cookieHeaderFrom(cookies) {
+  return Object.entries(cookies)
+    .map(([name, value]) => `${name}=${value}`)
+    .join('; ')
+}
+
+// Opens `GET /api/v1/stream` over a real socket and returns a handle whose `readUntil` waits
+// (bounded by `timeoutMs`) for `predicate(accumulatedText)` to hold, and otherwise resolves with
+// `timedOut: true` — used both to wait FOR a frame and to prove one never arrives within a window.
+function openSseStreamViaHttp(t, origin, cookies) {
+  return new Promise((resolve, reject) => {
+    const req = httpRequest(
+      `${origin}/api/v1/stream`,
+      { method: 'GET', headers: { accept: 'text/event-stream', cookie: cookieHeaderFrom(cookies) } },
+      (res) => {
+        let buffer = ''
+        let ended = false
+        const waiters = []
+        res.setEncoding('utf8')
+        res.on('data', (chunk) => {
+          buffer += chunk
+          for (const waiter of waiters.splice(0)) waiter()
+        })
+        res.on('end', () => {
+          ended = true
+          for (const waiter of waiters.splice(0)) waiter()
+        })
+        resolve({
+          statusCode: res.statusCode,
+          async readUntil(predicate, timeoutMs = 2000) {
+            const deadline = Date.now() + timeoutMs
+            while (!predicate(buffer)) {
+              if (ended) return { text: buffer, timedOut: false, closed: true }
+              const remaining = deadline - Date.now()
+              if (remaining <= 0) return { text: buffer, timedOut: true }
+              await new Promise((r) => {
+                const timer = setTimeout(r, remaining)
+                waiters.push(() => {
+                  clearTimeout(timer)
+                  r()
+                })
+              })
+            }
+            return { text: buffer, timedOut: false }
+          },
+        })
+      },
+    )
+    req.on('error', reject)
+    req.end()
+    t.after(() => req.destroy())
+  })
+}
+
+// Splits raw SSE text into `{ event, data }` frames (data JSON-parsed), ignoring `:` comments
+// (`: connected`, `: ping`) and any partial trailing chunk. Parses defensively rather than
+// regex-matching the raw text so frame field order never matters.
+function parseStreamFrames(text) {
+  const frames = []
+  for (const chunk of text.split(/\n\n/)) {
+    if (chunk.trim() === '' || chunk.startsWith(':')) continue
+    let eventName
+    const dataParts = []
+    for (const line of chunk.split(/\n/)) {
+      if (line.startsWith('event:')) eventName = line.slice('event:'.length).trim()
+      else if (line.startsWith('data:')) dataParts.push(line.slice('data:'.length).replace(/^ /, ''))
+    }
+    if (eventName == null || dataParts.length === 0) continue
+    try {
+      frames.push({ event: eventName, data: JSON.parse(dataParts.join('\n')) })
+    } catch {
+      // an in-flight, not-yet-complete chunk — ignore, the next readUntil poll will see it whole.
+    }
+  }
+  return frames
+}
+
+function taskUpdatedCount(text, publicId) {
+  return parseStreamFrames(text).filter((f) => f.event === 'task_updated' && f.data?.task_id === publicId).length
+}
+
+describe('issue #54 head_sha anchoring (poller)', { concurrency: false }, () => {
+  test('every tick records the observed forge head (overwriting on change), never rewrites a recorded head_sha, and never changes task status from a head mismatch alone', async (t) => {
+    const sqlitePath = sqliteFile(t)
+    const { app, stub } = await boot(t, sqlitePath)
+    const poster = await loginGitea(app, stub, 'poll-54-observe')
+    const key = await mintAgentKey(app, poster.cookies, 'poller-54')
+
+    const setup = await createPendingReviewTaskWithHead(app, stub, poster, key, {
+      title: '锚定观察用例',
+      prNumber: 601,
+      summary: '首次交付',
+      headSha: 'sha-54a-1',
+    })
+
+    const db = openDb(t, sqlitePath)
+    const pk = taskRow(db, setup.publicId).id
+    const before = submissionRow(db, pk)
+    assert.equal(before.head_sha, 'sha-54a-1', 'setup: the Agent-reported head is recorded')
+    assert.equal(before.forge_head_sha, null, 'setup: no forge observation yet')
+    assert.equal(before.forge_head_seen_at, null)
+
+    // Tick 1: the forge already has a head the Agent never reported.
+    stub.pr.set(setup.prNumber, {
+      body: { number: 601, state: 'open', merged: false, head: { sha: 'sha-54a-2', ref: 'kaola/branch-601' } },
+    })
+    await pollPendingReviews(db)
+
+    const afterTick1 = submissionRow(db, pk)
+    assert.equal(afterTick1.head_sha, 'sha-54a-1', 'the Agent-reported head_sha must never be rewritten by the poller')
+    assert.equal(afterTick1.forge_head_sha, 'sha-54a-2', 'the poller must record the observed forge head')
+    assert.equal(typeof afterTick1.forge_head_seen_at, 'number')
+    assert.ok(afterTick1.forge_head_seen_at > 1_700_000_000, 'forge_head_seen_at must be a unix-seconds timestamp')
+    assert.equal(taskRow(db, setup.publicId).status, '待验收', 'a head mismatch alone must never change task status')
+
+    // Tick 2: the forge head moves again — forge_head_sha must be overwritten, not stuck at the
+    // first observed value (NOT the NULL-only semantics head_sha itself has).
+    stub.pr.set(setup.prNumber, {
+      body: { number: 601, state: 'open', merged: false, head: { sha: 'sha-54a-3', ref: 'kaola/branch-601' } },
+    })
+    await pollPendingReviews(db)
+    const afterTick2 = submissionRow(db, pk)
+    assert.equal(afterTick2.head_sha, 'sha-54a-1', 'head_sha must still be untouched on the second tick')
+    assert.equal(afterTick2.forge_head_sha, 'sha-54a-3', 'forge_head_sha must be overwritten on every tick, not written once')
+    assert.equal(taskRow(db, setup.publicId).status, '待验收')
+  })
+
+  test('an empty observed head_sha ("") is never recorded into forge_head_sha', async (t) => {
+    const sqlitePath = sqliteFile(t)
+    const { app, stub } = await boot(t, sqlitePath)
+    const poster = await loginGitea(app, stub, 'poll-54-empty-head')
+    const key = await mintAgentKey(app, poster.cookies, 'poller-54-empty')
+
+    const setup = await createPendingReviewTaskWithHead(app, stub, poster, key, {
+      title: '空头用例',
+      prNumber: 602,
+      summary: '首次交付',
+      headSha: 'sha-54b-1',
+    })
+    stub.pr.set(setup.prNumber, {
+      body: { number: 602, state: 'open', merged: false, head: { sha: '', ref: 'kaola/branch-602' } },
+    })
+
+    const db = openDb(t, sqlitePath)
+    const pk = taskRow(db, setup.publicId).id
+    await pollPendingReviews(db)
+
+    assert.equal(submissionRow(db, pk).forge_head_sha, null, 'an empty observed head_sha must not overwrite forge_head_sha')
+    assert.equal(submissionRow(db, pk).head_sha, 'sha-54b-1')
+  })
+
+  test('the poller publishes SSE task_updated only on ticks where the observed forge head differs from the previous observation', async (t) => {
+    const sqlitePath = sqliteFile(t)
+    const { app, origin } = await listeningPollerApp(t, sqlitePath)
+    const stub = beginFetch(t)
+    allowForgeToken(stub, INLINE_TOKEN)
+    const poster = await loginGitea(app, stub, 'poll-54-sse')
+    const key = await mintAgentKey(app, poster.cookies, 'poller-54-sse')
+
+    const setup = await createPendingReviewTask(app, stub, poster, key, {
+      title: 'SSE 观察用例',
+      prNumber: 611,
+      summary: '首次交付',
+    })
+
+    const stream = await openSseStreamViaHttp(t, origin, poster.cookies)
+    assert.equal(stream.statusCode, 200, 'SSE handshake must succeed')
+    const connected = await stream.readUntil((text) => text.includes(': connected'), 2000)
+    assert.equal(connected.timedOut, false, 'expected the : connected comment before any tick')
+
+    const db = openDb(t, sqlitePath)
+
+    // Tick 1: first observation ever (previously stored forge_head_sha is NULL) — a change.
+    stub.pr.set(setup.prNumber, {
+      body: { number: 611, state: 'open', merged: false, head: { sha: 'sha-611-1', ref: 'kaola/branch-611' } },
+    })
+    await pollPendingReviews(db)
+    const afterTick1 = await stream.readUntil((text) => taskUpdatedCount(text, setup.publicId) >= 1, 2000)
+    assert.equal(afterTick1.timedOut, false, `expected a task_updated frame after the first observation: ${afterTick1.text}`)
+    assert.ok(
+      parseStreamFrames(afterTick1.text).some(
+        (f) => f.event === 'task_updated' && f.data?.task_id === setup.publicId && f.data?.status === '待验收',
+      ),
+      'task_updated must carry the (unchanged) task status, per §17.5',
+    )
+
+    // Tick 2: same head as tick 1 — must NOT publish a second frame for this task.
+    await pollPendingReviews(db)
+    const afterTick2 = await stream.readUntil((text) => taskUpdatedCount(text, setup.publicId) >= 2, 700)
+    assert.equal(afterTick2.timedOut, true, `an unchanged observed head must not publish another task_updated: ${afterTick2.text}`)
+
+    // Tick 3: the head changes again — must publish a second frame.
+    stub.pr.set(setup.prNumber, {
+      body: { number: 611, state: 'open', merged: false, head: { sha: 'sha-611-2', ref: 'kaola/branch-611' } },
+    })
+    await pollPendingReviews(db)
+    const afterTick3 = await stream.readUntil((text) => taskUpdatedCount(text, setup.publicId) >= 2, 2000)
+    assert.equal(afterTick3.timedOut, false, `expected a second task_updated frame once the head changed again: ${afterTick3.text}`)
   })
 })

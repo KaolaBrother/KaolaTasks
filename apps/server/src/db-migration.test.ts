@@ -453,3 +453,110 @@ describe('createDb #53 review-loop migration (pre-existing submissions / tasks)'
     assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM review_rounds').get().n, 0)
   })
 })
+
+// Issue #54 (§17.7 / "#54 columns" in docs/api.md): submissions gains two nullable columns,
+// forge_head_sha (TEXT) and forge_head_seen_at (INTEGER) — the PR head most recently observed on
+// the forge by the poller tick or the approve live check, and when. A database that already
+// carries #53's shape (head_sha / head_branch / is_draft / review_round present) but predates #54
+// must gain the two new columns via an idempotent ALTER TABLE and keep every existing row's other
+// columns — especially the #53 head_sha — untouched.
+function seedPre54Submissions(sqlitePath) {
+  const sqlite = new Database(sqlitePath)
+  sqlite.exec(`
+    CREATE TABLE submissions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id INTEGER NOT NULL,
+      lease_id INTEGER NOT NULL,
+      pr_url TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      pr_state TEXT NOT NULL,
+      head_sha TEXT,
+      head_branch TEXT,
+      is_draft INTEGER NOT NULL DEFAULT 0,
+      review_round INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE UNIQUE INDEX submissions_lease_id ON submissions(lease_id);
+  `)
+  sqlite
+    .prepare(
+      `INSERT INTO submissions
+         (task_id, lease_id, pr_url, summary, pr_state, head_sha, head_branch, is_draft, review_round)
+       VALUES (1, 5, 'https://gitea.example/team/app/pulls/9', '#54 前遗留提交', 'open',
+         'sha-legacy-1', 'kaola/legacy', 1, 1)`,
+    )
+    .run()
+  sqlite.close()
+}
+
+describe('createDb #54 head-anchoring migration (pre-existing submissions)', { concurrency: false }, () => {
+  test('createDb adds forge_head_sha / forge_head_seen_at to a #53-shaped submissions table, defaulting to NULL and preserving the row', (t) => {
+    const sqlitePath = sqliteFile(t)
+    seedPre54Submissions(sqlitePath)
+
+    let db
+    assert.doesNotThrow(() => {
+      db = createDb(sqlitePath)
+    }, 'createDb must open a pre-#54 database without throwing')
+    t.after(() => db.$client.close())
+    const sqlite = db.$client
+
+    for (const column of ['forge_head_sha', 'forge_head_seen_at']) {
+      assert.ok(columnNames(sqlite, 'submissions').includes(column), `submissions must gain ${column}`)
+    }
+
+    const submission = sqlite.prepare('SELECT * FROM submissions').get()
+    assert.ok(submission, 'the pre-existing submission row must survive')
+    assert.equal(submission.task_id, 1)
+    assert.equal(submission.lease_id, 5)
+    assert.equal(submission.pr_url, 'https://gitea.example/team/app/pulls/9')
+    assert.equal(submission.pr_state, 'open')
+    assert.equal(submission.head_sha, 'sha-legacy-1', 'the pre-existing #53 head_sha must be untouched by the #54 migration')
+    assert.equal(submission.head_branch, 'kaola/legacy')
+    assert.equal(submission.is_draft, 1)
+    assert.equal(submission.review_round, 1)
+    assert.equal(submission.forge_head_sha, null, 'forge_head_sha defaults to NULL for a legacy row')
+    assert.equal(submission.forge_head_seen_at, null, 'forge_head_seen_at defaults to NULL for a legacy row')
+  })
+
+  test('createDb is idempotent after the #54 migration: a second open keeps the same row and the same NULL defaults', (t) => {
+    const sqlitePath = sqliteFile(t)
+    seedPre54Submissions(sqlitePath)
+
+    const first = createDb(sqlitePath)
+    first.$client.close()
+
+    let second
+    assert.doesNotThrow(() => {
+      second = createDb(sqlitePath)
+    }, 'a second createDb call against an already-#54-migrated file must not throw')
+    t.after(() => second.$client.close())
+
+    const sqlite = second.$client
+    assert.ok(columnNames(sqlite, 'submissions').includes('forge_head_sha'))
+    assert.ok(columnNames(sqlite, 'submissions').includes('forge_head_seen_at'))
+    assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM submissions').get().n, 1, 'no duplicate row from the second pass')
+    const submission = sqlite.prepare('SELECT * FROM submissions').get()
+    assert.equal(submission.forge_head_sha, null)
+    assert.equal(submission.forge_head_seen_at, null)
+    assert.equal(submission.head_sha, 'sha-legacy-1', 'the row must still carry its #53 head_sha after a second createDb pass')
+  })
+
+  test('createDb still works for a fresh database and the new columns accept writes', (t) => {
+    const db = createDb(':memory:')
+    t.after(() => db.$client.close())
+    const sqlite = db.$client
+    assert.ok(columnNames(sqlite, 'submissions').includes('forge_head_sha'))
+    assert.ok(columnNames(sqlite, 'submissions').includes('forge_head_seen_at'))
+
+    const info = sqlite
+      .prepare(
+        `INSERT INTO submissions (task_id, lease_id, pr_url, summary, pr_state, forge_head_sha, forge_head_seen_at)
+         VALUES (1, 1, 'https://gitea.example/team/app/pulls/1', 'fresh', 'open', 'sha-fresh-1', 1700000000)`,
+      )
+      .run()
+    assert.equal(info.changes, 1, 'a fresh database must accept ordinary submissions inserts including the #54 columns')
+    const row = sqlite.prepare('SELECT * FROM submissions WHERE id = ?').get(info.lastInsertRowid)
+    assert.equal(row.forge_head_sha, 'sha-fresh-1')
+    assert.equal(row.forge_head_seen_at, 1700000000)
+  })
+})

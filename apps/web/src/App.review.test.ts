@@ -822,3 +822,75 @@ describe('parseAnchorLink — 三家 forge 的单文件链接（#53）', () => {
     expect(parseAnchorLink('  ')).toEqual({ url: '' })
   })
 })
+
+// =============================================================================================
+// Issue #54 (DESIGN.md §17.7) — 评审锚定核对：forge_head_sha / forge_head_seen_at / head_stale on
+// the review view, and the Chinese envelope for a 409 head_sha_stale review action.
+//
+// Custody note: this describe block is the acceptance oracle for the web half of #54; an
+// implementer may not weaken or reinterpret it to pass. Deliberately NOT covered here: a 409
+// head_sha_stale WITH a server-supplied `message` already round-trips correctly on HEAD through
+// the pre-existing generic `typedErrorMessage` path (see '服务端带类型化 message 时照原样展示'
+// above, which already proves this generically for any `[a-z][a-z0-9_]*` error code) — a
+// duplicate assertion of that same generic path for this one code specifically would pass on
+// baseline for a reason unrelated to #54, so it would not be RED evidence for this issue and is
+// omitted per this suite's "don't force a non-failing test" rule.
+// =============================================================================================
+
+describe('评审面板 — forge 头已变化（#54）', () => {
+  it('head_stale: true 时渲染 review-head-stale，文案含「forge 头已变化」与两个 12 位 sha 前缀；head_stale: false 时不渲染', async () => {
+    const FORGE_SHA = 'fedcba9876543210fedcba9876543210fedcba98'
+    const { wrapper, routes } = await mountBoard()
+    stubReview(
+      routes,
+      TASK_REVIEWING.id,
+      reviewBody({
+        forge_head_sha: FORGE_SHA,
+        forge_head_seen_at: 1780000000,
+        head_stale: true,
+      }),
+    )
+    await openDetail(wrapper, TASK_REVIEWING.id)
+
+    const staleText = textOf(wrapper, 'review-head-stale')
+    expect(staleText).toContain('forge 头已变化')
+    expect(staleText).toContain(HEAD_SHA.slice(0, 12))
+    expect(staleText).toContain(FORGE_SHA.slice(0, 12))
+
+    // A second task whose view reports head_stale: false must render no such element at all.
+    stubReview(
+      routes,
+      TASK_MERGING.id,
+      reviewBody({
+        task_id: TASK_MERGING.id,
+        status: '待合并',
+        forge_head_sha: HEAD_SHA,
+        forge_head_seen_at: 1780000001,
+        head_stale: false,
+      }),
+    )
+    await openDetail(wrapper, TASK_MERGING.id)
+    expect(node(wrapper, 'review-head-stale').exists()).toBe(false)
+  })
+
+  it('409 head_sha_stale 且服务端未带 message：客户端兜底给出与通用「操作失败（409）」不同的非空中文提示，且不出现英文错误码', async () => {
+    const { wrapper, routes } = await mountBoard()
+    stubReview(routes, TASK_REVIEWING.id, reviewBody())
+    routes.set(`POST /api/v1/tasks/${TASK_REVIEWING.id}/review/approve`, () =>
+      jsonResponse(409, {
+        error: 'head_sha_stale',
+        recorded_head_sha: HEAD_SHA,
+        forge_head_sha: 'fedcba9876543210fedcba9876543210fedcba98',
+      }),
+    )
+    await openDetail(wrapper, TASK_REVIEWING.id)
+
+    await click(wrapper, 'review-approve')
+
+    const text = textOf(wrapper, 'review-action-message')
+    expect(text.trim().length).toBeGreaterThan(0)
+    expect(text).not.toBe('操作失败（409）')
+    expect(text).not.toContain('head_sha_stale')
+    expect(/[一-鿿]/.test(text)).toBe(true)
+  })
+})
