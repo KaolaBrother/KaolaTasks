@@ -6,7 +6,8 @@ dist/
 *.sqlite
 *.sqlite-journal
 .kw/
-.cursor/agents/
+# Generated Cursor / Kaola-Workflow install (agents, commands, rules, receipts)
+.cursor/
 .DS_Store
 *.tsbuildinfo
 
