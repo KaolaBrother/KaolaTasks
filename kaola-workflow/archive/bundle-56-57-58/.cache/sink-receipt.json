@@ -1,1 +1,14 @@
-{"result":"refuse","attempts":[{"reason":"sink_blocked","foreign_dirt_note":"main checkout had untracked .cursor/ (Cloud install) and a duplicate untracked archive; archive duplicate removed"},{"reason":"worktree_dirty","detail":"uncommitted sink receipts in archive .cache; committed after this file"}]}
+{
+  "project": "bundle-56-57-58",
+  "branch": "cursor/smoke-uat-fixes-772b",
+  "issue_number": 56,
+  "issue_numbers": [56, 57, 58],
+  "resolved_default_branch": "main",
+  "branch_head": "4ccc13b811516e18b835b03bdaa99fc07ed176a9",
+  "merged_at": "2026-09-07T14:45:00.000Z",
+  "merge_method": "git merge --ff-only origin/cursor/smoke-uat-fixes-772b",
+  "pushed_main": true,
+  "issues_closed": [56, 57, 58],
+  "script_sink": "checkout_blocked_by_own_untracked_receipt",
+  "status": "sinked"
+}

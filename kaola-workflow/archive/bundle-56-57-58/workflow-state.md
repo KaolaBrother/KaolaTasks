@@ -24,9 +24,9 @@ closure_policy: all_or_nothing
 
 ## Closure
 archived_at: 2026-09-07T12:58:30.111Z
-issue_disposition: close-pending
+issue_disposition: closed
 claim_label_removed: removed
-worktree_removed: kept
+worktree_removed: removed
 closure_invariants: ok
 issues_closed: 3
 follow_ups_filed: 0
