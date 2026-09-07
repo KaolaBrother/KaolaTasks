@@ -1,0 +1,49 @@
+▶ HTTPS PUBLIC_URL cookie Secure
+  ✔ POST /api/v1/setup session Set-Cookie includes Secure when PUBLIC_URL is https (79.090958ms)
+  ✔ GET /login/gitlab OAuth state Set-Cookie includes Secure when PUBLIC_URL is https (28.123917ms)
+  ✔ login callback session Set-Cookie includes Secure behind X-Forwarded-Proto https (loopback peer) (27.619792ms)
+  ✔ login callback session Set-Cookie includes Secure behind X-Forwarded-Proto https (docker-bridge peer) (26.31725ms)
+  ✔ untrusted public peer cannot mint a Secure session cookie via spoofed X-Forwarded-Proto (26.664666ms)
+  ✔ setup from untrusted public peer does not Set-Cookie sessionId (28.134666ms)
+  ✔ login from untrusted public peer does not Set-Cookie sessionId (66.710583ms)
+✔ HTTPS PUBLIC_URL cookie Secure (283.206542ms)
+▶ login start paths
+  ✔ GET /login is allowed without a session (54.04725ms)
+  ✔ GET /login/github is 404 (6.629792ms)
+  ✔ GET /login/gitlab redirects to the configured GitLab authorize URL after setup (33.74875ms)
+  ✔ GET /login/gitea redirects to the configured Gitea authorize URL after setup (26.209542ms)
+✔ login start paths (121.869958ms)
+▶ unauthenticated GET /api/v1/me
+  ✔ browser-like GET /api/v1/me redirects to /login and does not return a user (5.0565ms)
+  ✔ JSON GET /api/v1/me without a session returns 401 and does not return a user (3.735208ms)
+✔ unauthenticated GET /api/v1/me (8.903916ms)
+▶ OAuth publishers after setup
+  ✔ session Set-Cookie does not include Secure when PUBLIC_URL is http://localhost (28.29ms)
+  ✔ GitLab after setup persists active full publisher (25.51425ms)
+  ✔ Gitea after setup persists active full publisher; display_name falls back to login (33.764667ms)
+  ✔ second GitLab callback with the same remote_id reuses the same user id (40.002917ms)
+✔ OAuth publishers after setup (127.745458ms)
+▶ leftover 待批准 via GitLab reuse; approve retired
+  ✔ seeded leftover 待批准 GitLab user cannot call retired approve (404) (52.199417ms)
+✔ leftover 待批准 via GitLab reuse; approve retired (52.262042ms)
+▶ KAOLA_ADMINS
+  ✔ empty KAOLA_ADMINS still buildApp() and GitHub login stays 404 (4.536084ms)
+  ✔ KAOLA_ADMINS github:octo-admin is ignored and does not insert github login (39.487791ms)
+✔ KAOLA_ADMINS (44.104083ms)
+▶ revoked re-login
+  ✔ revoked GitLab user re-login does not become active and does not set a session (36.300292ms)
+✔ revoked re-login (36.368875ms)
+▶ fallback HTML authentication forms
+  ✔ wizard form creates an admin session and redirects to the workbench (26.502625ms)
+  ✔ login form establishes a session; wrong password stays unauthorized (68.902875ms)
+  ✔ cross-origin forms cannot create an admin or log in (25.664833ms)
+  ✔ form parser does not enable urlencoded requests for other APIs (24.7995ms)
+✔ fallback HTML authentication forms (145.990458ms)
+ℹ tests 25
+ℹ suites 8
+ℹ pass 25
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1097.683

@@ -1,0 +1,12 @@
+$ pnpm -r --if-present typecheck
+Scope: 5 of 6 workspace projects
+apps/web typecheck$ vue-tsc --noEmit -p tsconfig.json
+packages/forge-adapters typecheck$ tsc --noEmit -p tsconfig.json
+packages/shared typecheck$ tsc --noEmit -p tsconfig.json
+packages/forge-adapters typecheck: Done
+packages/shared typecheck: Done
+apps/web typecheck: Done
+apps/server typecheck$ tsc --noEmit -p tsconfig.json
+apps/mcp typecheck$ tsc --noEmit -p tsconfig.json
+apps/mcp typecheck: Done
+apps/server typecheck: Done

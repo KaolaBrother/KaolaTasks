@@ -1,0 +1,23 @@
+$ pnpm -r --if-present build
+Scope: 5 of 6 workspace projects
+apps/web build$ vite build
+packages/forge-adapters build$ tsc --noEmit -p tsconfig.json
+packages/shared build$ tsc --noEmit -p tsconfig.json
+apps/web build: vite v7.3.6 building client environment for production...
+apps/web build: transforming...
+packages/forge-adapters build: Done
+packages/shared build: Done
+apps/web build: ✓ 2569 modules transformed.
+apps/web build: rendering chunks...
+apps/web build: computing gzip size...
+apps/web build: dist/index.html                     0.75 kB │ gzip:   0.43 kB
+apps/web build: dist/assets/index-DmCZrBsx.css     10.37 kB │ gzip:   2.90 kB
+apps/web build: dist/assets/index-B6XObLzJ.js   1,505.21 kB │ gzip: 416.86 kB
+apps/web build: ✓ built in 1.89s
+apps/web build: (!) Some chunks are larger than 500 kB after minification. Consider:
+apps/web build: - Using dynamic import() to code-split the application
+apps/web build: - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+apps/web build: - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+apps/web build: Done
+apps/server build$ tsc --noEmit -p tsconfig.json
+apps/server build: Done
