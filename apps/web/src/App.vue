@@ -270,6 +270,11 @@
                                 <span data-testid="review-ball">球在谁手里：{{ reviewBallLabel }}</span>
                               </div>
                               <n-text
+                                v-if="reviewHeadStale"
+                                data-testid="review-head-stale"
+                                class="task-fail"
+                              >{{ reviewHeadStaleText }}，请先「提交本轮意见」等待 Agent 重新交回。</n-text>
+                              <n-text
                                 v-if="reviewActionMessage"
                                 data-testid="review-action-message"
                                 class="task-fail"
@@ -998,6 +1003,11 @@ type ReviewBody = {
   status: string
   pr_url: string | null
   head_sha: string | null
+  // #54 (§17.7): the forge head most recently observed (poller tick or approve live check), and
+  // whether it disagrees with head_sha.
+  forge_head_sha: string | null
+  forge_head_seen_at: number | null
+  head_stale: boolean
   round: number
   rounds: ReviewRound[]
   messages: ReviewMessage[]
@@ -1070,6 +1080,8 @@ const REVIEW_VERDICT_LABELS: Record<string, string> = {
 const REVIEW_ERROR_MESSAGES: Record<string, string> = {
   no_pending_messages: '没有待提交的评审意见。',
   parent_not_completed: '父任务尚未完成，不能通过子任务。',
+  // #54: forge 上的头已变化，不能通过——服务端不一定带 message，界面需要自己的中文兜底。
+  head_sha_stale: 'forge 上的 PR 头已变化，与考拉记录的头不一致，无法通过；请先提交本轮意见。',
 }
 const REVIEW_TERMINATE_CONFIRM = '终止本次交付后任务会转为「已退回」，确定继续吗？'
 
@@ -1343,6 +1355,13 @@ const reviewPrUrl = computed(() => review.value?.pr_url ?? '')
 const reviewPrUrlIsHttp = computed(() => urlLooksHttp(reviewPrUrl.value))
 
 const reviewHeadShaShort = computed(() => (review.value?.head_sha ?? '').slice(0, 12))
+
+// #54 (§17.7): forge_head_sha / head_stale surfaced by GET …/review.
+const reviewForgeHeadShaShort = computed(() => (review.value?.forge_head_sha ?? '').slice(0, 12))
+const reviewHeadStale = computed(() => review.value?.head_stale === true)
+const reviewHeadStaleText = computed(
+  () => `forge 头已变化：记录 ${reviewHeadShaShort.value}，forge 当前 ${reviewForgeHeadShaShort.value}`,
+)
 
 const reviewRoundNumber = computed(() => review.value?.round ?? 0)
 
@@ -2231,6 +2250,9 @@ function asReviewBody(body: Record<string, unknown> | null, taskId: string): Rev
     status: typeof body.status === 'string' ? body.status : '',
     pr_url: typeof body.pr_url === 'string' ? body.pr_url : null,
     head_sha: typeof body.head_sha === 'string' ? body.head_sha : null,
+    forge_head_sha: typeof body.forge_head_sha === 'string' ? body.forge_head_sha : null,
+    forge_head_seen_at: typeof body.forge_head_seen_at === 'number' ? body.forge_head_seen_at : null,
+    head_stale: body.head_stale === true,
     round: typeof body.round === 'number' ? body.round : 0,
     rounds,
     messages,

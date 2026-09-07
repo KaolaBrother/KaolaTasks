@@ -613,7 +613,13 @@ describe('issue #53 review loop', { concurrency: false }, () => {
     assert.equal(approvedBody.round.round, 2)
     assert.equal(approvedBody.round.verdict, 'approved')
     assert.equal(taskRow(db, publicId).status, '待合并')
-    assert.deepEqual(eventsFor(db, publicId, '评审通过')[0].details, { task_id: publicId, round: 2, pr_url: first.prUrl })
+    assert.deepEqual(eventsFor(db, publicId, '评审通过')[0].details, {
+      task_id: publicId,
+      round: 2,
+      pr_url: first.prUrl,
+      head_sha: 'sha-101-2',
+      head_verified: true,
+    })
     await settleWritebacks()
     const patch = stub.requests.find((r) => r.method === 'PATCH' && r.url.includes('/pulls/101'))
     assert.ok(patch, `expected a PATCH flipping the Gitea WIP title, got ${JSON.stringify(stub.requests.map((r) => `${r.method} ${r.url}`))}`)
@@ -920,6 +926,9 @@ describe('issue #53 review loop', { concurrency: false }, () => {
     assert.equal(jsonBody(gated).error, 'parent_not_completed')
     assert.equal(taskRow(db, child.id).status, '待验收')
 
+    // #54: the live head check anchors 「通过」 to the recorded head — advance the stub to the
+    // revised head submit_revision just handed back so the fixture agrees with itself.
+    stub.pr.set('201', { body: prBody(201, { head: { sha: 'sha-201-2', ref: 'kaola/branch-201' } }) })
     assert.equal((await reviewPost(app, admin.cookies, parent.id, 'approve')).statusCode, 200)
     await settleWritebacks()
     stub.pr.set('201', { body: prBody(201, { state: 'closed', merged: true, title: '[kt] change 201', head: { sha: 'sha-201-2', ref: 'kaola/branch-201' } }) })
@@ -942,6 +951,9 @@ describe('issue #53 review loop', { concurrency: false }, () => {
     // Child rebases, hands back, is approved (parent 已完成 now) and merges.
     const childClaim2 = await claimOk(app, childDev.identity, child.id)
     await childMcp.ok('submit_revision', { task_id: child.id, claim_id: childClaim2.lease.claim_id, pr_url: childPr, head_sha: 'sha-202-2', summary: 'rebase 完成' })
+    // #54: same fixture sync as the parent above — advance the stub to the rebased head before
+    // the live check runs.
+    stub.pr.set('202', { body: prBody(202, { head: { sha: 'sha-202-2', ref: 'kaola/branch-202' } }) })
     assert.equal((await reviewPost(app, admin.cookies, child.id, 'approve')).statusCode, 200)
     await settleWritebacks()
     stub.pr.set('202', { body: prBody(202, { state: 'closed', merged: true }) })

@@ -382,6 +382,17 @@ const SUBMISSIONS_ADD_REVIEW_ROUND_DDL = `
 ALTER TABLE submissions ADD COLUMN review_round INTEGER NOT NULL DEFAULT 0
 `
 
+// Issue #54 (§17.7): the PR head most recently observed on the forge (poller tick or the approve
+// live check), and when. Both nullable/additive via tryAddColumn — an existing database opens
+// with both NULL, no data loss.
+const SUBMISSIONS_ADD_FORGE_HEAD_SHA_DDL = `
+ALTER TABLE submissions ADD COLUMN forge_head_sha TEXT
+`
+
+const SUBMISSIONS_ADD_FORGE_HEAD_SEEN_AT_DDL = `
+ALTER TABLE submissions ADD COLUMN forge_head_seen_at INTEGER
+`
+
 const SUBMISSION_REVISIONS_DDL = `
 CREATE TABLE IF NOT EXISTS submission_revisions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -515,6 +526,8 @@ export function createDb(path = ':memory:') {
   tryAddColumn(sqlite, SUBMISSIONS_ADD_HEAD_BRANCH_DDL)
   tryAddColumn(sqlite, SUBMISSIONS_ADD_IS_DRAFT_DDL)
   tryAddColumn(sqlite, SUBMISSIONS_ADD_REVIEW_ROUND_DDL)
+  tryAddColumn(sqlite, SUBMISSIONS_ADD_FORGE_HEAD_SHA_DDL)
+  tryAddColumn(sqlite, SUBMISSIONS_ADD_FORGE_HEAD_SEEN_AT_DDL)
   sqlite.exec(SUBMISSION_REVISIONS_DDL)
   sqlite.exec(SUBMISSION_REVISIONS_LEASE_ID_INDEX_DDL)
   sqlite.exec(REVIEW_ROUNDS_DDL)

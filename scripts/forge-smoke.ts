@@ -18,8 +18,10 @@
  * request_id/claim_id recovery + same-device fencing → Workflow guidance → git clone
  * via the claim envelope → push branch → open Draft PR → submit_pr(head_sha) → reviewer
  * blocking round (REST) → 待修改 → revision claim → get_review_feedback → push a follow-up
- * commit → submit_revision → 待验收 → 「通过」(REST) → 待合并 + Draft flipped to ready on the
- * forge → merge → pollPendingReviews → 已完成 + 回写 (#53 review loop).
+ * commit → submit_revision → 待验收 → (#54 drift leg: push one more commit the Agent never
+ * declared → 「通过」 refused 409 head_sha_stale → reviewer blocking round → 待修改 → second
+ * revision claim → submit_revision(new head)) → 「通过」(REST) → 待合并 + Draft flipped to ready
+ * on the forge → merge → pollPendingReviews → 已完成 + 回写 (#53 review loop).
  *
  * Usage:
  *   node --experimental-strip-types scripts/forge-smoke.ts gitlab
@@ -762,7 +764,72 @@ async function run(): Promise<void> {
     }
     console.log(`submit_revision ${revisionSha.slice(0, 12)} 待验收`)
 
-    // 「通过」 → 待合并, then Kaola flips the Draft to ready on the forge (off the response path).
+    // #54 drift leg: a commit pushed AFTER submit_revision that the Agent never declared. 「通过」
+    // must refuse it (409 head_sha_stale, both shas, no state change) and the review view must
+    // show the forge head as stale; the reviewer then sends the task back for a proper hand-back.
+    const driftLine = `Smoke undeclared push ${kind} ${task.id} ${stamp}.`
+    const driftSha = pushFollowUp({ dir: pushed.dir, header: pushed.header, branch, line: driftLine, secrets })
+    const stale = await app.inject({
+      method: 'POST',
+      url: `/api/v1/tasks/${task.id}/review/approve`,
+      cookies: setup.cookies,
+      headers: JSON_HEADERS,
+      payload: {},
+    })
+    if (stale.statusCode !== 409) fail(`approve after undeclared push expected 409, got ${stale.statusCode}: ${stale.body}`)
+    const staleBody = stale.json() as { error?: string; recorded_head_sha?: string; forge_head_sha?: string }
+    if (staleBody.error !== 'head_sha_stale') fail(`approve expected head_sha_stale: ${stale.body}`)
+    if (staleBody.recorded_head_sha !== revisionSha || staleBody.forge_head_sha !== driftSha) {
+      fail(`head_sha_stale shas mismatch: ${stale.body} (expected ${revisionSha} / ${driftSha})`)
+    }
+    if (stale.body.includes(revealed)) fail('head_sha_stale body leaked the forge token')
+    const staleView = await app.inject({ method: 'GET', url: `/api/v1/tasks/${task.id}/review`, cookies: setup.cookies })
+    if (staleView.statusCode !== 200) fail(`review view ${staleView.statusCode}: ${staleView.body}`)
+    const staleViewBody = staleView.json() as { status?: string; head_stale?: boolean; forge_head_sha?: string | null }
+    if (staleViewBody.status !== '待验收' || staleViewBody.head_stale !== true || staleViewBody.forge_head_sha !== driftSha) {
+      fail(`review view after undeclared push expected 待验收 / head_stale / forge head ${driftSha.slice(0, 12)}: ${staleView.body}`)
+    }
+    if (staleView.body.includes(revealed)) fail('review view leaked the forge token')
+    console.log(`head_sha_stale ${task.id} recorded=${revisionSha.slice(0, 12)} forge=${driftSha.slice(0, 12)}`)
+
+    const staleNotice = await app.inject({
+      method: 'POST',
+      url: `/api/v1/tasks/${task.id}/review/messages`,
+      cookies: setup.cookies,
+      headers: JSON_HEADERS,
+      payload: { body_md: 'forge 头已变化，请以新 head_sha 重新交回。', kind: 'blocking' },
+    })
+    if (staleNotice.statusCode !== 201) fail(`stale notice ${staleNotice.statusCode}: ${staleNotice.body}`)
+    const rounded2 = await app.inject({
+      method: 'POST',
+      url: `/api/v1/tasks/${task.id}/review/rounds`,
+      cookies: setup.cookies,
+      headers: JSON_HEADERS,
+      payload: {},
+    })
+    if (rounded2.statusCode !== 201) fail(`review round 2 ${rounded2.statusCode}: ${rounded2.body}`)
+    if ((rounded2.json() as { task?: { status?: string } }).task?.status !== '待修改') fail('round 2 expected 待修改')
+    const reclaimed2 = await bridgeToolCall(bridgeUrl, kaolaHome, 'claim_task', { task_id: task.id })
+    const reclaimed2Task = reclaimed2.task as { status?: string; review_round?: number } | undefined
+    if (reclaimed2Task?.status !== '进行中' || reclaimed2Task.review_round !== 2) {
+      fail(`second revision claim expected 进行中 / review_round 2: ${JSON.stringify(reclaimed2Task)}`)
+    }
+    const revisionClaimId2 = (reclaimed2.lease as { claim_id?: string } | undefined)?.claim_id
+    if (typeof revisionClaimId2 !== 'string') fail('second revision claim missing claim_id')
+    const revised2 = await bridgeToolCall(bridgeUrl, kaolaHome, 'submit_revision', {
+      task_id: task.id,
+      claim_id: revisionClaimId2,
+      pr_url: pull.url,
+      head_sha: driftSha,
+      summary: driftLine,
+    })
+    if ((revised2.task as { status?: string } | undefined)?.status !== '待验收') {
+      fail(`second submit_revision expected 待验收: ${JSON.stringify(revised2)}`)
+    }
+    console.log(`submit_revision ${driftSha.slice(0, 12)} 待验收 (round 2)`)
+
+    // 「通过」 → 待合并 (live head check passes: forge head == declared head), then Kaola flips the
+    // Draft to ready on the forge (off the response path).
     const approved = await app.inject({
       method: 'POST',
       url: `/api/v1/tasks/${task.id}/review/approve`,
@@ -771,13 +838,17 @@ async function run(): Promise<void> {
       payload: {},
     })
     if (approved.statusCode !== 200) fail(`approve ${approved.statusCode}: ${approved.body}`)
-    if ((approved.json() as { task?: { status?: string } }).task?.status !== '待合并') fail('approve expected 待合并')
+    const approvedBody = approved.json() as { task?: { status?: string }; head_sha?: string; head_verified?: boolean }
+    if (approvedBody.task?.status !== '待合并') fail('approve expected 待合并')
+    if (approvedBody.head_sha !== driftSha || approvedBody.head_verified !== true) {
+      fail(`approve expected head_sha ${driftSha.slice(0, 12)} / head_verified true: ${approved.body}`)
+    }
     await settleWritebacks()
     const adapter = createForgeAdapter(kind, { baseUrl: spec.baseUrl })
     const prStatus = await adapter.getPullRequest({ token: revealed }, pull.url)
     if (prStatus.draft) fail(`PR still draft after 通过: ${JSON.stringify(prStatus)}`)
-    if (prStatus.head_sha !== revisionSha) fail(`forge head ${prStatus.head_sha} != submitted ${revisionSha}`)
-    console.log(`approved ${task.id} 待合并 draft=false`)
+    if (prStatus.head_sha !== driftSha) fail(`forge head ${prStatus.head_sha} != submitted ${driftSha}`)
+    console.log(`approved ${task.id} 待合并 draft=false head_verified=true`)
 
     await mergePull(spec, revealed, pull.number)
 

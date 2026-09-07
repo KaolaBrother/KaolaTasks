@@ -131,6 +131,11 @@ export const submissions = sqliteTable(
     headBranch: text('head_branch'),
     isDraft: integer('is_draft', { mode: 'boolean' }).notNull().default(false),
     reviewRound: integer('review_round').notNull().default(0),
+    // Issue #54 (§17.7): the PR head most recently observed on the forge, by either a poller
+    // tick or the approve live check — distinct from `headSha` (the Agent-reported head), which
+    // it is checked against and never overwrites. Reset to NULL by submit_revision.
+    forgeHeadSha: text('forge_head_sha'),
+    forgeHeadSeenAt: integer('forge_head_seen_at'),
   },
   (t) => [unique('submissions_lease_id').on(t.leaseId)],
 )

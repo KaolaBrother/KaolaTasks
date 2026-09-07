@@ -4,6 +4,7 @@ import { transitionTaskStatus } from '@kaola/shared'
 import type { TaskStatus } from '@kaola/shared'
 import { desc, eq } from 'drizzle-orm'
 import type { AppDb } from './db.ts'
+import { unixNow } from './leases.ts'
 import { type Task, submissions, tasks } from './schema.ts'
 import { insertAuditEvent } from './vault.ts'
 import { attemptWriteback, decryptTaskToken } from './writeback.ts'
@@ -150,6 +151,22 @@ function backfillSubmissionHead(db: AppDb, submissionId: number, status: PrStatu
   db.update(submissions).set(patch).where(eq(submissions.id, submissionId)).run()
 }
 
+// Issue #54 (§17.7): every tick (not just the first) records the forge head this tick observed —
+// overwriting, unlike `backfillSubmissionHead`'s NULL-only `head_sha`. An empty observed head
+// (forge omitted it) is never recorded. Returns whether the observed value differs from the
+// previously stored one, so the caller can decide whether a `task_updated` frame is warranted.
+function recordForgeHeadObservation(db: AppDb, submissionId: number, status: PrStatus): boolean {
+  if (status.head_sha === '') return false
+  const row = db.select({ forgeHeadSha: submissions.forgeHeadSha }).from(submissions).where(eq(submissions.id, submissionId)).get()
+  if (row == null) return false
+  const changed = row.forgeHeadSha !== status.head_sha
+  db.update(submissions)
+    .set({ forgeHeadSha: status.head_sha, forgeHeadSeenAt: unixNow() })
+    .where(eq(submissions.id, submissionId))
+    .run()
+  return changed
+}
+
 async function pollOneTask(db: AppDb, task: Task): Promise<void> {
   const submission = latestSubmission(db, task.id)
   if (submission == null) return
@@ -157,6 +174,8 @@ async function pollOneTask(db: AppDb, task: Task): Promise<void> {
   const status = await fetchPrStatus(db, task, submission.prUrl)
   if (status == null) return
   backfillSubmissionHead(db, submission.id, status)
+  const headChanged = recordForgeHeadObservation(db, submission.id, status)
+  if (headChanged) publishStreamEvent('task_updated', { task_id: task.publicId, status: task.status })
   if (status.state === 'open') return
 
   await applyPrTerminalTransition(db, task, submission.id, status.state, submission.prUrl)

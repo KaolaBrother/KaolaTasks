@@ -61,6 +61,9 @@ const PR_URL_MISMATCH_MESSAGE = 'pr_url 与首次提交的 PR 不一致；一任
 const HEAD_SHA_UNCHANGED_MESSAGE = 'head_sha 与上一轮相同，没有新的修订可交回。'
 const STALE_CLAIM_MESSAGE = '提交的 claim_id 与当前认领不匹配。'
 const NOT_A_CHILD_MESSAGE = '该认领所属任务不是此任务的子任务。'
+// Issue #54 (§17.7): forge's live PR head disagrees with the head Kaola's approval is anchored
+// to — the reviewer must submit this round's findings and wait for a fresh submit_revision.
+const HEAD_SHA_STALE_MESSAGE = 'forge 上的 PR 头已发生变化，与考拉记录的头不一致，无法通过；请先「提交本轮意见」，待 Agent 以新头重新交回后再通过。'
 
 const REVIEWABLE_STATUSES: ReadonlySet<string> = new Set(['待验收', '待修改', '待合并'])
 const PENDING_USER_STATUS = '待批准'
@@ -498,11 +501,18 @@ export function getReviewView(db: AppDb, publicId: string) {
   if (row == null) return undefined
   const submission = latestSubmissionFor(db, row.task.id)
   const current = reviewBriefOrThrow(db, publicId)
+  const headSha = submission?.headSha ?? null
+  const forgeHeadSha = submission?.forgeHeadSha ?? null
   return {
     task_id: publicId,
     status: row.task.status,
     pr_url: submission?.prUrl ?? null,
-    head_sha: submission?.headSha ?? null,
+    head_sha: headSha,
+    // Issue #54 (§17.7): the forge head the poller or the approve live check most recently
+    // observed, and whether it disagrees with the recorded head_sha (both known, and unequal).
+    forge_head_sha: forgeHeadSha,
+    forge_head_seen_at: submission?.forgeHeadSeenAt ?? null,
+    head_stale: headSha != null && forgeHeadSha != null && headSha !== forgeHeadSha,
     round: submission?.reviewRound ?? 0,
     rounds: listRounds(db, row.task.id).map((r) => roundWire(db, r)),
     messages: wireMessages(db, listMessages(db, row.task.id)),
@@ -587,7 +597,52 @@ export function reviewerSubmitRound(db: AppDb, user: User, publicId: string) {
   }
 }
 
-export function reviewerApprove(db: AppDb, user: User, publicId: string) {
+// Issue #54 (§17.7): fetches the PR's live head once, on the approve response path, with the
+// same timeout as Draft → ready. `undefined` means "cannot be read" (fetch rejection, non-2xx,
+// or no forge credential) — collapsed with an empty observed `head_sha` into the same fallback
+// branch in `checkHeadAnchor`, exactly as the contract groups them.
+async function fetchLiveHeadSha(db: AppDb, task: Task, prUrl: string): Promise<string | undefined> {
+  try {
+    const token = decryptTaskToken(db, task)
+    if (token == null) return undefined
+    const adapter = createForgeAdapter(task.repoForge, { baseUrl: task.repoBaseUrl, timeoutMs: MARK_READY_TIMEOUT_MS })
+    const status = await adapter.getPullRequest({ token }, prUrl)
+    return status.head_sha
+  } catch {
+    return undefined
+  }
+}
+
+type HeadAnchorResult =
+  | { ok: true; headSha: string | null; verified: boolean }
+  | { ok: false; recordedHeadSha: string | null; forgeHeadSha: string | null }
+
+// Issue #54 (§17.7 decision table). A non-empty live head is always persisted to
+// `forge_head_sha` / `forge_head_seen_at` first — even on the branch that goes on to refuse the
+// approval — because the observation itself is still true regardless of what "通过" does with it.
+async function checkHeadAnchor(db: AppDb, task: Task, submission: Submission): Promise<HeadAnchorResult> {
+  const recorded = submission.headSha
+  const live = await fetchLiveHeadSha(db, task, submission.prUrl)
+  if (live != null && live !== '') {
+    db.update(submissions)
+      .set({ forgeHeadSha: live, forgeHeadSeenAt: unixNow() })
+      .where(eq(submissions.id, submission.id))
+      .run()
+    if (recorded == null || recorded === live) return { ok: true, headSha: live, verified: true }
+    return { ok: false, recordedHeadSha: recorded, forgeHeadSha: live }
+  }
+  // The forge could not be read (or reported no head): fall back to the last stored observation
+  // (a prior poller tick or a prior approve attempt) rather than refusing blind.
+  const stored = submission.forgeHeadSha
+  if (stored != null && recorded != null && stored !== recorded) {
+    return { ok: false, recordedHeadSha: recorded, forgeHeadSha: stored }
+  }
+  // Nothing recorded and nothing ever observed: approve fail-open with no anchor at all rather
+  // than inventing an empty-string head.
+  return { ok: true, headSha: recorded ?? stored ?? null, verified: false }
+}
+
+export async function reviewerApprove(db: AppDb, user: User, publicId: string) {
   const row = selectTask(db, publicId)
   if (row == null) return { status: 404, body: { error: 'not_found' } } as ReviewerResult<never>
   if (row.task.status !== '待验收') return illegal(row.task.status, '待合并')
@@ -599,9 +654,28 @@ export function reviewerApprove(db: AppDb, user: User, publicId: string) {
       return { status: 409, body: { error: 'parent_not_completed', message: PARENT_NOT_COMPLETED_MESSAGE } } as ReviewerResult<never>
     }
   }
+
+  const anchor = await checkHeadAnchor(db, row.task, submission)
+  if (!anchor.ok) {
+    return {
+      status: 409,
+      body: {
+        error: 'head_sha_stale',
+        message: HEAD_SHA_STALE_MESSAGE,
+        recorded_head_sha: anchor.recordedHeadSha,
+        forge_head_sha: anchor.forgeHeadSha,
+      },
+    } as ReviewerResult<never>
+  }
+  const { headSha, verified: headVerified } = anchor
+
   const now = unixNow()
   const to = transitionTaskStatus(row.task.status, '待合并') as TaskStatus
   const outcome = db.transaction((tx) => {
+    if (headSha != null && headSha !== submission.headSha) {
+      // Backfill: the approval anchored to the live forge head because none was recorded yet.
+      tx.update(submissions).set({ headSha }).where(eq(submissions.id, submission.id)).run()
+    }
     const round = openRound(tx, {
       task: row.task,
       submission,
@@ -615,7 +689,7 @@ export function reviewerApprove(db: AppDb, user: User, publicId: string) {
     insertAuditEvent(tx, {
       type: REVIEW_APPROVED_EVENT,
       actorUserId: user.id,
-      details: { task_id: publicId, round: round.round, pr_url: submission.prUrl },
+      details: { task_id: publicId, round: round.round, pr_url: submission.prUrl, head_sha: headSha, head_verified: headVerified },
     })
     return { round, updated }
   })
@@ -623,7 +697,10 @@ export function reviewerApprove(db: AppDb, user: User, publicId: string) {
   publishTaskUpdated(outcome.updated)
   // Off the response path — never awaited here (same posture as claim.ts's 认领 write-back).
   scheduleMarkReady(db, outcome.updated, submission.prUrl, outcome.round.round)
-  return { status: 200, body: { task: freshTaskBrief(db, publicId), round: roundWire(db, outcome.round) } }
+  return {
+    status: 200,
+    body: { task: freshTaskBrief(db, publicId), round: roundWire(db, outcome.round), head_sha: headSha, head_verified: headVerified },
+  }
 }
 
 export function reviewerWithdraw(db: AppDb, user: User, publicId: string) {
@@ -814,7 +891,12 @@ export async function submitRevision(
     tx.insert(submissionRevisions)
       .values({ submissionId: submission.id, leaseId: lease.id, round, headSha, summary, submittedAt: now })
       .run()
-    tx.update(submissions).set({ headSha }).where(eq(submissions.id, submission.id)).run()
+    // Issue #54: a new head invalidates any stale forge observation — the old value must never
+    // make a freshly-handed-back revision look stale before anything has looked at it again.
+    tx.update(submissions)
+      .set({ headSha, forgeHeadSha: null, forgeHeadSeenAt: null })
+      .where(eq(submissions.id, submission.id))
+      .run()
     if (round > 0) {
       tx.update(reviewRounds)
         .set({ revisedAt: now, revisionHeadSha: headSha })
@@ -1245,7 +1327,7 @@ export function registerReview(app: FastifyInstance, db: AppDb) {
     const user = requireReviewer(db, request, reply)
     if (user == null) return
     sweepExpiredLeases(db)
-    const result = reviewerApprove(db, user, (request.params as { publicId: string }).publicId)
+    const result = await reviewerApprove(db, user, (request.params as { publicId: string }).publicId)
     return reply.code(result.status).send(result.body)
   })
 
