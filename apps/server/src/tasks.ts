@@ -3,12 +3,13 @@ import type { ForgeKind, ImportedIssue, TokenCapability, TokenCheck } from '@kao
 import { taskStatusSchema, transitionTaskStatus } from '@kaola/shared'
 import type { TaskStatus } from '@kaola/shared'
 import { desc, eq, like, sql } from 'drizzle-orm'
+import { alias } from 'drizzle-orm/sqlite-core'
 import type { FastifyInstance } from 'fastify'
 import { getSessionUser, sendUnauthorized } from './auth.ts'
 import type { AppDb } from './db.ts'
 import { canPublish } from './permissions.ts'
 import { sweepExpiredLeases } from './leases.ts'
-import { type NewTask, type Task, credentialProfiles, tasks, users } from './schema.ts'
+import { type NewTask, type Task, credentialProfiles, submissions, tasks, users } from './schema.ts'
 import {
   decryptToken,
   encryptToken,
@@ -38,6 +39,8 @@ const PRIORITIES = new Set(['P0', 'P1', 'P2', 'P3'])
 // state machine belongs to a claim (MCP) or to the PR webhook, so it is refused here.
 const POSTER_TRANSITIONS: ReadonlyMap<string, ReadonlySet<TaskStatus>> = new Map([
   ['待认领', new Set<TaskStatus>(['已取消'])],
+  // Issue #53 (§5): 发布者 may also cancel a task parked in 待修改.
+  ['待修改', new Set<TaskStatus>(['已取消'])],
   ['已退回', new Set<TaskStatus>(['已取消', '待认领'])],
 ])
 
@@ -73,7 +76,14 @@ type CreateTaskInput = {
   credential: CredentialInput
 }
 
-export type TaskWithPoster = { task: Task; posterUsername: string | null }
+export type TaskWithPoster = {
+  task: Task
+  posterUsername: string | null
+  // Issue #53 projections, filled by selectTask / selectTasks; absent means null / 0 / stored.
+  parentPublicId?: string | null
+  reviewRound?: number
+  baseBranch?: string
+}
 
 function tokenCheckMessage(missing: TokenCapability[]): string {
   // Losing 读 means the token cannot see the repo at all — a different diagnosis from a token
@@ -375,8 +385,9 @@ function nextPosterStatus(from: string, to: TaskStatus): TaskStatus | undefined 
 }
 
 // DESIGN.md §6 — the brief is the whole contract, and the only credential it ever names is a
-// reference.
-export function taskBrief({ task, posterUsername }: TaskWithPoster) {
+// reference. Issue #53 adds `pr_convention.draft`, `parent_task_id` (the parent's public id) and
+// `review_round`; `repo.base_branch` is derived for a sub-task (see deriveBaseBranch).
+export function taskBrief({ task, posterUsername, parentPublicId, reviewRound, baseBranch }: TaskWithPoster) {
   return {
     id: task.publicId,
     title: task.title,
@@ -389,7 +400,7 @@ export function taskBrief({ task, posterUsername }: TaskWithPoster) {
       forge: task.repoForge,
       base_url: task.repoBaseUrl,
       full_name: task.repoFullName,
-      base_branch: task.repoBaseBranch,
+      base_branch: baseBranch ?? task.repoBaseBranch,
       suggested_dir: task.repoSuggestedDir,
     },
     acceptance_criteria: parseStringArray(task.acceptanceCriteria),
@@ -401,7 +412,10 @@ export function taskBrief({ task, posterUsername }: TaskWithPoster) {
     pr_convention: {
       branch_prefix: `kaola/${task.publicId}-`,
       title_prefix: `[${task.publicId}] `,
+      draft: true,
     },
+    parent_task_id: parentPublicId ?? null,
+    review_round: reviewRound ?? 0,
     credential:
       task.credentialProfileId == null
         ? { inline: true }
@@ -415,22 +429,77 @@ export function taskBrief({ task, posterUsername }: TaskWithPoster) {
   }
 }
 
-export function selectTasks(db: AppDb): TaskWithPoster[] {
-  return db
-    .select({ task: tasks, posterUsername: users.username })
+// Issue #53 (§6): a sub-task's base branch is derived from its parent — the parent's PR head
+// branch while the parent is 待验收 / 待修改 / 待合并 (stacked), the parent's own base branch once
+// the parent is 已完成, and the stored value while the parent has not submitted yet.
+const STACKED_PARENT_STATUSES = new Set(['待验收', '待修改', '待合并'])
+
+export function deriveBaseBranch(
+  task: Pick<Task, 'repoBaseBranch'>,
+  parent: { status: string; repoBaseBranch: string; headBranch: string | null } | undefined,
+): string {
+  if (parent == null) return task.repoBaseBranch
+  if (parent.status === '已完成') return parent.repoBaseBranch
+  if (STACKED_PARENT_STATUSES.has(parent.status) && parent.headBranch != null && parent.headBranch !== '') {
+    return parent.headBranch
+  }
+  return task.repoBaseBranch
+}
+
+const parentTasks = alias(tasks, 'parent_tasks')
+const parentSubmissions = alias(submissions, 'parent_submissions')
+
+// One query per call: poster username, the task's own latest submission round, and the parent's
+// public id / status / base branch / PR head branch for the derived base_branch above. Ordering
+// by submission id DESC with a correlated max keeps "latest" deterministic without a second query.
+function selectTaskRows(db: AppDb, publicId?: string): TaskWithPoster[] {
+  const query = db
+    .select({
+      task: tasks,
+      posterUsername: users.username,
+      reviewRound: submissions.reviewRound,
+      parentPublicId: parentTasks.publicId,
+      parentStatus: parentTasks.status,
+      parentBaseBranch: parentTasks.repoBaseBranch,
+      parentHeadBranch: parentSubmissions.headBranch,
+    })
     .from(tasks)
     .leftJoin(users, eq(tasks.posterUserId, users.id))
+    .leftJoin(
+      submissions,
+      sql`${submissions.id} = (SELECT MAX(s.id) FROM submissions s WHERE s.task_id = ${tasks.id})`,
+    )
+    .leftJoin(parentTasks, eq(tasks.parentTaskId, parentTasks.id))
+    .leftJoin(
+      parentSubmissions,
+      sql`${parentSubmissions.id} = (SELECT MAX(ps.id) FROM submissions ps WHERE ps.task_id = ${parentTasks.id})`,
+    )
     .orderBy(tasks.id)
-    .all()
+  const rows = publicId == null ? query.all() : query.where(eq(tasks.publicId, publicId)).all()
+  return rows.map((row) => ({
+    task: row.task,
+    posterUsername: row.posterUsername,
+    parentPublicId: row.parentPublicId ?? null,
+    reviewRound: row.reviewRound ?? 0,
+    baseBranch: deriveBaseBranch(
+      row.task,
+      row.parentPublicId == null
+        ? undefined
+        : {
+            status: row.parentStatus as string,
+            repoBaseBranch: row.parentBaseBranch as string,
+            headBranch: row.parentHeadBranch ?? null,
+          },
+    ),
+  }))
+}
+
+export function selectTasks(db: AppDb): TaskWithPoster[] {
+  return selectTaskRows(db)
 }
 
 export function selectTask(db: AppDb, publicId: string): TaskWithPoster | undefined {
-  return db
-    .select({ task: tasks, posterUsername: users.username })
-    .from(tasks)
-    .leftJoin(users, eq(tasks.posterUserId, users.id))
-    .where(eq(tasks.publicId, publicId))
-    .get()
+  return selectTaskRows(db, publicId)[0]
 }
 
 // kt-YYYY-NNNN, counting from 1 within the current year. The suffix is ordered numerically rather

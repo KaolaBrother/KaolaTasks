@@ -6,8 +6,11 @@ import {
   claimants,
   credentialProfiles,
   devices,
+  discussionMessages,
   events,
   leases,
+  reviewRounds,
+  submissionRevisions,
   submissions,
   tasks,
   users,
@@ -357,6 +360,87 @@ CREATE UNIQUE INDEX IF NOT EXISTS submissions_lease_id
   ON submissions(lease_id)
 `
 
+// Issue #53: additive review-loop columns. All go through tryAddColumn so an existing database
+// (with its submissions rows) opens with head_sha NULL, is_draft 0, review_round 0 — no data loss.
+const TASKS_ADD_PARENT_TASK_ID_DDL = `
+ALTER TABLE tasks ADD COLUMN parent_task_id INTEGER
+`
+
+const SUBMISSIONS_ADD_HEAD_SHA_DDL = `
+ALTER TABLE submissions ADD COLUMN head_sha TEXT
+`
+
+const SUBMISSIONS_ADD_HEAD_BRANCH_DDL = `
+ALTER TABLE submissions ADD COLUMN head_branch TEXT
+`
+
+const SUBMISSIONS_ADD_IS_DRAFT_DDL = `
+ALTER TABLE submissions ADD COLUMN is_draft INTEGER NOT NULL DEFAULT 0
+`
+
+const SUBMISSIONS_ADD_REVIEW_ROUND_DDL = `
+ALTER TABLE submissions ADD COLUMN review_round INTEGER NOT NULL DEFAULT 0
+`
+
+const SUBMISSION_REVISIONS_DDL = `
+CREATE TABLE IF NOT EXISTS submission_revisions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  submission_id INTEGER NOT NULL,
+  lease_id INTEGER NOT NULL,
+  round INTEGER NOT NULL,
+  head_sha TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  submitted_at INTEGER NOT NULL
+)
+`
+
+const SUBMISSION_REVISIONS_LEASE_ID_INDEX_DDL = `
+CREATE UNIQUE INDEX IF NOT EXISTS submission_revisions_lease_id
+  ON submission_revisions(lease_id)
+`
+
+const REVIEW_ROUNDS_DDL = `
+CREATE TABLE IF NOT EXISTS review_rounds (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id INTEGER NOT NULL,
+  round INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  opened_by_user_id INTEGER,
+  opened_by_task_id INTEGER,
+  verdict TEXT,
+  opened_at INTEGER NOT NULL,
+  revised_at INTEGER,
+  revision_head_sha TEXT
+)
+`
+
+const REVIEW_ROUNDS_TASK_ROUND_INDEX_DDL = `
+CREATE UNIQUE INDEX IF NOT EXISTS review_rounds_task_round
+  ON review_rounds(task_id, round)
+`
+
+const DISCUSSION_MESSAGES_DDL = `
+CREATE TABLE IF NOT EXISTS discussion_messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id INTEGER NOT NULL,
+  round INTEGER,
+  author_kind TEXT NOT NULL,
+  author_user_id INTEGER,
+  author_device_id INTEGER,
+  kind TEXT NOT NULL,
+  body_md TEXT NOT NULL,
+  anchor TEXT,
+  reply_to_message_id INTEGER,
+  resolves_message_id INTEGER,
+  created_at INTEGER NOT NULL
+)
+`
+
+const DISCUSSION_MESSAGES_TASK_INDEX_DDL = `
+CREATE INDEX IF NOT EXISTS discussion_messages_task
+  ON discussion_messages(task_id)
+`
+
 const CLAIM_CONFIRMATIONS_DDL = `
 CREATE TABLE IF NOT EXISTS claim_confirmations (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -415,6 +499,7 @@ export function createDb(path = ':memory:') {
   sqlite.exec(AGENT_KEYS_DDL)
   sqlite.exec(CREDENTIAL_PROFILES_DDL)
   sqlite.exec(TASKS_DDL)
+  tryAddColumn(sqlite, TASKS_ADD_PARENT_TASK_ID_DDL)
   sqlite.exec(EVENTS_DDL)
   sqlite.exec(LEASES_DDL)
   tryAddColumn(sqlite, LEASES_ADD_DEVICE_ID_DDL)
@@ -426,6 +511,16 @@ export function createDb(path = ':memory:') {
   sqlite.exec(LEASES_DEVICE_REQUEST_IDENTITY_INDEX_DDL)
   sqlite.exec(SUBMISSIONS_DDL)
   sqlite.exec(SUBMISSIONS_LEASE_ID_INDEX_DDL)
+  tryAddColumn(sqlite, SUBMISSIONS_ADD_HEAD_SHA_DDL)
+  tryAddColumn(sqlite, SUBMISSIONS_ADD_HEAD_BRANCH_DDL)
+  tryAddColumn(sqlite, SUBMISSIONS_ADD_IS_DRAFT_DDL)
+  tryAddColumn(sqlite, SUBMISSIONS_ADD_REVIEW_ROUND_DDL)
+  sqlite.exec(SUBMISSION_REVISIONS_DDL)
+  sqlite.exec(SUBMISSION_REVISIONS_LEASE_ID_INDEX_DDL)
+  sqlite.exec(REVIEW_ROUNDS_DDL)
+  sqlite.exec(REVIEW_ROUNDS_TASK_ROUND_INDEX_DDL)
+  sqlite.exec(DISCUSSION_MESSAGES_DDL)
+  sqlite.exec(DISCUSSION_MESSAGES_TASK_INDEX_DDL)
   sqlite.exec(CLAIM_CONFIRMATIONS_DDL)
   tryAddColumn(sqlite, CLAIM_CONFIRMATIONS_ADD_DEVICE_ID_DDL)
   rebuildClaimConfirmationsIfAgentKeyStillRequired(sqlite)
@@ -441,6 +536,9 @@ export function createDb(path = ':memory:') {
       events,
       leases,
       submissions,
+      submissionRevisions,
+      reviewRounds,
+      discussionMessages,
       claimConfirmations,
       claimants,
       devices,

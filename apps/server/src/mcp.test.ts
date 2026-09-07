@@ -56,6 +56,8 @@ const BRIEF_KEYS = [
   'test_command',
   'constraints',
   'pr_convention',
+  'parent_task_id',
+  'review_round',
   'credential',
   'priority',
   'tags',

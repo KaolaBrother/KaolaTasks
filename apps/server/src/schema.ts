@@ -74,9 +74,11 @@ export const tasks = sqliteTable(
     inlineTokenEncrypted: text('inline_token_encrypted'),
     posterUserId: integer('poster_user_id').notNull(),
     status: text('status', {
-      enum: ['待认领', '进行中', '待验收', '已完成', '已退回', '已取消'],
+      enum: ['待认领', '进行中', '待验收', '待修改', '待合并', '已完成', '已退回', '已取消'],
     }).notNull(),
     createdAt: integer('created_at').notNull(),
+    // Issue #53 (D13): nullable self-reference to the parent task's integer PK.
+    parentTaskId: integer('parent_task_id'),
   },
   (t) => [
     unique('tasks_public_id').on(t.publicId),
@@ -124,9 +126,67 @@ export const submissions = sqliteTable(
     prUrl: text('pr_url').notNull(),
     summary: text('summary').notNull(),
     prState: text('pr_state').notNull(),
+    // Issue #53: the delivered head, its branch, Draft flag, and the current review round.
+    headSha: text('head_sha'),
+    headBranch: text('head_branch'),
+    isDraft: integer('is_draft', { mode: 'boolean' }).notNull().default(false),
+    reviewRound: integer('review_round').notNull().default(0),
   },
   (t) => [unique('submissions_lease_id').on(t.leaseId)],
 )
+
+// Issue #53: one row per revision Claim that handed a new head back (lease_id unique — one
+// revision Claim, one 交回). The first submission itself stays on `submissions`.
+export const submissionRevisions = sqliteTable(
+  'submission_revisions',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    submissionId: integer('submission_id').notNull(),
+    leaseId: integer('lease_id').notNull(),
+    round: integer('round').notNull(),
+    headSha: text('head_sha').notNull(),
+    summary: text('summary').notNull(),
+    submittedAt: integer('submitted_at').notNull(),
+  },
+  (t) => [unique('submission_revisions_lease_id').on(t.leaseId)],
+)
+
+// Issue #53 (D11): one row per review round; (task_id, round) unique.
+export const reviewRounds = sqliteTable(
+  'review_rounds',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    taskId: integer('task_id').notNull(),
+    round: integer('round').notNull(),
+    kind: text('kind', { enum: ['review', 'downstream_finding', 'restack'] }).notNull(),
+    openedByUserId: integer('opened_by_user_id'),
+    openedByTaskId: integer('opened_by_task_id'),
+    verdict: text('verdict', { enum: ['changes_requested', 'approved', 'terminated', 'withdrawn'] }),
+    openedAt: integer('opened_at').notNull(),
+    revisedAt: integer('revised_at'),
+    revisionHeadSha: text('revision_head_sha'),
+  },
+  (t) => [unique('review_rounds_task_round').on(t.taskId, t.round)],
+)
+
+// Issue #53 (D9): the task-level discussion thread. `round` is null until 提交本轮意见 folds the
+// message into a round. `anchor` is JSON text `{ path, line, head_sha, url }` or null.
+export const discussionMessages = sqliteTable('discussion_messages', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  taskId: integer('task_id').notNull(),
+  round: integer('round'),
+  authorKind: text('author_kind', { enum: ['reviewer', 'agent', 'system', 'forge'] }).notNull(),
+  authorUserId: integer('author_user_id'),
+  authorDeviceId: integer('author_device_id'),
+  kind: text('kind', {
+    enum: ['blocking', 'suggestion', 'question', 'answer', 'note', 'resolution'],
+  }).notNull(),
+  bodyMd: text('body_md').notNull(),
+  anchor: text('anchor'),
+  replyToMessageId: integer('reply_to_message_id'),
+  resolvesMessageId: integer('resolves_message_id'),
+  createdAt: integer('created_at').notNull(),
+})
 
 // Issue #16: parks an autonomous claim (task.id PK, not public_id) awaiting the claiming user's
 // approval or rejection. One row is reused per (task_id, user_id, agent_key_id) while pending.
@@ -178,6 +238,9 @@ export type NewTask = typeof tasks.$inferInsert
 export type AuditEvent = typeof events.$inferSelect
 export type Lease = typeof leases.$inferSelect
 export type Submission = typeof submissions.$inferSelect
+export type SubmissionRevision = typeof submissionRevisions.$inferSelect
+export type ReviewRound = typeof reviewRounds.$inferSelect
+export type DiscussionMessage = typeof discussionMessages.$inferSelect
 export type ClaimConfirmation = typeof claimConfirmations.$inferSelect
 export type Claimant = typeof claimants.$inferSelect
 export type Device = typeof devices.$inferSelect

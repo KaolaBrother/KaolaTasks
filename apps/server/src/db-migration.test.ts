@@ -333,3 +333,123 @@ describe('createDb legacy-database migration (leases.request_id ordering)', { co
   // property; the in-flight half (a rebuild interrupted mid-statement-script on a *fresh* orphan,
   // rather than one already committed to disk) cannot be produced honestly from test code alone.
 })
+
+// Issue #53: an existing database whose `submissions` / `tasks` tables predate the review loop
+// must open with the new columns present and every existing row intact — `review_round` 0,
+// `is_draft` false, `head_sha` / `head_branch` / `parent_task_id` NULL — and the three new tables
+// created. Seeds the exact pre-#53 shapes createDb produced (SUBMISSIONS_DDL / TASKS_DDL before
+// this issue) plus one row each.
+function seedPre53SubmissionsAndTasks(sqlitePath) {
+  const sqlite = new Database(sqlitePath)
+  sqlite.exec(`
+    CREATE TABLE tasks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      public_id TEXT NOT NULL UNIQUE,
+      title TEXT NOT NULL,
+      description_md TEXT NOT NULL DEFAULT '',
+      source_type TEXT NOT NULL,
+      source_issue_url TEXT,
+      repo_forge TEXT NOT NULL,
+      repo_base_url TEXT NOT NULL,
+      repo_full_name TEXT NOT NULL,
+      repo_base_branch TEXT NOT NULL,
+      repo_suggested_dir TEXT NOT NULL,
+      acceptance_criteria TEXT NOT NULL DEFAULT '[]',
+      test_command TEXT NOT NULL DEFAULT '',
+      allowed_paths TEXT NOT NULL DEFAULT '[]',
+      forbidden_paths TEXT NOT NULL DEFAULT '[]',
+      priority TEXT NOT NULL,
+      tags TEXT NOT NULL DEFAULT '[]',
+      credential_profile_id INTEGER,
+      inline_token_encrypted TEXT,
+      poster_user_id INTEGER NOT NULL,
+      status TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      CONSTRAINT tasks_credential_xor
+        CHECK ((credential_profile_id IS NULL) != (inline_token_encrypted IS NULL))
+    );
+    CREATE TABLE submissions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id INTEGER NOT NULL,
+      lease_id INTEGER NOT NULL,
+      pr_url TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      pr_state TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX submissions_lease_id ON submissions(lease_id);
+  `)
+  sqlite
+    .prepare(
+      `INSERT INTO tasks (public_id, title, source_type, repo_forge, repo_base_url, repo_full_name,
+         repo_base_branch, repo_suggested_dir, priority, credential_profile_id, poster_user_id, status, created_at)
+       VALUES ('kt-2026-0001', 'legacy', 'native', 'gitea', 'https://gitea.example', 'team/app',
+         'main', 'app', 'P2', 1, 1, '待验收', 1000)`,
+    )
+    .run()
+  sqlite
+    .prepare(
+      `INSERT INTO submissions (task_id, lease_id, pr_url, summary, pr_state)
+       VALUES (1, 5, 'https://gitea.example/team/app/pulls/9', 'legacy summary', 'open')`,
+    )
+    .run()
+  sqlite.close()
+}
+
+describe('createDb #53 review-loop migration (pre-existing submissions / tasks)', { concurrency: false }, () => {
+  test('createDb adds the #53 columns to an existing submissions/tasks table with defaults and keeps the rows', (t) => {
+    const sqlitePath = sqliteFile(t)
+    seedPre53SubmissionsAndTasks(sqlitePath)
+
+    let db
+    assert.doesNotThrow(() => {
+      db = createDb(sqlitePath)
+    }, 'createDb must open a pre-#53 database without throwing')
+    t.after(() => db.$client.close())
+    const sqlite = db.$client
+
+    for (const column of ['head_sha', 'head_branch', 'is_draft', 'review_round']) {
+      assert.ok(columnNames(sqlite, 'submissions').includes(column), `submissions must gain ${column}`)
+    }
+    assert.ok(columnNames(sqlite, 'tasks').includes('parent_task_id'), 'tasks must gain parent_task_id')
+    for (const table of ['submission_revisions', 'review_rounds', 'discussion_messages']) {
+      assert.equal(tableExists(sqlite, table), true, `${table} must be created`)
+    }
+
+    const submission = sqlite.prepare('SELECT * FROM submissions').get()
+    assert.ok(submission, 'the pre-existing submission row must survive')
+    assert.equal(submission.task_id, 1)
+    assert.equal(submission.lease_id, 5)
+    assert.equal(submission.pr_url, 'https://gitea.example/team/app/pulls/9')
+    assert.equal(submission.summary, 'legacy summary')
+    assert.equal(submission.pr_state, 'open')
+    assert.equal(submission.head_sha, null, 'head_sha defaults to NULL for a legacy row')
+    assert.equal(submission.head_branch, null)
+    assert.equal(submission.is_draft, 0, 'is_draft defaults to false (0) for a legacy row')
+    assert.equal(submission.review_round, 0, 'review_round defaults to 0 for a legacy row')
+
+    const task = sqlite.prepare('SELECT * FROM tasks').get()
+    assert.ok(task, 'the pre-existing task row must survive')
+    assert.equal(task.public_id, 'kt-2026-0001')
+    assert.equal(task.status, '待验收')
+    assert.equal(task.parent_task_id, null, 'parent_task_id defaults to NULL for a legacy row')
+  })
+
+  test('createDb is idempotent after the #53 migration: a second open keeps the same rows and defaults', (t) => {
+    const sqlitePath = sqliteFile(t)
+    seedPre53SubmissionsAndTasks(sqlitePath)
+
+    const first = createDb(sqlitePath)
+    first.$client.close()
+
+    let second
+    assert.doesNotThrow(() => {
+      second = createDb(sqlitePath)
+    })
+    t.after(() => second.$client.close())
+    const sqlite = second.$client
+    assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM submissions').get().n, 1)
+    assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM tasks').get().n, 1)
+    assert.equal(sqlite.prepare('SELECT review_round FROM submissions').get().review_round, 0)
+    assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM review_rounds').get().n, 0)
+  })
+})

@@ -52,6 +52,8 @@ const BRIEF_KEYS = [
   'test_command',
   'constraints',
   'pr_convention',
+  'parent_task_id',
+  'review_round',
   'credential',
   'priority',
   'tags',
@@ -963,7 +965,11 @@ describe('issue #7 tasks HTTP surface', { concurrency: false }, () => {
       assert.deepEqual(brief.pr_convention, {
         branch_prefix: `kaola/${brief.id}-`,
         title_prefix: `[${brief.id}] `,
+        // Issue #53 (D10): the Agent is told to open a Draft PR from the start.
+        draft: true,
       })
+      assert.equal(brief.parent_task_id, null)
+      assert.equal(brief.review_round, 0)
     })
 
     test('a client-supplied pr_convention or id or status is ignored — the server owns them', async (t) => {

@@ -10,16 +10,26 @@ test('getSharedHealth returns the pinned non-empty shared package health string'
   assert.equal(value, 'kaola-shared-ready')
 })
 
-const TASK_STATUSES = ['待认领', '进行中', '待验收', '已完成', '已退回', '已取消']
+const TASK_STATUSES = ['待认领', '进行中', '待验收', '待修改', '待合并', '已完成', '已退回', '已取消']
 
+// DESIGN.md §5 v0.6 (#53) per-edge table, one row per legal edge. Every other (from, to) pair of
+// the eight statuses must throw — including the retired 待验收 → 已完成.
 const LEGAL_TRANSITIONS = [
   ['待认领', '进行中'],
-  ['进行中', '待认领'],
-  ['进行中', '待验收'],
-  ['待验收', '已完成'],
-  ['待验收', '已退回'],
-  ['已退回', '待认领'],
   ['待认领', '已取消'],
+  ['进行中', '待认领'],
+  ['进行中', '待修改'],
+  ['进行中', '待验收'],
+  ['待验收', '待修改'],
+  ['待验收', '待合并'],
+  ['待验收', '已退回'],
+  ['待修改', '进行中'],
+  ['待修改', '已退回'],
+  ['待修改', '已取消'],
+  ['待合并', '待修改'],
+  ['待合并', '已完成'],
+  ['待合并', '已退回'],
+  ['已退回', '待认领'],
   ['已退回', '已取消'],
 ]
 
@@ -33,6 +43,8 @@ const REQUIRED_TOP_LEVEL_FIELDS = [
   'test_command',
   'constraints',
   'pr_convention',
+  'parent_task_id',
+  'review_round',
   'credential',
   'priority',
   'tags',
@@ -51,6 +63,7 @@ const REQUIRED_NESTED_FIELDS = [
   ['constraints', 'forbidden_paths'],
   ['pr_convention', 'branch_prefix'],
   ['pr_convention', 'title_prefix'],
+  ['pr_convention', 'draft'],
 ]
 
 function designExample() {
@@ -81,7 +94,10 @@ function designExample() {
     pr_convention: {
       branch_prefix: 'kaola/kt-2026-0142-',
       title_prefix: '[kt-2026-0142] ',
+      draft: true,
     },
+    parent_task_id: null,
+    review_round: 0,
     credential: { profile_id: 'cp-gitea-orders' },
     priority: 'P1',
     tags: ['backend', 'api'],
@@ -161,7 +177,31 @@ describe('parseTaskBrief', () => {
     })
   }
 
-  test('parseTaskBrief rejects status that is not one of the six Chinese labels', async () => {
+  test('parseTaskBrief accepts a sub-task brief whose parent_task_id is a public id', async () => {
+    const parseTaskBrief = await loadExport('parseTaskBrief')
+    const brief = designExample()
+    brief.parent_task_id = 'kt-2026-0141'
+    brief.review_round = 2
+    assert.deepEqual(parseTaskBrief(brief), brief)
+  })
+
+  for (const round of [-1, 1.5, '1', null]) {
+    test(`parseTaskBrief rejects review_round ${JSON.stringify(round)}`, async () => {
+      const parseTaskBrief = await loadExport('parseTaskBrief')
+      const brief = designExample()
+      brief.review_round = round
+      assert.throws(() => parseTaskBrief(brief))
+    })
+  }
+
+  test('parseTaskBrief rejects pr_convention.draft that is not a boolean', async () => {
+    const parseTaskBrief = await loadExport('parseTaskBrief')
+    const brief = designExample()
+    brief.pr_convention = { ...brief.pr_convention, draft: 'yes' }
+    assert.throws(() => parseTaskBrief(brief))
+  })
+
+  test('parseTaskBrief rejects status that is not one of the eight Chinese labels', async () => {
     const parseTaskBrief = await loadExport('parseTaskBrief')
     const brief = designExample()
     brief.status = 'open'
