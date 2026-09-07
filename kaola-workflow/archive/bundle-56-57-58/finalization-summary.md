@@ -89,4 +89,9 @@ READY — all missions done, Path B and Path C live UAT recorded, docs docked, n
 
 ## Sink Findings
 
-sink: merge is the recorded kind. Cloud `gh` is read-only, so `kaola-workflow-sink-merge.js` cannot complete publication here. PR creation is registered for user approval on `cursor/smoke-uat-fixes-772b`. Issues remain `close-pending` until merge. Worktree kept.
+sink: merge is the recorded kind. Two `--sink` attempts refused:
+
+- `sink_blocked` / `foreign_dirt`: main checkout carries Cloud-installed untracked `.cursor/` plus (at first) an untracked duplicate of this archive. The duplicate archive on main was removed; `.cursor/` remains environment install dirt and is not this run's to commit.
+- After writing this receipt, a retry would still see `.cursor/` on main. Cloud `gh` is also read-only, so publication cannot complete here.
+
+PR creation is registered for user approval on `cursor/smoke-uat-fixes-772b`. Issues remain `close-pending` until merge. Worktree kept. Closure-audit: current project clean; outside-scope incomplete archive `bundle-20-21.archived-2026-08-23T13-50-46-301Z` missing `workflow-state.md`.

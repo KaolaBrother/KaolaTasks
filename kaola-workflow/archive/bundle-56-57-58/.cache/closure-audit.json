@@ -1,0 +1,45 @@
+{
+  "dry_run": true,
+  "offline": false,
+  "scope": {
+    "project": "bundle-56-57-58",
+    "issue_numbers": [
+      56,
+      57,
+      58
+    ],
+    "state_file": "kaola-workflow/archive/bundle-56-57-58/workflow-state.md"
+  },
+  "current_project_clean": true,
+  "current_project_drift": {
+    "stale_in_progress_labels": [],
+    "active_folder_for_closed_issue": [],
+    "unarchived_pr_folders": [],
+    "archive_content_incomplete": []
+  },
+  "current_project_counts": {
+    "stale_in_progress_labels": 0,
+    "active_folder_for_closed_issue": 0,
+    "unarchived_pr_folders": 0,
+    "archive_content_incomplete": 0
+  },
+  "repository_drift_outside_scope": {
+    "stale_in_progress_labels": [],
+    "active_folder_for_closed_issue": [],
+    "unarchived_pr_folders": [],
+    "archive_content_incomplete": [
+      {
+        "project": "bundle-20-21.archived-2026-08-23T13-50-46-301Z",
+        "missing": [
+          "workflow-state.md"
+        ]
+      }
+    ]
+  },
+  "repository_counts_outside_scope": {
+    "stale_in_progress_labels": 0,
+    "active_folder_for_closed_issue": 0,
+    "unarchived_pr_folders": 0,
+    "archive_content_incomplete": 1
+  }
+}

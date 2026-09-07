@@ -1,0 +1,1 @@
+{"result":"refuse","attempts":[{"reason":"sink_blocked","foreign_dirt_note":"main checkout had untracked .cursor/ (Cloud install) and a duplicate untracked archive; archive duplicate removed"},{"reason":"worktree_dirty","detail":"uncommitted sink receipts in archive .cache; committed after this file"}]}
