@@ -11,4 +11,4 @@
 - [默认直连 Kaola Workflow](workflow-default.md) — Claim 之后的默认执行承载与目标映射
 - [Kaola Project Runner 承载兼容性](runner-carrier.md) — 显式选用 Runner 承载的指引与秘密边界
 - [Changelog](../CHANGELOG.md)
-- [Forge smoke playbook](smoke-test.md) — GitLab / Gitea publish loop (not GitHub); **配合** steps wait for the human; Agent 注入跑 `pnpm smoke:forge -- gitlab|gitea`（PAT 真、考拉进程假：脚本自己补 session/vault/OAuth 占位）
+- [Forge smoke playbook](smoke-test.md) — GitLab / Gitea publish loop (not GitHub); **配合** steps wait for the human; Agent 注入跑 `pnpm smoke:forge -- gitlab|gitea`（PAT 真、考拉进程假：脚本自己补 session/vault/OAuth 占位）；路径 C `pnpm smoke:uat -- gitlab|gitea --web` 用真实工作台代替真人点评审面板，仍不走 OAuth

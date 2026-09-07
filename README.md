@@ -388,7 +388,7 @@ pnpm build
 ## 文档
 
 - [设计文档](docs/DESIGN.md) — 产品与架构源头（§16 冻结双模式 MCP 安装与证书信任）
-- [GitLab / Gitea 冒烟手册](docs/smoke-test.md) — 浏览器 **配合** vs 脚本 B（B 只模拟考拉进程；`GITLAB_TOKEN` / `GITEA_TOKEN` 仍须真实 PAT）
+- [GitLab / Gitea 冒烟手册](docs/smoke-test.md) — 浏览器 **配合** vs 脚本 B vs 路径 C（B 只模拟考拉进程；C 把同一进程 listen 出来用真实工作台点评审面板；`GITLAB_TOKEN` / `GITEA_TOKEN` 仍须真实 PAT）
 - [文档索引](docs/README.md)
 - [变更日志](CHANGELOG.md)
 

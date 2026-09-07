@@ -21,6 +21,8 @@
 
 ## 两种跑法
 
+路径 A 是真人浏览器 + 真 OAuth。路径 B 是无人值守脚本（`inject` + 生产 MCP，不打开 Vue）。路径 C 把 B 的假考拉进程 **listen** 出来，用真实工作台代替真人点评审面板，仍不走 GitLab Authorize。
+
 ### A. 本机浏览器（人在场）
 
 原点 **http://localhost:31415**（必须 `localhost`，不要 `127.0.0.1`，否则登录 cookie 对不上）。仓库根目录 `pnpm dev`（先 `export` / `source .env`）。`SQLITE_PATH` 指向文件库（不要默认内存库）。
@@ -29,7 +31,7 @@
 
 ### B. 注入会话脚本（Cloud Agent / 无人值守）
 
-浏览器 Authorize 过不了（Cloudflare 人机、无交互）时，不要假装走了网页登录。用 `scripts/forge-smoke.ts`（`pnpm smoke:forge -- gitlab|gitea`）。脚本自己 `buildApp`，**不**碰正在跑的 `pnpm dev`。不打印 token，不把 token 写入 remote URL / `.env` / mcp.json。传入 `github` 会明确失败（发布面不含 GitHub）。`parseKind` 会跳过 argv 里的 `--`，所以 `pnpm smoke:forge -- gitlab` 与直接传 `gitlab` 一样。
+浏览器 Authorize 过不了（Cloudflare 人机、无交互）时，不要假装走了网页登录。用 `scripts/forge-smoke.ts`（`pnpm smoke:forge -- gitlab|gitea`）。脚本自己 `buildApp`，**不**碰正在跑的 `pnpm dev`。不打印 token，不把 token 写入 remote URL / `.env` / mcp.json。传入 `github` 会明确失败（发布面不含 GitHub）。参数解析会跳过 argv 里的 `--`，所以 `pnpm smoke:forge -- gitlab` 与直接传 `gitlab` 一样；`--web` 打开路径 C。
 
 #### B 模拟什么（进程假、forge 真）
 
@@ -53,6 +55,36 @@
 pnpm smoke:forge -- gitlab
 pnpm smoke:forge -- gitea
 ```
+
+### C. 注入会话的浏览器 UAT（Cloud Agent 可代替真人点工作台）
+
+路径 B 不打开 Vue，所以评审批面板、`409` 中文信封、「forge 头已变化」、看板 SSE 仍算「配合」。路径 C 补这一截：**考拉进程仍是假的**（`ensureSetup` + GitLab OAuth stub），**forge 仍是真的**，工作台是生产 Vue。用来代替真人点 #53/#54 评审面板，**不能**代替真实 OAuth、公网 TLS、或真人在 forge 页点 Merge。
+
+```bash
+pnpm smoke:uat -- gitlab --web
+pnpm smoke:uat -- gitea --web
+```
+
+`pnpm smoke:forge -- gitlab --web` 等价。传入 `github` 仍明确失败。
+
+| 东西 | 真假 | 谁提供 |
+|------|------|--------|
+| `GITLAB_TOKEN` / `GITEA_TOKEN` | **真** PAT | 与路径 B 相同；缺则失败 |
+| 考拉 sqlite / session / vault / OAuth 占位 | 假 | 与路径 B 相同，`ensureSimulatedAuthEnv` |
+| HTTP | 真 listen | 默认 `http://localhost:31416`（`UAT_WEB_PORT`，不要抢已在跑的 `pnpm dev` :31415）。浏览器必须开 `localhost` 这个 host，不要 `127.0.0.1` |
+| Vue | **真** | 反向代理 `VITE_DEV_TARGET`（默认 `http://127.0.0.1:5173`）。工作树另起 Vite 时改端口 |
+| 登录 | 假身份、真 cookie | 浏览器走本地管理员 `POST /api/v1/login`（用户名 `kaola-admin`，密码与 `apps/server/src/auth.test-helpers.ts` 的 `DEFAULT_SETUP` 相同）。**不要**点「使用 GitLab 登录 / 使用 Gitea 登录」。**不要**在页面里贴 PAT |
+| 评审 UI | **真** | 人（或 Agent computer-use）点按钮 |
+| 认领 / clone / PR / 修订 MCP / 合并 | **真** forge + 生产 stdio bridge | 脚本在旗标处继续；合并仍走 forge API，不是 forge 网页上的 Merge 按钮 |
+
+脚本先把任务推到路径 B 的 #53 一轮 + #54 未申报提交（forge 已报告新头），任务停在 `待验收`。然后写入 `UAT_HOLD_DIR/state.json`（默认系统临时目录下的 `kaola-uat-web`，**不含 token、不含密码**）并等待旗标文件 `UAT_HOLD_DIR/go`：
+
+1. 浏览器：登录 → 看板打开该任务 → 「通过」→ 面板出现中文 `409` 提示（不是英文 `head_sha_stale`）且「forge 头已变化」→ 写一条阻塞意见 → 「提交本轮意见」→ 看板经 SSE 把卡片换到 `待修改`。写 `go`，内容恰好一行 `round-done`。
+2. 脚本：bridge 再 `claim_task`（`review_round` 2）并以该漂移头 `submit_revision` → `待验收`。
+3. 浏览器：再点「通过」→ `待合并`，forge 上 Draft/WIP 翻 ready。写 `go`，内容恰好一行 `approved`。
+4. 脚本：forge merge + `pollPendingReviews` → `已完成`，核 `回写` 与 `events.details` 无令牌。
+
+`UAT_HOLD_TIMEOUT_MS` 默认 15 分钟。超时或旗标内容不对则失败，不把 UI 步骤编成已通过。未实际打开浏览器的跑法不要写路径 C 通过。
 
 ## 目标仓与令牌
 
@@ -182,9 +214,9 @@ POST /api/v1/setup → local active+admin（空库 OAuth 不得插用户）
 
 外部 `DEBUG_PRIVATE_CA` 本轮还保留两条观察：Gitea 共享档案的 Issue 下拉在请求完成前短暂显示「无数据」，重开后列出真实 Issue；第一次导入收到一次瞬时 `forge_unreachable`，同一部署字节的生产 adapter 随后成功，UI 单次重试也成功。GitLab MR 长时间报告 `checking`，但 merge endpoint 返回 `200` / `merged`，部署进程随后把任务推进为 `已完成`。这些观察不改变两家最终闭环结果，也没有触发 TLS 降级或令牌输出。
 
-#53 评审循环后的「配合」项（未经真人执行不得写成已通过）：浏览器里的评审面板四个按钮、看板 / 面板经 SSE 自动刷新、发布向导「拆为子任务」、GitHub 仓库的 Draft → ready（GraphQL）翻转、以及真人在 forge 页面点 Merge。路径 B 只证明 REST / MCP / adapter 层的同一闭环。
+#53 评审循环后的「配合」项（未经真人执行不得写成已通过）：发布向导「拆为子任务」、GitHub 仓库的 Draft → ready（GraphQL）翻转、以及真人在 forge 页面点 Merge。路径 B 只证明 REST / MCP / adapter 层的同一闭环。路径 C 证明工作台评审面板的「通过」/「提交本轮意见」、`409` 中文信封、「forge 头已变化」与看板 SSE 换列；仍不证明真实 OAuth、公网 TLS、或 forge 网页 Merge。
 
-#54 补充：路径 B 已真实证明「通过」被 forge 上未申报的新头拒绝（`409 head_sha_stale`）并在重新交回后放行；浏览器里的「forge 头已变化」提示与 `409` 中文信息仍是「配合」项。已知 forge 属性：GitLab 在 push 后由后台任务刷新 MR `sha`，gitlab.com 实测滞后数秒，滞后窗口内的「通过」按 forge 报告的旧头放行（`head_verified: true`）；Gitea 即时。
+#54 补充：路径 B 已真实证明「通过」被 forge 上未申报的新头拒绝（`409 head_sha_stale`）并在重新交回后放行。路径 C 在真实浏览器里证明同一拒绝的中文信封与「forge 头已变化」提示。已知 forge 属性：GitLab 在 push 后由后台任务刷新 MR `sha`，gitlab.com 实测滞后数秒，滞后窗口内的「通过」按 forge 报告的旧头放行（`head_verified: true`）；Gitea 即时。
 
 GitHub 发布冒烟已停（此前仓 [Issue #1](https://github.com/KaolaBrother/kaola-tasks-smoke/issues/1) 开过、未走认领，已标 `not_planned` 关闭）。stdio 桥回放 `mcp-session-id` 已进 `main`；另窗 UAT 曾用短提示词走完认领到 `submit_pr`。
 
