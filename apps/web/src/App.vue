@@ -28,9 +28,16 @@
             </n-space>
             <n-space v-else vertical>
               <n-text>使用本地密码或 GitLab / Gitea 账号登录。</n-text>
-              <n-input v-model:value="loginUsername" placeholder="用户名" />
-              <n-input v-model:value="loginPassword" type="password" show-password-on="click" placeholder="密码" />
+              <n-input data-testid="login-username" v-model:value="loginUsername" placeholder="用户名" />
+              <n-input
+                data-testid="login-password"
+                v-model:value="loginPassword"
+                type="password"
+                show-password-on="click"
+                placeholder="密码"
+              />
               <n-button
+                data-testid="login-submit"
                 class="has-ripple primary-fill"
                 type="primary"
                 :loading="authSubmitting"
@@ -2342,6 +2349,7 @@ async function runReviewAction(action: 'rounds' | 'approve' | 'withdraw' | 'term
     const body = await readJson(res)
     if (!res.ok) {
       reviewActionMessage.value = reviewFailureMessage(body, res.status, '操作失败')
+      await refreshReviewPanel()
       return
     }
     const updated = body?.task

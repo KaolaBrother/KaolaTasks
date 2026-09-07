@@ -23,15 +23,21 @@
  * revision claim → submit_revision(new head)) → 「通过」(REST) → 待合并 + Draft flipped to ready
  * on the forge → merge → pollPendingReviews → 已完成 + 回写 (#53 review loop).
  *
+ * `--web` (Path C): same live forge through the undeclared-push wait, then listen + Vue
+ * proxy so a browser (or computer-use) can click the review panel. The script pauses on
+ * flag files instead of injecting the 409 / second round / approve. See docs/smoke-test.md.
+ *
  * Usage:
  *   node --experimental-strip-types scripts/forge-smoke.ts gitlab
  *   node --experimental-strip-types scripts/forge-smoke.ts gitea
  *   pnpm smoke:forge -- gitlab
  *   pnpm smoke:forge -- gitea
+ *   pnpm smoke:uat -- gitlab --web
+ *   pnpm smoke:uat -- gitea --web
  */
 import { spawnSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Readable, Writable } from 'node:stream'
@@ -523,18 +529,74 @@ async function waitForForgeHead(kind: ForgeKind, spec: ForgeSpec, token: string,
   fail(`forge never reported pushed head ${expected.slice(0, 12)} within 90s (last seen ${seen.slice(0, 12)})`)
 }
 
-function parseKind(argv: string[]): ForgeKind {
-  const raw = argv.slice(2).find((arg) => arg !== '--')
-  if (raw === 'github') {
-    fail('publish smoke is GitLab + Gitea only; GitHub is not a poster surface')
+function parseArgs(argv: string[]): { kind: ForgeKind; web: boolean } {
+  const tokens = argv.slice(2).filter((arg) => arg !== '--')
+  let kind: ForgeKind | undefined
+  let web = false
+  for (const token of tokens) {
+    if (token === '--web') {
+      web = true
+      continue
+    }
+    if (token === 'github') {
+      fail('publish smoke is GitLab + Gitea only; GitHub is not a poster surface')
+    }
+    if (token === 'gitlab' || token === 'gitea') {
+      kind = token
+      continue
+    }
+    fail(`unexpected argument ${token} (usage: … <gitlab|gitea> [--web])`)
   }
-  if (raw === 'gitlab' || raw === 'gitea') return raw
-  fail('usage: node --experimental-strip-types scripts/forge-smoke.ts <gitlab|gitea>')
+  if (kind == null) fail('usage: node --experimental-strip-types scripts/forge-smoke.ts <gitlab|gitea> [--web]')
+  return { kind, web }
+}
+
+function uatHoldDir(): string {
+  return process.env.UAT_HOLD_DIR != null && process.env.UAT_HOLD_DIR !== ''
+    ? process.env.UAT_HOLD_DIR
+    : join(tmpdir(), 'kaola-uat-web')
+}
+
+function uatHoldTimeoutMs(): number {
+  const raw = process.env.UAT_HOLD_TIMEOUT_MS
+  const parsed = raw != null && raw !== '' ? Number.parseInt(raw, 10) : 900_000
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 900_000
+}
+
+function writeUatState(dir: string, state: Record<string, unknown>): void {
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'state.json'), `${JSON.stringify(state, null, 2)}\n`)
+}
+
+async function waitForUatFlag(dir: string, expected: string, secrets: string[]): Promise<void> {
+  const flag = join(dir, 'go')
+  const deadline = Date.now() + uatHoldTimeoutMs()
+  console.log(`uat_wait ${expected}`)
+  while (Date.now() < deadline) {
+    try {
+      const got = redact(readFileSync(flag, 'utf8').trim(), secrets)
+      if (got === expected) {
+        unlinkSync(flag)
+        console.log(`uat_flag ${expected}`)
+        return
+      }
+      if (got !== '') fail(`unexpected UAT flag ${JSON.stringify(got)} (want ${expected})`)
+    } catch {
+      // flag file missing
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500))
+  }
+  fail(`timed out waiting for ${flag} to contain ${expected}`)
 }
 
 async function run(): Promise<void> {
-  const kind = parseKind(process.argv)
+  const { kind, web } = parseArgs(process.argv)
   const spec = FORGES[kind]
+  const webPort = Number.parseInt(process.env.UAT_WEB_PORT ?? '31416', 10)
+  if (web) {
+    if (!Number.isInteger(webPort) || webPort <= 0) fail(`invalid UAT_WEB_PORT ${process.env.UAT_WEB_PORT}`)
+    process.env.PUBLIC_URL = `http://localhost:${webPort}`
+  }
   ensureSimulatedAuthEnv()
   const token = requiredEnv(spec.tokenEnv)
 
@@ -548,12 +610,24 @@ async function run(): Promise<void> {
   const issue = await createSmokeIssue(spec, token, stamp)
   console.log(`issue ${issue.url}`)
 
-  const app = buildApp({ sqlitePath, pollIntervalMs: 0 })
+  const viteDevTarget =
+    process.env.VITE_DEV_TARGET != null && process.env.VITE_DEV_TARGET !== ''
+      ? process.env.VITE_DEV_TARGET
+      : 'http://127.0.0.1:5173'
+  const app = buildApp({
+    sqlitePath,
+    pollIntervalMs: web ? 2_000 : 0,
+    viteDevTarget: web ? viteDevTarget : undefined,
+  })
   await app.ready()
+  const holdDir = web ? uatHoldDir() : ''
   try {
     const setup = await ensureSetup(app, DEFAULT_SETUP)
     const cookies = await loginGitlabStub(app)
-    const bridgeUrl = await app.listen({ host: '127.0.0.1', port: 0 })
+    const listenHost = web ? (process.env.UAT_WEB_HOST || '0.0.0.0') : '127.0.0.1'
+    const bridgeUrl = await app.listen({ host: listenHost, port: web ? webPort : 0 })
+    const origin = web ? `http://localhost:${webPort}` : bridgeUrl
+    if (web) console.log(`uat_origin ${origin}`)
     const kaolaHome = join(workRoot, 'kaola-home')
 
     const sighted = await runBridgeMessages(bridgeUrl, kaolaHome, [bridgeInitialize(1)])
@@ -786,46 +860,74 @@ async function run(): Promise<void> {
     const driftLine = `Smoke undeclared push ${kind} ${task.id} ${stamp}.`
     const driftSha = pushFollowUp({ dir: pushed.dir, header: pushed.header, branch, line: driftLine, secrets })
     await waitForForgeHead(kind, spec, revealed, pull.url, driftSha)
-    const stale = await app.inject({
-      method: 'POST',
-      url: `/api/v1/tasks/${task.id}/review/approve`,
-      cookies: setup.cookies,
-      headers: JSON_HEADERS,
-      payload: {},
-    })
-    if (stale.statusCode !== 409) fail(`approve after undeclared push expected 409, got ${stale.statusCode}: ${stale.body}`)
-    const staleBody = stale.json() as { error?: string; recorded_head_sha?: string; forge_head_sha?: string }
-    if (staleBody.error !== 'head_sha_stale') fail(`approve expected head_sha_stale: ${stale.body}`)
-    if (staleBody.recorded_head_sha !== revisionSha || staleBody.forge_head_sha !== driftSha) {
-      fail(`head_sha_stale shas mismatch: ${stale.body} (expected ${revisionSha} / ${driftSha})`)
-    }
-    if (stale.body.includes(revealed)) fail('head_sha_stale body leaked the forge token')
-    const staleView = await app.inject({ method: 'GET', url: `/api/v1/tasks/${task.id}/review`, cookies: setup.cookies })
-    if (staleView.statusCode !== 200) fail(`review view ${staleView.statusCode}: ${staleView.body}`)
-    const staleViewBody = staleView.json() as { status?: string; head_stale?: boolean; forge_head_sha?: string | null }
-    if (staleViewBody.status !== '待验收' || staleViewBody.head_stale !== true || staleViewBody.forge_head_sha !== driftSha) {
-      fail(`review view after undeclared push expected 待验收 / head_stale / forge head ${driftSha.slice(0, 12)}: ${staleView.body}`)
-    }
-    if (staleView.body.includes(revealed)) fail('review view leaked the forge token')
-    console.log(`head_sha_stale ${task.id} recorded=${revisionSha.slice(0, 12)} forge=${driftSha.slice(0, 12)}`)
 
-    const staleNotice = await app.inject({
-      method: 'POST',
-      url: `/api/v1/tasks/${task.id}/review/messages`,
-      cookies: setup.cookies,
-      headers: JSON_HEADERS,
-      payload: { body_md: 'forge 头已变化，请以新 head_sha 重新交回。', kind: 'blocking' },
-    })
-    if (staleNotice.statusCode !== 201) fail(`stale notice ${staleNotice.statusCode}: ${staleNotice.body}`)
-    const rounded2 = await app.inject({
-      method: 'POST',
-      url: `/api/v1/tasks/${task.id}/review/rounds`,
-      cookies: setup.cookies,
-      headers: JSON_HEADERS,
-      payload: {},
-    })
-    if (rounded2.statusCode !== 201) fail(`review round 2 ${rounded2.statusCode}: ${rounded2.body}`)
-    if ((rounded2.json() as { task?: { status?: string } }).task?.status !== '待修改') fail('round 2 expected 待修改')
+    if (web) {
+      writeUatState(holdDir, {
+        phase: 'awaiting_ui_stale',
+        origin,
+        kind,
+        task_id: task.id,
+        issue_url: issue.url,
+        pr_url: pull.url,
+        login_username: DEFAULT_SETUP.username,
+        recorded_head_sha: revisionSha.slice(0, 12),
+        forge_head_sha: driftSha.slice(0, 12),
+      })
+      console.log(`uat_hold ${holdDir} task ${task.id}`)
+      await waitForUatFlag(holdDir, 'round-done', secrets)
+      const afterRound = await app.inject({
+        method: 'GET',
+        url: `/api/v1/tasks/${task.id}/review`,
+        cookies: setup.cookies,
+      })
+      if (afterRound.statusCode !== 200) fail(`review after UI round ${afterRound.statusCode}: ${afterRound.body}`)
+      if ((afterRound.json() as { status?: string }).status !== '待修改') {
+        fail(`UI round expected 待修改: ${afterRound.body}`)
+      }
+      if (afterRound.body.includes(revealed)) fail('review view leaked the forge token')
+    } else {
+      const stale = await app.inject({
+        method: 'POST',
+        url: `/api/v1/tasks/${task.id}/review/approve`,
+        cookies: setup.cookies,
+        headers: JSON_HEADERS,
+        payload: {},
+      })
+      if (stale.statusCode !== 409) fail(`approve after undeclared push expected 409, got ${stale.statusCode}: ${stale.body}`)
+      const staleBody = stale.json() as { error?: string; recorded_head_sha?: string; forge_head_sha?: string }
+      if (staleBody.error !== 'head_sha_stale') fail(`approve expected head_sha_stale: ${stale.body}`)
+      if (staleBody.recorded_head_sha !== revisionSha || staleBody.forge_head_sha !== driftSha) {
+        fail(`head_sha_stale shas mismatch: ${stale.body} (expected ${revisionSha} / ${driftSha})`)
+      }
+      if (stale.body.includes(revealed)) fail('head_sha_stale body leaked the forge token')
+      const staleView = await app.inject({ method: 'GET', url: `/api/v1/tasks/${task.id}/review`, cookies: setup.cookies })
+      if (staleView.statusCode !== 200) fail(`review view ${staleView.statusCode}: ${staleView.body}`)
+      const staleViewBody = staleView.json() as { status?: string; head_stale?: boolean; forge_head_sha?: string | null }
+      if (staleViewBody.status !== '待验收' || staleViewBody.head_stale !== true || staleViewBody.forge_head_sha !== driftSha) {
+        fail(`review view after undeclared push expected 待验收 / head_stale / forge head ${driftSha.slice(0, 12)}: ${staleView.body}`)
+      }
+      if (staleView.body.includes(revealed)) fail('review view leaked the forge token')
+      console.log(`head_sha_stale ${task.id} recorded=${revisionSha.slice(0, 12)} forge=${driftSha.slice(0, 12)}`)
+
+      const staleNotice = await app.inject({
+        method: 'POST',
+        url: `/api/v1/tasks/${task.id}/review/messages`,
+        cookies: setup.cookies,
+        headers: JSON_HEADERS,
+        payload: { body_md: 'forge 头已变化，请以新 head_sha 重新交回。', kind: 'blocking' },
+      })
+      if (staleNotice.statusCode !== 201) fail(`stale notice ${staleNotice.statusCode}: ${staleNotice.body}`)
+      const rounded2 = await app.inject({
+        method: 'POST',
+        url: `/api/v1/tasks/${task.id}/review/rounds`,
+        cookies: setup.cookies,
+        headers: JSON_HEADERS,
+        payload: {},
+      })
+      if (rounded2.statusCode !== 201) fail(`review round 2 ${rounded2.statusCode}: ${rounded2.body}`)
+      if ((rounded2.json() as { task?: { status?: string } }).task?.status !== '待修改') fail('round 2 expected 待修改')
+    }
+
     const reclaimed2 = await bridgeToolCall(bridgeUrl, kaolaHome, 'claim_task', { task_id: task.id })
     const reclaimed2Task = reclaimed2.task as { status?: string; review_round?: number } | undefined
     if (reclaimed2Task?.status !== '进行中' || reclaimed2Task.review_round !== 2) {
@@ -845,20 +947,40 @@ async function run(): Promise<void> {
     }
     console.log(`submit_revision ${driftSha.slice(0, 12)} 待验收 (round 2)`)
 
-    // 「通过」 → 待合并 (live head check passes: forge head == declared head), then Kaola flips the
-    // Draft to ready on the forge (off the response path).
-    const approved = await app.inject({
-      method: 'POST',
-      url: `/api/v1/tasks/${task.id}/review/approve`,
-      cookies: setup.cookies,
-      headers: JSON_HEADERS,
-      payload: {},
-    })
-    if (approved.statusCode !== 200) fail(`approve ${approved.statusCode}: ${approved.body}`)
-    const approvedBody = approved.json() as { task?: { status?: string }; head_sha?: string; head_verified?: boolean }
-    if (approvedBody.task?.status !== '待合并') fail('approve expected 待合并')
-    if (approvedBody.head_sha !== driftSha || approvedBody.head_verified !== true) {
-      fail(`approve expected head_sha ${driftSha.slice(0, 12)} / head_verified true: ${approved.body}`)
+    if (web) {
+      writeUatState(holdDir, {
+        phase: 'awaiting_ui_approve',
+        origin,
+        kind,
+        task_id: task.id,
+        issue_url: issue.url,
+        pr_url: pull.url,
+        login_username: DEFAULT_SETUP.username,
+      })
+      await waitForUatFlag(holdDir, 'approved', secrets)
+      const approvedView = await app.inject({
+        method: 'GET',
+        url: `/api/v1/tasks/${task.id}/review`,
+        cookies: setup.cookies,
+      })
+      if (approvedView.statusCode !== 200) fail(`review after UI approve ${approvedView.statusCode}: ${approvedView.body}`)
+      const approvedViewBody = approvedView.json() as { status?: string; head_sha?: string }
+      if (approvedViewBody.status !== '待合并') fail(`UI approve expected 待合并: ${approvedView.body}`)
+      if (approvedView.body.includes(revealed)) fail('review view leaked the forge token')
+    } else {
+      const approved = await app.inject({
+        method: 'POST',
+        url: `/api/v1/tasks/${task.id}/review/approve`,
+        cookies: setup.cookies,
+        headers: JSON_HEADERS,
+        payload: {},
+      })
+      if (approved.statusCode !== 200) fail(`approve ${approved.statusCode}: ${approved.body}`)
+      const approvedBody = approved.json() as { task?: { status?: string }; head_sha?: string; head_verified?: boolean }
+      if (approvedBody.task?.status !== '待合并') fail('approve expected 待合并')
+      if (approvedBody.head_sha !== driftSha || approvedBody.head_verified !== true) {
+        fail(`approve expected head_sha ${driftSha.slice(0, 12)} / head_verified true: ${approved.body}`)
+      }
     }
     await settleWritebacks()
     const adapter = createForgeAdapter(kind, { baseUrl: spec.baseUrl })

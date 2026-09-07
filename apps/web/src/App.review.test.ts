@@ -893,4 +893,35 @@ describe('评审面板 — forge 头已变化（#54）', () => {
     expect(text).not.toContain('head_sha_stale')
     expect(/[一-鿿]/.test(text)).toBe(true)
   })
+
+  it('409 head_sha_stale 之后会再 GET …/review，从而画出「forge 头已变化」，且 409 中文提示仍在', async () => {
+    const FORGE_SHA = 'fedcba9876543210fedcba9876543210fedcba98'
+    const { wrapper, routes, calls } = await mountBoard()
+    stubReview(routes, TASK_REVIEWING.id, reviewBody())
+    routes.set(`POST /api/v1/tasks/${TASK_REVIEWING.id}/review/approve`, () =>
+      jsonResponse(409, {
+        error: 'head_sha_stale',
+        recorded_head_sha: HEAD_SHA,
+        forge_head_sha: FORGE_SHA,
+      }),
+    )
+    await openDetail(wrapper, TASK_REVIEWING.id)
+    const getsBefore = reviewGets(calls, TASK_REVIEWING.id).length
+    stubReview(
+      routes,
+      TASK_REVIEWING.id,
+      reviewBody({
+        forge_head_sha: FORGE_SHA,
+        forge_head_seen_at: 1780000000,
+        head_stale: true,
+      }),
+    )
+
+    await click(wrapper, 'review-approve')
+
+    expect(reviewGets(calls, TASK_REVIEWING.id).length).toBeGreaterThan(getsBefore)
+    expect(textOf(wrapper, 'review-head-stale')).toContain('forge 头已变化')
+    expect(textOf(wrapper, 'review-action-message')).toMatch(/[一-鿿]/)
+    expect(textOf(wrapper, 'review-action-message')).not.toContain('head_sha_stale')
+  })
 })
