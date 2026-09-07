@@ -676,6 +676,9 @@ export function reviewerTerminate(db: AppDb, user: User, publicId: string) {
       now,
     })
     const updated = setTaskStatus(tx, row.task, to, user.id, { round: round.round })
+    // The delivery is over even though the PR stays open on the forge: the submission stops
+    // being live so a reopened task can start a new delivery with a new PR (submit_pr).
+    tx.update(submissions).set({ prState: 'terminated' }).where(eq(submissions.id, submission.id)).run()
     insertAuditEvent(tx, {
       type: REVIEW_TERMINATED_EVENT,
       actorUserId: user.id,
@@ -786,7 +789,9 @@ export async function submitRevision(
       return { ok: false, httpStatus: 409, body: { error: 'stale_claim', message: STALE_CLAIM_MESSAGE } }
     }
     if (existing.headSha !== headSha) {
-      return { ok: false, httpStatus: 409, body: { error: 'head_sha_unchanged', message: HEAD_SHA_UNCHANGED_MESSAGE } }
+      // This Claim already handed back a different head and was released: a new head needs a
+      // new revision Claim, not a repeat of this one.
+      return { ok: false, httpStatus: 409, body: { error: 'stale_claim', message: STALE_CLAIM_MESSAGE } }
     }
     return {
       ok: true,
@@ -865,21 +870,25 @@ export function openReviewRound(
   if (parentRow == null) return { ok: false, httpStatus: 404, body: { error: 'not_found' } }
   // The caller's Claim: the active lease on whichever task this device+owner holds that names
   // this parent. Find candidate children first, then fence the lease exactly like other tools.
+  // The device may hold Claims on several sibling sub-tasks; the one whose fence accepts this
+  // claim_id is the caller's. Only when none does is the first fence failure reported.
   const children = db.select().from(tasks).where(eq(tasks.parentTaskId, parentRow.task.id)).all()
   let childLease: { taskId: number } | undefined
+  let firstFailure: AgentServiceResult<never> | undefined
   for (const child of children) {
     const lease = selectActiveLease(db, child.id)
-    if (lease != null && lease.deviceId === auth.device.id) {
-      const fenced = resolveActiveLeaseForMutation(db, auth, child.id, claimId)
-      if (fenced.ok) {
-        childLease = { taskId: child.id }
-        break
-      }
-      return fenced.body.error === 'conflict'
-        ? { ok: false, httpStatus: 409, body: { error: 'stale_claim', message: STALE_CLAIM_MESSAGE } }
-        : fenced
+    if (lease == null || lease.deviceId !== auth.device.id) continue
+    const fenced = resolveActiveLeaseForMutation(db, auth, child.id, claimId)
+    if (fenced.ok) {
+      childLease = { taskId: child.id }
+      break
     }
+    firstFailure ??=
+      fenced.body.error === 'conflict'
+        ? { ok: false, httpStatus: 409, body: { error: 'stale_claim', message: STALE_CLAIM_MESSAGE } }
+        : (fenced as AgentServiceResult<never>)
   }
+  if (childLease == null && firstFailure != null) return firstFailure
   if (childLease == null) {
     // Distinguish "this device holds a Claim, just not on a child of this parent" (403) from
     // "no live Claim at all" (409 stale_claim).
@@ -1038,23 +1047,26 @@ export function notifyChildrenParentEnded(db: AppDb, parent: Task): void {
   const children = childrenOf(db, parent.id)
   for (const child of children) {
     try {
-      const message = insertMessage(db, {
-        taskId: child.id,
-        round: null,
-        authorKind: 'system',
-        authorUserId: null,
-        authorDeviceId: null,
-        kind: 'note',
-        bodyMd: `父任务 ${parent.publicId} 已进入「${parent.status}」。本任务状态不变，请发布者决定取消或改选父任务。`,
-        anchor: null,
-        replyToMessageId: null,
-        resolvesMessageId: null,
-        now: unixNow(),
-      })
-      insertAuditEvent(db, {
-        type: REVIEW_MESSAGE_EVENT,
-        actorUserId: null,
-        details: { task_id: child.publicId, message_id: message.id, kind: message.kind },
+      const message = db.transaction((tx) => {
+        const inserted = insertMessage(tx, {
+          taskId: child.id,
+          round: null,
+          authorKind: 'system',
+          authorUserId: null,
+          authorDeviceId: null,
+          kind: 'note',
+          bodyMd: `父任务 ${parent.publicId} 已进入「${parent.status}」。本任务状态不变，请发布者决定取消或改选父任务。`,
+          anchor: null,
+          replyToMessageId: null,
+          resolvesMessageId: null,
+          now: unixNow(),
+        })
+        insertAuditEvent(tx, {
+          type: REVIEW_MESSAGE_EVENT,
+          actorUserId: null,
+          details: { task_id: child.publicId, message_id: inserted.id, kind: inserted.kind },
+        })
+        return inserted
       })
       publishMessage(child.publicId, message)
     } catch {

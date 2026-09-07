@@ -473,6 +473,7 @@ function selectTaskRows(db: AppDb, publicId?: string): TaskWithPoster[] {
       task: tasks,
       posterUsername: users.username,
       reviewRound: submissions.reviewRound,
+      submissionState: submissions.prState,
       parentPublicId: parentTasks.publicId,
       parentStatus: parentTasks.status,
       parentBaseBranch: parentTasks.repoBaseBranch,
@@ -495,7 +496,9 @@ function selectTaskRows(db: AppDb, publicId?: string): TaskWithPoster[] {
     task: row.task,
     posterUsername: row.posterUsername,
     parentPublicId: row.parentPublicId ?? null,
-    reviewRound: row.reviewRound ?? 0,
+    // A closed / terminated PR is history: a task reopened after 已退回 starts its next delivery
+    // at round 0, so its brief must not advertise the ended delivery's round.
+    reviewRound: row.submissionState === 'closed' || row.submissionState === 'terminated' ? 0 : (row.reviewRound ?? 0),
     baseBranch: deriveBaseBranch(
       row.task,
       row.parentPublicId == null

@@ -4,6 +4,7 @@ import type { TaskStatus } from '@kaola/shared'
 import { and, eq, lte } from 'drizzle-orm'
 import type { AppDb } from './db.ts'
 import { type Lease, leases, submissions, tasks } from './schema.ts'
+import { publishStreamEvent } from './stream.ts'
 import { insertAuditEvent } from './vault.ts'
 
 export const LEASE_TTL_SECONDS = 86400
@@ -142,14 +143,18 @@ export function sweepExpiredLeases(db: AppDb): void {
     .all()
 
   for (const lease of expired) {
-    db.transaction((tx) => {
+    const moved = db.transaction((tx) => {
       tx.update(leases).set({ state: 'expired' }).where(eq(leases.id, lease.id)).run()
       const task = tx.select().from(tasks).where(eq(tasks.id, lease.taskId)).get()
       if (task == null || task.status !== '进行中') return
       // Issue #53 (§5): an expired revision Claim (the task already has a submission) parks the
       // task back in 待修改 so the next Agent can pick the revision up; a first Claim goes to 待认领.
       const hasSubmission =
-        tx.select({ id: submissions.id }).from(submissions).where(eq(submissions.taskId, task.id)).get() != null
+        tx
+          .select({ id: submissions.id })
+          .from(submissions)
+          .where(and(eq(submissions.taskId, task.id), eq(submissions.prState, 'open')))
+          .get() != null
       const to = transitionTaskStatus(task.status, hasSubmission ? '待修改' : '待认领') as TaskStatus
       tx.update(tasks).set({ status: to }).where(eq(tasks.id, task.id)).run()
       insertAuditEvent(tx, {
@@ -157,6 +162,9 @@ export function sweepExpiredLeases(db: AppDb): void {
         actorUserId: null,
         details: { task_id: task.publicId, from: '进行中', to },
       })
+      return { publicId: task.publicId, to }
     })
+    // §17.5: lease expiry is an SSE write point like every other status transition.
+    if (moved != null) publishStreamEvent('task_updated', { task_id: moved.publicId, status: moved.to })
   }
 }

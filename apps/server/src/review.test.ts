@@ -993,3 +993,78 @@ describe('issue #53 review loop — security-review hardenings', { concurrency: 
     assert.equal(okPhase.statusCode, 200)
   })
 })
+
+describe('issue #53 review loop — code-review repairs', { concurrency: false }, () => {
+  test('R1: a task reopened after 已退回 (terminated or closed PR) accepts a fresh submit_pr with a new PR', async (t) => {
+    const { app, stub, admin, db } = await boot(t)
+    const d = await deliverDraft(app, stub, admin, { prNumber: 161 })
+    assert.equal(jsonBody(await reviewPost(app, admin.cookies, d.brief.id, 'terminate')).task.status, '已退回')
+    assert.equal(submissionRow(db, taskRow(db, d.brief.id).id).pr_state, 'terminated')
+    const reopened = await app.inject({ method: 'PATCH', url: `/api/v1/tasks/${d.brief.id}`, cookies: admin.cookies, headers: jsonHeaders, payload: { status: '待认领' } })
+    assert.equal(reopened.statusCode, 200, reopened.body)
+    const dev = await pairClaimantDevice(app, admin.cookies, 'redeliver')
+    const claim = await claimOk(app, dev.identity, d.brief.id)
+    assert.equal(claim.task.review_round, 0, 'a new delivery starts at round 0')
+    const mcp = await mcpClient(app, dev.identity)
+    stub.pr.set('162', { body: prBody(162) })
+    const fresh = await mcp.ok('submit_pr', { task_id: d.brief.id, pr_url: `${FORGE_BASE_URL}/${REPO_FULL_NAME}/pulls/162`, summary: '第二次交付', claim_id: claim.lease.claim_id })
+    assert.equal(fresh.task.status, '待验收')
+    const view = jsonBody(await reviewGet(app, admin.cookies, d.brief.id))
+    assert.equal(view.pr_url, `${FORGE_BASE_URL}/${REPO_FULL_NAME}/pulls/162`)
+    assert.equal(view.round, 0)
+
+    // Same for a PR the forge closed.
+    const e = await deliverDraft(app, stub, admin, { prNumber: 163 })
+    stub.pr.set('163', { body: prBody(163, { state: 'closed', merged: false }) })
+    await pollPendingReviews(db)
+    assert.equal(taskRow(db, e.brief.id).status, '已退回')
+    await app.inject({ method: 'PATCH', url: `/api/v1/tasks/${e.brief.id}`, cookies: admin.cookies, headers: jsonHeaders, payload: { status: '待认领' } })
+    const claim2 = await claimOk(app, dev.identity, e.brief.id)
+    // A released Claim after a closed PR goes back to 待认领, not 待修改 (no live submission).
+    const released = await releaseHttp(app, dev.identity, e.brief.id, { claim_id: claim2.lease.claim_id })
+    assert.equal(jsonBody(released).task.status, '待认领')
+  })
+
+  test('R2: submit_pr head_branch lets a sub-task stack without any poller fetch', async (t) => {
+    const { app, stub, admin, db } = await boot(t)
+    const parent = await createTaskOk(app, admin.cookies, taskPayload({ title: '父' }))
+    const child = await createTaskOk(app, admin.cookies, taskPayload({ title: '子', parent_task_id: parent.id }))
+    const dev = await pairClaimantDevice(app, admin.cookies, 'stack')
+    const claim = await claimOk(app, dev.identity, parent.id)
+    const mcp = await mcpClient(app, dev.identity)
+    const prUrl = `${FORGE_BASE_URL}/${REPO_FULL_NAME}/pulls/171`
+    const tooLong = await mcp.err('submit_pr', { task_id: parent.id, pr_url: prUrl, summary: 'p', claim_id: claim.lease.claim_id, head_branch: 'b'.repeat(256) })
+    assert.equal(tooLong.error, 'invalid_body')
+    await mcp.ok('submit_pr', { task_id: parent.id, pr_url: prUrl, summary: 'p', claim_id: claim.lease.claim_id, head_sha: 'sha-171-1', head_branch: 'kaola/from-agent' })
+    assert.equal(submissionRow(db, taskRow(db, parent.id).id).head_branch, 'kaola/from-agent')
+    assert.equal(stub.requests.some((r) => r.url.includes('/pulls/171')), false, 'no PR fetch happened')
+    const childBrief = await mcp.ok('get_task_brief', { task_id: child.id })
+    assert.equal(childBrief.repo.base_branch, 'kaola/from-agent')
+  })
+
+  test('R4/R5: open_review_round finds the caller among sibling Claims; a released Claim with a new head is stale_claim', async (t) => {
+    const { app, stub, admin, db } = await boot(t)
+    const parent = await deliverDraft(app, stub, admin, { prNumber: 181 })
+    const childA = await createTaskOk(app, admin.cookies, taskPayload({ title: '子A', parent_task_id: parent.brief.id }))
+    const childB = await createTaskOk(app, admin.cookies, taskPayload({ title: '子B', parent_task_id: parent.brief.id }))
+    const dev = await pairClaimantDevice(app, admin.cookies, 'siblings')
+    const claimA = await claimOk(app, dev.identity, childA.id)
+    const claimB = await claimOk(app, dev.identity, childB.id)
+    const mcp = await mcpClient(app, dev.identity)
+    // claim_id of the SECOND sibling must be found even though the first sibling's fence rejects it.
+    const opened = await mcp.ok('open_review_round', { task_id: parent.brief.id, claim_id: claimB.lease.claim_id, items: [{ kind: 'blocking', body_md: '来自子B' }] })
+    assert.equal(opened.round.opened_by_task_id, childB.id)
+    assert.equal(taskRow(db, parent.brief.id).status, '待修改')
+    const bogus = await mcp.err('open_review_round', { task_id: parent.brief.id, claim_id: 'clm_bogus', items: [{ kind: 'note', body_md: 'x' }] })
+    assert.equal(bogus.error, 'stale_claim')
+    void claimA
+
+    // R5: revision Claim hands back h2, is released; the same Claim with h3 is stale, not "unchanged".
+    const rev = await pairClaimantDevice(app, admin.cookies, 'rev')
+    const revClaim = await claimOk(app, rev.identity, parent.brief.id)
+    const revMcp = await mcpClient(app, rev.identity)
+    await revMcp.ok('submit_revision', { task_id: parent.brief.id, claim_id: revClaim.lease.claim_id, pr_url: parent.prUrl, head_sha: 'sha-181-2', summary: 'r' })
+    const stale = await revMcp.err('submit_revision', { task_id: parent.brief.id, claim_id: revClaim.lease.claim_id, pr_url: parent.prUrl, head_sha: 'sha-181-3', summary: 'r2' })
+    assert.equal(stale.error, 'stale_claim')
+  })
+})

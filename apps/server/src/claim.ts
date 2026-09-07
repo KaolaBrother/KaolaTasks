@@ -1,7 +1,7 @@
 import { parsePrUrl } from '@kaola/forge-adapters'
 import { transitionTaskStatus } from '@kaola/shared'
 import type { TaskStatus } from '@kaola/shared'
-import { and, eq } from 'drizzle-orm'
+import { and, desc, eq } from 'drizzle-orm'
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import { addDeviceProofHook, requireDeviceAuth, type AgentPrincipal } from './device-proof.ts'
 export type { AgentPrincipal } from './device-proof.ts'
@@ -51,6 +51,20 @@ const PHASE_MAX_CHARS = 200
 // DESIGN §17.4: a sub-task is claimable once its parent has a PR to stack on (or is merged).
 const PARENT_READY_STATUSES: ReadonlySet<string> = new Set(['待验收', '待修改', '待合并', '已完成'])
 const CLAIMABLE_STATUSES: ReadonlySet<string> = new Set(['待认领', '待修改'])
+const HEAD_BRANCH_MAX_CHARS = 255
+
+// Issue #53: the task's LIVE submission — the open PR under review. A closed (已退回 via the
+// forge) or terminated (评审者「终止本次交付」) submission is history: after the poster reopens the
+// task, a fresh Claim may deliver a brand-new PR through submit_pr.
+export function liveSubmission(db: Pick<AppDb, 'select'>, taskId: number) {
+  return db
+    .select()
+    .from(submissions)
+    .where(and(eq(submissions.taskId, taskId), eq(submissions.prState, 'open')))
+    .orderBy(desc(submissions.id))
+    .limit(1)
+    .get()
+}
 const STATUS_TRANSITION_EVENT = '状态迁移'
 const TOKEN_REVEAL_EVENT = 'token 揭示'
 const HEARTBEAT_EVENT = '心跳'
@@ -761,7 +775,7 @@ export function releaseTask(
 
   const from = row.task.status
   // Issue #53 (§5): a revision Claim abandoned mid-way goes back to 待修改, not 待认领.
-  const hasSubmission = db.select({ id: submissions.id }).from(submissions).where(eq(submissions.taskId, row.task.id)).get() != null
+  const hasSubmission = liveSubmission(db, row.task.id) != null
   const to = transitionTaskStatus(from, hasSubmission ? '待修改' : '待认领') as TaskStatus
   const details =
     reason === undefined
@@ -807,6 +821,7 @@ export async function submitPr(
   summary: string,
   claimId?: string,
   headSha?: string,
+  headBranch?: string,
 ): Promise<AgentServiceResult<{
   task: ReturnType<typeof taskBrief>
   pr_url: string
@@ -857,9 +872,14 @@ export async function submitPr(
     }
   }
 
-  // Issue #53: submit_pr is the FIRST submission only. A task that already holds a submissions
-  // row is in its revision loop — the Agent must hand the new head back via submit_revision.
-  const priorSubmission = db.select({ id: submissions.id }).from(submissions).where(eq(submissions.taskId, row.task.id)).get()
+  if (headBranch !== undefined && (typeof headBranch !== 'string' || headBranch === '' || headBranch.length > HEAD_BRANCH_MAX_CHARS)) {
+    return { ok: false, httpStatus: 400, body: { error: 'invalid_body' } }
+  }
+
+  // Issue #53: submit_pr is the FIRST submission of a delivery. A task whose PR is still live is
+  // in its revision loop — the Agent must hand the new head back via submit_revision. A task
+  // reopened after 已退回 (closed / terminated PR) starts a new delivery with a new PR.
+  const priorSubmission = liveSubmission(db, row.task.id)
   if (priorSubmission != null) {
     return { ok: false, httpStatus: 409, body: { error: 'use_submit_revision', message: USE_SUBMIT_REVISION_MESSAGE } }
   }
@@ -909,6 +929,9 @@ export async function submitPr(
         // Issue #53 (D10): delivered as a Draft; head_sha is recorded when supplied, else the
         // poller backfills it from getPullRequest on its first look.
         headSha: typeof headSha === 'string' && headSha !== '' ? headSha : null,
+        // head_branch lets a sub-task stack on this PR even on a webhook-managed instance,
+        // where the poller never looks at the PR (api.md: zero fetches for that task).
+        headBranch: typeof headBranch === 'string' && headBranch !== '' ? headBranch : null,
         isDraft: true,
         reviewRound: 0,
       })

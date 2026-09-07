@@ -701,6 +701,7 @@ async function run(): Promise<void> {
       pr_url: pull.url,
       summary: line,
       head_sha: pushed.headSha,
+      head_branch: branch,
     })
     const submittedTask = submitted.task as { status?: string } | undefined
     if (submittedTask?.status !== '待验收') fail(`submit_pr expected 待验收: ${JSON.stringify(submitted)}`)

@@ -211,18 +211,28 @@ function createKaolaMcpServer(db: AppDb, authHolder: AuthHolder): McpServer {
     'submit_pr',
     {
       description:
-        'The required completion of the Workflow path: after Kaola Workflow finishes and a Draft PR or MR exists on the forge, submit its URL for a claimed in-progress task and move it to 待验收. FIRST submission only — a task that already has a PR answers use_submit_revision; hand revisions back with submit_revision. Optional head_sha records the delivered commit. claim_id is required for a Claim minted with request_id, optional for a legacy Claim; repeating submit_pr for the same Claim and pr_url is idempotent.',
+        'The required completion of the Workflow path: after Kaola Workflow finishes and a Draft PR or MR exists on the forge, submit its URL for a claimed in-progress task and move it to 待验收. FIRST submission only — a task that already has a PR answers use_submit_revision; hand revisions back with submit_revision. Optional head_sha records the delivered commit and optional head_branch the PR branch (supply it so sub-tasks can stack on this PR even where Kaola only learns about the PR via webhook). claim_id is required for a Claim minted with request_id, optional for a legacy Claim; repeating submit_pr for the same Claim and pr_url is idempotent.',
       inputSchema: {
         task_id: z.string(),
         pr_url: z.string(),
         summary: z.string(),
         claim_id: z.string().optional(),
         head_sha: z.string().optional(),
+        head_branch: z.string().optional(),
       },
     },
     async (args) =>
       toToolResult(
-        await submitPr(db, authHolder.auth, args.task_id, args.pr_url, args.summary, args.claim_id, args.head_sha),
+        await submitPr(
+          db,
+          authHolder.auth,
+          args.task_id,
+          args.pr_url,
+          args.summary,
+          args.claim_id,
+          args.head_sha,
+          args.head_branch,
+        ),
       ),
   )
 
