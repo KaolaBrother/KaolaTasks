@@ -1,6 +1,6 @@
 # 考拉任务（Kaola Tasks）设计文档
 
-> 版本：v0.5（2026-09-01）· 状态：草案；v0.5 增补：公网 HTTPS 为双模式合同 `DEBUG_PRIVATE_CA` / `STABLE_PUBLIC_CA`（DNS-01，不依赖入站 80）；`kaola-mcp` 保持严格 TLS 校验；仓库文档只用占位符，不写入真实主机名/端口/证书身份。同版另增补双模式 MCP 安装与证书信任（#48）——`STABLE_PUBLIC_CA` 公开 CA 默认路径严格系统信任、不装额外 CA、不设 `NODE_EXTRA_CA_CERTS`；`DEBUG_PRIVATE_CA` 测试路径每台纳管电脑都要信任同一份公开根证书：MCP 只通过进程级 `NODE_EXTRA_CA_CERTS`，系统/浏览器提权信任另一次显式授权。首次连接不得盲信服务器返回的 CA。服务端公网证书签发/续期由 #46 拥有（§12）；客户端安装与信任由 #48 拥有（§16 / §16.7）：package bin `kaola-mcp trust` 写入 `$KAOLA_HOME/trust/`（`root-ca.pem` + host-neutral `state.json`），`kaola-mcp --url` 只从已核验 state 注入额外 CA。v0.4：Claim MCP 完整生命周期以 Kaola Workflow 为默认工程协议、Kaola Project Runner 为用户显式选择的可选 carrier；兼容层单向归 Kaola Tasks，采用减法设计且不设置版本 hard gate。v0.3：管理员 ≠ 发布者——空库设置向导建 `local` 密码管理员；GitLab / Gitea OAuth 建发布者（可升级）；拿掉 GitHub 登录（适配器与发布表单的 GitHub 仓库仍在）。
+> 版本：v0.6（2026-09-07）· 状态：草案；v0.6 增补：评审循环（#53，§17）——代码事实在 forge、评审对话与协调在考拉；Agent 以 Draft PR 交付；新增中文规范状态 `待修改`（球在 Agent 手里、可认领）与 `待合并`（等 forge 合并），`已退回` 收窄为「PR 已关闭或交付被终止」；`submit_pr` 仅首次提交，修订经任意 Agent 认领 `待修改` 后以 `submit_revision` 交回同一 PR；新增 MCP 工具 `get_review_feedback` / `post_discussion_message` / `submit_revision` / `open_review_round`，`report_progress` 可带 `percent` / `phase`；六条评审 REST 与 `GET /api/v1/stream` SSE；`tasks.parent_task_id` 依赖子任务（堆叠基线、认领/通过门闩、父任务合并后自动 restack）；ForgeAdapter 新增 `markPullRequestReady` / `commentOnPullRequest`，`getPullRequest` 返回 `head_sha` / `draft` / `head_branch`。token 揭示通道不变。v0.5 增补：公网 HTTPS 为双模式合同 `DEBUG_PRIVATE_CA` / `STABLE_PUBLIC_CA`（DNS-01，不依赖入站 80）；`kaola-mcp` 保持严格 TLS 校验；仓库文档只用占位符，不写入真实主机名/端口/证书身份。同版另增补双模式 MCP 安装与证书信任（#48）——`STABLE_PUBLIC_CA` 公开 CA 默认路径严格系统信任、不装额外 CA、不设 `NODE_EXTRA_CA_CERTS`；`DEBUG_PRIVATE_CA` 测试路径每台纳管电脑都要信任同一份公开根证书：MCP 只通过进程级 `NODE_EXTRA_CA_CERTS`，系统/浏览器提权信任另一次显式授权。首次连接不得盲信服务器返回的 CA。服务端公网证书签发/续期由 #46 拥有（§12）；客户端安装与信任由 #48 拥有（§16 / §16.7）：package bin `kaola-mcp trust` 写入 `$KAOLA_HOME/trust/`（`root-ca.pem` + host-neutral `state.json`），`kaola-mcp --url` 只从已核验 state 注入额外 CA。v0.4：Claim MCP 完整生命周期以 Kaola Workflow 为默认工程协议、Kaola Project Runner 为用户显式选择的可选 carrier；兼容层单向归 Kaola Tasks，采用减法设计且不设置版本 hard gate。v0.3：管理员 ≠ 发布者——空库设置向导建 `local` 密码管理员；GitLab / Gitea OAuth 建发布者（可升级）；拿掉 GitHub 登录（适配器与发布表单的 GitHub 仓库仍在）。
 
 ---
 
@@ -26,6 +26,15 @@
 | D6 | 登录方式 | 两条进工作台的路，不要混：设置向导创建的考拉用户名/密码（`provider: 'local'`，管理员）；已有管理员之后的 GitLab / Gitea OAuth（发布者，可被升级为管理员）。**没有 GitHub 登录**（GitHub 适配器与发布表单里的 GitHub 仓库仍在） |
 | D7 | Token 附着方式 | 凭证档案（Credential Profile）复用为主，允许单任务临时 token 覆盖 |
 | D8 | 登录与权限分级 | `permission_level`：`admin`（管理员） / `full`（发布者） / 遗留 `claim_only`（不再新建）。空库（无可登录管理员）只许设置向导；OAuth 不得抢权。已有管理员后，GitLab / Gitea 登录一律建 `active`+`full` 发布者（无 `uninvited`）。管理员可把发布者升级为 `admin`。`KAOLA_ADMINS` 忽略、不炸 boot。认领者不是 Web 账号。Agent 鉴权为本机设备证明，不是自助 Agent Key |
+| D9 | 评审讨论的落点（#53） | **代码事实在 forge，评审对话与协调在考拉。** forge 上放 Draft PR、commits、CI、diff、最终合并；考拉放多轮意见、判定、阻塞项、「球在谁手里」。考拉不渲染 diff、不做行级评论，消息只携带跳转 forge 的代码锚点链接。这是对 §5「验收在 forge 上完成」的明确改向：验收**判定**在考拉，代码**合并**仍在 forge |
+| D10 | PR 形态（#53） | Agent 一开始就开 **Draft PR**（GitHub draft / GitLab `Draft:` / Gitea `WIP:`）。评审期间 forge 上安静无评论；考拉里「通过」时由服务端用任务凭证把 Draft 翻 ready；真人在 forge 点合并 |
+| D11 | 轮次（#53） | 评审者攒够意见后显式点一次「提交本轮意见」才翻状态；Agent 改完显式调一次 `submit_revision` 交回。任何一条消息本身不翻状态。一轮评审 = Workflow 里一个新的 recoverable outcome |
+| D12 | 修订归属（#53） | `submit_pr` / `submit_revision` **仍释放租约**。`待修改` 是一个新的可认领态：任何 Agent 都可以 `claim_task` 认领它做修订，不绑定原 Agent |
+| D13 | 依赖子任务（#53） | `tasks` 增加 `parent_task_id`。子任务的基线分支是父任务 PR 的 head 分支（堆叠）。**父任务进入 `待验收` 后子任务即可认领**；子任务的「通过」要等父任务 `已完成`。子任务 Agent 发现父任务问题时可对父任务开一轮意见，把父任务打回 `待修改` |
+| D14 | 冲突与 rebase（#53） | 考拉不解冲突，认领的 Agent 解。父任务合并后，考拉自动给子任务追加一轮 `restack` 意见，由下一个认领它的 Agent rebase 到新基线并解冲突 |
+| D15 | Agent 感知（#53） | 保持 pull 模型。Agent 自行轮询 `list_tasks(status=待修改)`；`report_progress` 心跳携带 `percent` / `phase`。考拉不向已下线的 Agent 推送 |
+| D16 | 人的感知（#53） | 服务端提供 SSE 流，Web 看板与评审面板实时刷新，不用手工刷新 |
+| D17 | 合并（#53） | 保留给 forge 上的真人。考拉不用任务 token approve 或 merge（token 身份是发布者/bot，会让 forge 审计失真） |
 
 ## 3. 角色与核心概念
 
@@ -82,10 +91,18 @@ flowchart LR
 stateDiagram-v2
     [*] --> 待认领: 发布/导入（token 校验通过）
     待认领 --> 进行中: claim_task（揭示 token，建立租约）
-    进行中 --> 待认领: 租约过期 / release_task
-    进行中 --> 待验收: submit_pr
-    待验收 --> 已完成: PR 合并（webhook/轮询检测）
-    待验收 --> 已退回: PR 被关闭 / 验收不通过
+    进行中 --> 待认领: 租约过期 / release_task（任务尚无提交）
+    进行中 --> 待修改: 租约过期 / release_task（任务已有提交，即修订中途放弃）
+    进行中 --> 待验收: submit_pr（首次，Draft PR，记录 head_sha）/ submit_revision（修订交回）
+    待验收 --> 待修改: 评审者「提交本轮意见」且含阻塞项 / 子任务 open_review_round / 父任务已完成触发 restack
+    待修改 --> 进行中: 任意 Agent claim_task（修订 Claim）
+    待验收 --> 待合并: 评审者「通过」（子任务需父任务已完成）；服务端把 Draft 翻 ready
+    待合并 --> 待修改: 评审者「撤回通过」
+    待合并 --> 已完成: forge 上合并（webhook/轮询检测 merged）
+    待验收 --> 已退回: PR 被关闭 / 评审者「终止本次交付」
+    待修改 --> 已退回: PR 被关闭 / 评审者「终止本次交付」
+    待合并 --> 已退回: PR 被关闭 / 评审者「终止本次交付」
+    待修改 --> 已取消: 发布者取消
     已退回 --> 待认领: 发布者重新开放
     待认领 --> 已取消: 发布者取消
     已退回 --> 已取消: 发布者取消
@@ -93,11 +110,25 @@ stateDiagram-v2
     已取消 --> [*]
 ```
 
+中文规范值恰好八个：`待认领`、`进行中`、`待验收`、`待修改`、`待合并`、`已完成`、`已退回`、`已取消`（#53 新增 `待修改`、`待合并`）。合法边（`transitionTaskStatus`，与上图逐条对应）：
+
+| from | to |
+|------|----|
+| `待认领` | `进行中`、`已取消` |
+| `进行中` | `待认领`（尚无提交）、`待修改`（已有提交）、`待验收` |
+| `待验收` | `待修改`、`待合并`、`已退回` |
+| `待修改` | `进行中`、`已退回`、`已取消` |
+| `待合并` | `待修改`、`已完成`、`已退回` |
+| `已退回` | `待认领`、`已取消` |
+
+看板列语义：`待验收` 球在评审者手里；`待修改` 球在 Agent 手里（可认领）；`待合并` 等 forge 合并。**`已退回` 语义收窄**为「PR 已关闭或交付被终止」，不再表示「需要修改」——需要修改是 `待修改`。`待验收 → 已完成` 这条旧边不再存在：合并前必须先经考拉「通过」进入 `待合并`。
+
 规则：
 
 - **发布即校验**：任务发布/导入时，适配层用所附 token 实测权限（能否读仓库、能否推分支、能否创建 PR）。token 失效或权限不足的任务不会出现在看板上。
 - **认领即租约**：默认 TTL 建议 24h（可按任务配置）。Agent 通过 `report_progress` 心跳续约；租约过期自动回到"待认领"，只撤销 Kaola Tasks 自身的生命周期权威与 Claim 锁定——揭示的 forge 凭证是可复用的仓库凭证，不因租约过期或释放而被吊销（措辞修正与 per-Claim 铸造/吊销的非目标见 §15「凭证语义」）。
-- **验收在 forge 上完成**：发布者在 forge 上按正常流程 review PR，考拉只反映状态（PR 开了 → 待验收；合并 → 已完成）。导入型任务同时把状态以评论形式回写到源 Issue。
+- **验收判定在考拉，合并在 forge**（D9，#53 改向）：Agent 以 Draft PR 交付（`submit_pr` → `待验收`）；评审者在考拉的任务评审面板里写多轮意见并显式「提交本轮意见」（含阻塞项则 `待验收 → 待修改`）或「通过」（`待验收 → 待合并`，服务端用任务凭证把 Draft 翻 ready）；真人在 forge 合并，poller / webhook 检测 merged 后 `待合并 → 已完成`。`待修改` 可被任意 Agent 认领做修订，改完 `submit_revision` 交回同一 PR。考拉不渲染 diff、不做行级评论、不 approve、不 merge。导入型任务仍把认领 / 提交 PR / 完成以评论形式回写到源 Issue。细则见 §17。
+- **一任务一 PR，forward-only**：`submit_revision` 校验 `pr_url` 与首次提交一致（canonical 相等）；不开第二个 PR。
 
 ## 6. 任务卡（Task Brief）Schema
 
@@ -130,8 +161,11 @@ stateDiagram-v2
   },
   "pr_convention": {
     "branch_prefix": "kaola/kt-2026-0142-",
-    "title_prefix": "[kt-2026-0142] "
+    "title_prefix": "[kt-2026-0142] ",
+    "draft": true                     // #53：以 Draft PR（GitHub draft / GitLab Draft: / Gitea WIP:）交付
   },
+  "parent_task_id": null,            // #53：依赖子任务时为父任务的 id（kt-…），否则 null
+  "review_round": 0,                 // #53：当前评审轮次；> 0 表示认领到的是修订 Claim
   "credential": { "profile_id": "cp-gitea-orders" },  // 二选一，见下方说明
   "priority": "P1",
   "tags": ["backend", "api"],
@@ -142,6 +176,8 @@ stateDiagram-v2
 ```
 
 **`id` 形式**：`kt-<年份>-<四位序号>`（如 `kt-2026-0142`），全局唯一且可读；`pr_convention` 的分支前缀与标题前缀由它派生。平台内部另有自增主键，不对外暴露。
+
+**#53 增补键**：`pr_convention.draft` 恒为 `true`（提示 Agent 以 Draft 形态开 PR）；`parent_task_id` 可空（子任务指向父任务的 `id`）；`review_round` 为当前轮次整数（0 = 尚未开轮）。子任务的 `repo.base_branch` 由服务端派生：父任务处于 `待验收` / `待修改` / `待合并` 时 = 父任务 PR 的 head 分支（堆叠）；父任务 `已完成` 后 = 父任务自己的 `base_branch`；父任务尚未提交时保留发布时的值。其余键不变；仍不含 token。
 
 **`credential` 是引用，不是 token 本身**，两种形态二选一：
 
@@ -200,7 +236,7 @@ Web「发布」页的收集规则（HTTP 仍是现有 `POST /api/v1/tasks` / `PO
   | gitea | Authorization | token ${token} |
 
 - **全量审计**：每次揭示记录哪台电脑、何时、拿走了哪个档案的 token（认领者为 `claimant` 时无 `users` 行）；档案页提供一键吊销（删除档案 + 提示去 forge 侧撤销）。
-- **在用凭证不可删**：被 `待认领`/`进行中`/`待验收`/`已退回` 任一非终态任务引用的凭证档案不能删除（`DELETE` 返回 `409` `credential_profile_in_use`）；只有任务已终态（已完成/已取消）或无引用时才能删——这样一个仍在进行的 Claim 永远能重新解密出它认领时拿到的同一份凭证（#36）。
+- **在用凭证不可删**：被 `待认领`/`进行中`/`待验收`/`待修改`/`待合并`/`已退回` 任一非终态任务引用的凭证档案不能删除（`DELETE` 返回 `409` `credential_profile_in_use`）；只有任务已终态（已完成/已取消）或无引用时才能删——这样一个仍在进行的 Claim 永远能重新解密出它认领时拿到的同一份凭证（#36）。
 - **无账号认领者（token 即访问权）**：认领者**不需要**在目标 forge 上有账号。Agent 用揭示的顶层 `token` 按 `clone` 四键克隆：目录 `clone.suggested_dir`，远端 `clone.remote_url`（无凭证的 HTTPS git URL），请求头按 `clone.extra_header`（见上表）把 token 代入 `value_pattern` 后走 `git -c http.extraHeader`，再向**同一仓库**推分支（不走 fork——fork 才需要账号）、再用同一 token 调 API 开 PR/MR。因此发布校验必须包含"能否推分支"。身份归属：PR 显示的是 token 所属身份（发布者或项目 bot），但 commit author 可自由设置为认领者姓名/邮箱（无需账号），PR 描述底部附"claimed by @认领者 via Kaola Tasks"，考拉侧审计日志保存真实认领记录。推荐用 GitLab Project Access Token（Developer 角色，`api` + `write_repository`）/ Gitea 仓库 token / GitHub fine-grained PAT 实现此模式。
 
   见上表。
@@ -218,15 +254,21 @@ interface ForgeAdapter {
   listIssues(cred: Credential, repo: RepoRef): Promise<ListedIssue[]>
 
   // 状态闭环
-  getPullRequest(cred: Credential, prUrl: string): Promise<PrStatus>    // open/merged/closed
+  getPullRequest(cred: Credential, prUrl: string): Promise<PrStatus>    // #53：{ state, head_sha, draft, head_branch }
   registerWebhook?(cred: Credential, repo: RepoRef, callback: string): Promise<void>
   parseWebhook(headers: Headers, body: unknown): ForgeEvent | null
 
   // 回写
   commentOnIssue(cred: Credential, issueRef: IssueRef, body: string): Promise<void>
+  listIssueComments(cred: Credential, issueRef: IssueRef): Promise<string[]>
+
+  // #53 评审循环：只在「通过」时使用
+  markPullRequestReady(cred: Credential, prUrl: string): Promise<void>   // Draft → ready
+  commentOnPullRequest(cred: Credential, prUrl: string, body: string): Promise<void>
 }
 
 type ListedIssue = { number: number; title: string; issue_url: string }
+type PrStatus = { state: 'open' | 'merged' | 'closed'; head_sha: string; draft: boolean; head_branch: string }
 ```
 
 `listIssues` 行为（三份实现相同，纳入同一套共享 spec）：
@@ -245,9 +287,17 @@ type ListedIssue = { number: number; title: string; issue_url: string }
 
 用该档案行的 forge / base_url / repo_full_name 解密后调 `listIssues`。`200` `{ issues: [{ number, title, issue_url }] }`。缺行或非正整数 id → `404` `{ error: 'not_found' }`。`VAULT_MASTER_KEY` 缺失或非法 → `500` `{ error: 'vault_unconfigured' }`。forge HTTP 401 → `422` `{ error: 'token_check_failed', missing: ['读'], message: 'token 无效或无权读取该 Issue。' }`（与 import 同源文案）。其它非 OK 或网络失败 → `502` `{ error: 'forge_unreachable', message: '无法连接 forge 列出 Issue。' }`（并列于 import 的「无法连接 forge 导入 Issue。」，不要共用那一句）。列表路由没有「单条 Issue 找不到」语义，不要把 import 的 404/410 → `issue_not_found` 套过来。
 
+`markPullRequestReady` / `commentOnPullRequest` 行为（#53，三份实现相同，纳入同一套共享 spec）：
+
+- `markPullRequestReady`：GitHub 走 GraphQL `markPullRequestReadyForReview`（REST 不支持；先 REST 读 PR 取 `node_id`）；GitLab `PUT /projects/:id/merge_requests/:iid` 去掉标题 `Draft:` / `WIP:` 前缀；Gitea `PATCH /repos/:owner/:repo/pulls/:index` 去掉标题 `WIP:` 前缀。已经 ready 的 PR 幂等成功。非 OK 抛 `markPullRequestReady: ${kind} responded ${status}`。
+- `commentOnPullRequest`：GitHub / Gitea 走 issue comments 端点（PR 编号即 issue 编号）；GitLab 走 MR `notes`。非 OK 抛 `commentOnPullRequest: ${kind} responded ${status}`。
+- 两者的 host / 超时规则与 `getPullRequest` / `commentOnIssue` 相同（GitHub → `api.github.com`；GitLab / Gitea → 构造函数 `baseUrl`；#37 `timeoutMs`）。
+- `getPullRequest` 扩展返回 `head_sha`（GitHub / Gitea `head.sha`，GitLab `sha`）、`draft`（GitHub `draft`；GitLab `draft` / `work_in_progress`；Gitea 标题 `WIP:` 前缀）、`head_branch`（GitHub / Gitea `head.ref`，GitLab `source_branch`）。
+- `parseWebhook` 不在 #53 扩展非终态事件。
+
 要点：
 
-- 三份实现放在 `packages/forge-adapters`，共享一套集成测试规格（同一组行为断言跑三个后端；`listIssues` 计入该套规格）。
+- 三份实现放在 `packages/forge-adapters`，共享一套集成测试规格（同一组行为断言跑三个后端；`listIssues`、`markPullRequestReady`、`commentOnPullRequest` 计入该套规格）。
 - GitLab / Gitea 构造时接收 `baseUrl`；GitHub 固定 api.github.com（如未来有 GHE 也只是多一个 baseUrl）。
 - Webhook 打不进来的实例（内网 Gitea 等）配置为轮询模式：对"待验收"任务定时查 PR 状态即可，量小、代价低。
 
@@ -257,12 +307,39 @@ type ListedIssue = { number: number; title: string; issue_url: string }
 
 | 工具 | 参数 | 行为 |
 |------|------|------|
-| `list_tasks` | `status?` `tags?` `forge?` | 列出任务（不含 token）；待授权设备不可用 |
+| `list_tasks` | `status?` `tags?` `forge?` | 列出任务（不含 token）；待授权设备不可用。`status` 可为 `待修改`（可认领的修订任务）；每张任务卡带 `parent_task_id`、`review_round`（#53） |
 | `get_task_brief` | `task_id` | 返回 §6 的完整 JSON（不含 token） |
-| `claim_task` | `task_id` `autonomous?` `request_id?` | 建立租约；返回任务卡 + **揭示 token** + 租约（含 `claim_id`、TTL）+ `clone` 四键（`suggested_dir`、`token_usage`、`remote_url`、`extra_header`）。已绑定设备即授权，无需二次确认（自主轮询场景见 M3；#16 仅绑到 Web 用户的路径）。同一 `(device, request_id)` 重放幂等返回同一 Claim，摘要（任务、`autonomous`）不一致时是 `claim_request_conflict`（#36） |
-| `report_progress` | `task_id` `note` `claim_id?` | 心跳续约 + 进度记录（展示在任务详情时间线）；曾带 `request_id` 的新式 Claim 必须附 `claim_id`，遗留 Claim 可省（#31） |
-| `submit_pr` | `task_id` `pr_url` `summary` `claim_id?` | 提交交付物，任务转"待验收"；`pr_url` 须能解析且属于该任务仓库，同一 Claim + 同一 URL 重复提交幂等（#31） |
-| `release_task` | `task_id` `reason` `claim_id?` | 主动放弃，任务回"待认领"；同一 Claim 重复释放幂等（#31） |
+| `claim_task` | `task_id` `autonomous?` `request_id?` | 建立租约；返回任务卡 + **揭示 token** + 租约（含 `claim_id`、TTL）+ `clone` 四键（`suggested_dir`、`token_usage`、`remote_url`、`extra_header`）。已绑定设备即授权，无需二次确认（自主轮询场景见 M3；#16 仅绑到 Web 用户的路径）。同一 `(device, request_id)` 重放幂等返回同一 Claim，摘要（任务、`autonomous`）不一致时是 `claim_request_conflict`（#36）。**#53**：允许认领 `待修改` 任务（修订 Claim，信封不变；任务卡 `review_round` > 0 即表示修订）。对子任务：父任务未到 `待验收` / `待修改` / `待合并` / `已完成` 时 `409` `parent_not_ready` |
+| `report_progress` | `task_id` `note` `claim_id?` `percent?` `phase?` | 心跳续约 + 进度记录（展示在任务详情时间线）；曾带 `request_id` 的新式 Claim 必须附 `claim_id`，遗留 Claim 可省（#31）。**#53**：可选 `percent`（0–100 整数，越界 `400` `invalid_body`）、`phase`（短文本）；省略时行为与以前完全一致 |
+| `submit_pr` | `task_id` `pr_url` `summary` `claim_id?` `head_sha?` | **仅首次提交**（#53）：提交 Draft PR，任务转"待验收"，记录 `head_sha`（省略时由 poller 首次拉取补齐）与 `is_draft`；`pr_url` 须能解析且属于该任务仓库，同一 Claim + 同一 URL 重复提交幂等（#31）。任务已有 `submissions` 行时 `409` `use_submit_revision` |
+| `release_task` | `task_id` `reason` `claim_id?` | 主动放弃；任务尚无提交时回"待认领"，已有提交时回"待修改"（#53）；同一 Claim 重复释放幂等（#31） |
+| `submit_revision` | `task_id` `claim_id` `pr_url` `head_sha` `summary` | **#53 新增**。修订交回：校验 `pr_url` 与首次提交一致（canonical 相等，否则 `422` `pr_url_invalid`）、`head_sha` 与上一轮不同（否则 `409` `head_sha_unchanged`）；写 `submission_revisions`、`review_rounds.revised_at`，`进行中 → 待验收`；释放租约。同一 Claim 同一 `head_sha` 重复调用幂等 `200`。返回 `{ task, pr_url, head_sha, round }`，不含 token |
+| `get_review_feedback` | `task_id` `round?` | **#53 新增**。只读，不需要 Claim，不含 token（不是第三条揭示通道）。返回 Review Brief（见下）；`round` 省略 = 当前轮；尚未开轮时 `round` 为 0、`verdict` 为 `null`、列表为空 |
+| `post_discussion_message` | `task_id` `claim_id` `body_md` `kind` `reply_to?` `resolves?` `anchor?` | **#53 新增**。需要该任务的活动 Claim（无活动 Claim 或 `claim_id` 不匹配 → `409` `stale_claim`）。`kind` ∈ `blocking` / `suggestion` / `question` / `answer` / `note` / `resolution`；`resolves` 指向本任务的一条 `blocking` 消息 id，`kind=resolution` 时把它标为已解决。返回写入的消息，不含 token |
+| `open_review_round` | `task_id` `claim_id` `items[]` | **#53 新增**。`task_id` 是**父任务**，`claim_id` 是调用者在**子任务**上的活动 Claim（该 Claim 的任务 `parent_task_id` 必须等于 `task_id`，否则 `403` `forbidden`）。`items[]` 每项 `{ kind, body_md, anchor? }`。父任务处于 `待验收` 时转 `待修改`，`review_rounds.kind = downstream_finding`，`opened_by_task_id` = 子任务；处于其他状态时只追加消息不翻状态 |
+
+所有 #53 新增响应不含 token。**Review Brief**（`get_review_feedback` 返回值，REST `GET …/review` 的 `current` 同形）：
+
+```jsonc
+{
+  "task_id": "kt-2026-0142",
+  "pr_url": "…",
+  "round": 2,
+  "kind": "review",                       // review | downstream_finding | restack
+  "head_sha": "abc123",
+  "base_branch": "main",                  // restack 时为新基线
+  "verdict": "changes_requested",         // changes_requested | approved | terminated | withdrawn | null
+  "blocking": [
+    { "id": 17, "author": "li.na", "kind": "blocking",
+      "body_md": "分页边界少了 page=0 的处理",
+      "anchor": { "path": "src/api/export.ts", "line": 42, "head_sha": "abc123", "url": "…" },
+      "resolved": false }
+  ],
+  "non_blocking": [ … ],                  // 同形，kind 为 suggestion / question / note
+  "thread": [ … ],                        // 本轮全部消息，按时间序（含 answer / resolution / system）
+  "source_trust": "internal"              // internal（考拉内真人）| forge（汇入的外部评论，非受信）
+}
+```
 
 REST 认领/进度/释放与 MCP 同一套设备证明。另加 Web 端专用的档案管理、审计查询、OAuth 回调等接口。
 
@@ -275,11 +352,14 @@ REST 认领/进度/释放与 MCP 同一套设备证明。另加 Web 端专用的
 | `devices` | fingerprint、公钥、hostname（不可信）、status（`pending` / `active` / `expired` / `revoked`）。**活跃**设备的所有者恰好是 `claimant_id` 或 `user_id` 之一；**待授权**两者皆空。待授权窗口 `pending_expires_at`（首次见到起 1 天）；绑定后 `expires_at` 由所有者 `device_max_age_days` 自 `paired_at` 计算 |
 | `agent_keys` | 遗留：user_id、key_hash、label、last_used_at。MCP / 认领 / whoami 不再用 Agent Key Bearer |
 | `credential_profiles` | forge、base_url、repo_full_name、token_encrypted、scopes_checked、created_by |
-| `tasks` | §6 各字段 + status、credential_profile_id / inline_token_encrypted（二选一） |
+| `tasks` | §6 各字段 + status、credential_profile_id / inline_token_encrypted（二选一）；**#53** `parent_task_id`（可空，自引用 `tasks.id`；只允许指向非终态任务，不允许自指 / 指向后代 / 环） |
 | `leases` | task_id、claimer 为 `claimer_user_id` 或 `claimer_claimant_id`、**`device_id`**、claimed_at、expires_at、last_heartbeat、state、**`request_id`**（可空，`(device_id, request_id)` 部分唯一索引，#36 幂等 Claim 身份键）。`claim_id` 不落库，是该行不可变字段（`id`/`task_id`/`device_id`/`claimed_at`/`request_id`/claimer）派生的公开编码（见 §9、§15） |
 | `claim_confirmations` | #16：task_id、user_id（仅绑到 Web 用户）、**`device_id`**、state、created_at |
-| `submissions` | task_id、**`lease_id`**（唯一索引，一 Claim 一次提交，#31）、**`pr_url`**（规范化后的绝对 URL，同一 URL 不得被另一任务的进行中提交占用）、summary、pr_state |
-| `events` | 审计与时间线：类型（状态迁移 / token 揭示 / 心跳 / 回写 / 管理员创建 / 权限变更）、主体、时间、详情 JSON。向导成功 `管理员创建`，`details` 恰好 `{ user_id }`；升级 `权限变更`，`details` `{ target_user_id, from, to }`。两者不得有密码、哈希、token |
+| `submissions` | task_id、**`lease_id`**（唯一索引，一 Claim 一次提交，#31；仍指首次提交的 Claim）、**`pr_url`**（规范化后的绝对 URL，同一 URL 不得被另一任务的进行中提交占用）、summary、pr_state；**#53** `head_sha`（可空）、`head_branch`（可空）、`is_draft`（默认 false）、`review_round`（当前轮次，默认 0）。一任务一 PR |
+| `submission_revisions` | **#53 新增**：`submission_id`、`lease_id`（唯一，一修订 Claim 一次交回）、`round`、`head_sha`、`summary`、`submitted_at` |
+| `review_rounds` | **#53 新增**：`task_id`、`round`、`kind`（`review` / `downstream_finding` / `restack`）、`opened_by_user_id`（可空）、`opened_by_task_id`（可空，子任务开轮时记子任务）、`verdict`（`changes_requested` / `approved` / `terminated` / `withdrawn`）、`opened_at`、`revised_at`（可空）、`revision_head_sha`（可空）。`(task_id, round)` 唯一 |
+| `discussion_messages` | **#53 新增**：`task_id`、`round`（可空 = 尚未归轮）、`author_kind`（`reviewer` / `agent` / `system` / `forge`）、`author_user_id` / `author_device_id`（可空）、`kind`（`blocking` / `suggestion` / `question` / `answer` / `note` / `resolution`）、`body_md`、`anchor`（可空 JSON `{ path, line, head_sha, url }`）、`reply_to_message_id`（可空）、`resolves_message_id`（可空）、`created_at` |
+| `events` | 审计与时间线：类型（状态迁移 / token 揭示 / 心跳 / 回写 / 管理员创建 / 权限变更；**#53** 新增 `评审开轮`、`评审交回`、`评审通过`、`评审终止`、`评审撤回`、`restack`、`评审消息`，`details` 只放 `task_id`、`round`、`pr_url`、`head_sha`、`kind` 等短字段，不放长文本，不放 token）、主体、时间、详情 JSON。向导成功 `管理员创建`，`details` 恰好 `{ user_id }`；升级 `权限变更`，`details` `{ target_user_id, from, to }`。两者不得有密码、哈希、token |
 
 SQLite 足够内部团队规模；Drizzle 之上留好升级 Postgres 的余地（不用 SQLite 特有特性）。
 
@@ -495,3 +575,65 @@ openssl x509 -in <dev-root-ca.pem> -noout -fingerprint -sha256
 3. 其它任何不一致：fail closed，不启动桥。
 
 `trust status` 用同一套规则报告是否 ready。`trust uninstall` 删除该目录下的 PEM 与 state，不删 `device.json` 或 Claim receipts。
+
+## 17. 评审循环（#53）
+
+本节冻结考拉内多轮评审、修订 Claim、依赖子任务与实时进度流。它不改变 token 揭示通道（仍只有 REST claim `201` 与 MCP `claim_task` 成功）、设备证明、Claim/Lease 身份、OAuth 身份，也不让服务端运行 Agent / Workflow / git、解冲突、rebase、approve 或 merge。六个既有工具的输入 schema 只做可选字段追加。
+
+### 17.1 分工
+
+```text
+forge（代码事实层）                 考拉（协调对话层）
+─────────────────────              ─────────────────────────────
+Draft PR / 分支 / commits          任务级讨论线程（人 ↔ Agent，多轮）
+CI 结果                            轮次、判定、阻塞项清单、处理状态
+diff 与行级锚点                      「球在谁手里」的任务状态
+最终 ready + 合并                   依赖子任务、restack、进度流
+```
+
+评审期间考拉对 forge PR 的写操作只有两处：「通过」时把 Draft 翻 ready；可选地写一条摘要评论（「经考拉 N 轮评审通过，讨论见 kt-xxxx」，由 `KAOLA_REVIEW_SUMMARY_COMMENT=1` 开启，默认关闭）。
+
+### 17.2 评审者与 REST（会话）
+
+评审者 = 任何 `active` 且 `admin` / `full` 的 Web 用户（MVP 不加 `reviewers` 字段）。非 `admin` / `full` → `403` `{ error: 'forbidden' }`；无会话走现有 401/302。
+
+| 路由 | 行为 |
+|------|------|
+| `GET /api/v1/tasks/:publicId/review` | 返回 `{ task_id, status, pr_url, head_sha, round, rounds: [...], messages: [...], current: <Review Brief> }` |
+| `POST /api/v1/tasks/:publicId/review/messages` | 写一条未归轮消息 `{ body_md, kind, anchor?, reply_to?, resolves? }`；`kind` 同 §9；可带 `anchor`（粘贴 forge diff 链接时前端解析出 `path:line`）。任务不在 `待验收` / `待修改` / `待合并` → `409` `illegal_transition`。不翻状态 |
+| `POST /api/v1/tasks/:publicId/review/rounds` | 「提交本轮意见」：把当前未归轮的消息归入新一轮（`kind = review`）；含 `blocking` 消息时 `待验收 → 待修改`（`verdict = changes_requested`），否则只归轮不翻状态（`verdict` 为空）。没有未归轮消息 → `409` `no_pending_messages`。任务不在 `待验收` → `409` `illegal_transition` |
+| `POST /api/v1/tasks/:publicId/review/approve` | 「通过」：`待验收 → 待合并`；子任务父未 `已完成` → `409` `parent_not_completed`；成功后异步把 Draft 翻 ready（`scheduleWriteback` 同模式，不阻塞响应），可选摘要评论 |
+| `POST /api/v1/tasks/:publicId/review/withdraw` | 「撤回通过」：`待合并 → 待修改`（`verdict = withdrawn` 的新一轮） |
+| `POST /api/v1/tasks/:publicId/review/terminate` | 「终止本次交付」：`待验收 / 待修改 / 待合并 → 已退回`（`verdict = terminated`） |
+| `GET /api/v1/stream` | SSE（§17.5） |
+
+翻 ready 失败不回滚 `待合并`：写失败 outcome（`回写` 事件 `transition: '翻ready'`），`retryPendingWritebacks` 同款重试；成功写 `events` `评审通过`（`details` `{ task_id, round, pr_url }`）。翻 ready / 摘要评论走服务端解密后出站，从不返回 token。
+
+### 17.3 Agent 侧（MCP）
+
+见 §9 表。要点：认领 `待修改` 任务后先调 `get_review_feedback`，把 Review Brief 作为本轮 mission 输入；在同一 PR 上推新提交；期间可 `post_discussion_message`（`answer` / `resolution` / `question`）；改完调 `submit_revision`（新 `head_sha`）交回 `待验收`，租约释放。修订 Claim 中途 `release_task` 或租约过期 → 任务回 `待修改`，不是 `待认领`。评审文本进入 Agent 上下文时带 `source_trust`；`author_kind = forge` 的消息按导入 Issue 同级对待（非受信）。
+
+### 17.4 依赖子任务与 restack
+
+- 发布：`POST /api/v1/tasks` 可带 `parent_task_id`（父任务 `kt-…`）；父不存在 → `400` `invalid_body`；父为终态（`已完成` / `已取消`）、指向自身、或形成环 → `409` `parent_invalid`。
+- 认领门闩：父任务状态 ∉ {`待验收`, `待修改`, `待合并`, `已完成`} 时子任务不可认领（`409` `parent_not_ready`）。
+- 通过门闩：父任务 ≠ `已完成` 时子任务不可「通过」（`409` `parent_not_completed`）。
+- 派生 `base_branch`：见 §6。
+- restack：父任务转 `已完成` 时，服务端对每个子任务：追加一条 `system` 消息与一轮 `kind = restack`（`details` 含新基线分支与父 PR URL）；子任务处于 `待验收` → `待修改`；处于 `待认领` / `进行中` / `待修改` / `待合并` 只追加不翻状态。写 `events` `restack`。
+- 反向意见：子任务 Agent 通过 `open_review_round` 把父任务打回 `待修改`（§9）。
+- 父 `已退回` / `已取消`：子任务追加 `system` 消息提示，不自动取消，由发布者决定取消或改父。
+
+### 17.5 SSE
+
+`GET /api/v1/stream`：会话；`待批准` 或无会话 → `401`。`Content-Type: text/event-stream`。事件 `task_updated`（`{ task_id, status }`）、`progress`（`{ task_id, percent, phase }`；不含 `note`）、`review_round`（`{ task_id, round, kind, verdict }`）、`discussion_message`（`{ task_id, message_id, kind, author_kind }`）；体只含 `task_id` 与短摘要，永不含 token、`body_md` 长文本或密文。每 30s 一条注释行 `: ping` 心跳。服务关闭时所有连接被关闭，无悬挂计时器。写入点：状态迁移（claim / release / 过期 / submit / revision / 评审动作 / poller / webhook / 发布者 PATCH）、`report_progress`、评审动作、讨论消息。
+
+### 17.6 不变式
+
+- token 只在 REST claim `201` 与 MCP `claim_task` 成功揭示；Review Brief、讨论消息、SSE、评审 REST、所有新增响应、日志、`events.details` 不得出现 token / ciphertext。
+- 翻 ready / 摘要评论走服务端解密后出站（同 poller / writeback），从不返回。
+- 评审文本进入 Agent 上下文时带 `source_trust`。
+- 一任务一 PR，forward-only。
+- 三家 adapter 行为一致，新增方法全部进共享集成测试合同。
+- 状态值使用本文中文规范值；UI 中文。
+- 服务端不运行 Agent、Workflow、git；不解冲突、不 rebase、不 merge、不 approve。
+- 不做合并队列；不向下线的 Agent 推送；不引入服务端长轮询等待工具。

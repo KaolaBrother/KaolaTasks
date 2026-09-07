@@ -52,25 +52,38 @@ browser / kaola-mcp
                                                  token; claim_id required for a new-style Claim, claim_id_
                                                  required 400 / stale_claim 409, #31)
                 /api/v1/tasks/:publicId/release  device-proof POST { reason?, claim_id? } (200 task; no
-                                                 token; idempotent repeat for an already-released Claim, #31)
+                                                 token; idempotent repeat for an already-released Claim, #31;
+                                                 back to 待修改 instead of 待认领 once a submission exists, #53)
+                /api/v1/tasks/:publicId/review   session GET rounds + messages + current Review Brief (#53, review.ts)
+                /api/v1/tasks/:publicId/review/messages|rounds|approve|withdraw|terminate
+                                                 session POST (active admin|full); 提交本轮意见 / 通过 / 撤回通过 /
+                                                 终止本次交付; approve flips Draft → ready off the response path
+                GET /api/v1/stream               session SSE (#53, stream.ts): task_updated / progress /
+                                                 review_round / discussion_message; ": ping" every 30s; no token
                 /api/v1/claim-confirmations      session admin GET list / POST :id/approve|reject (#16;
                                                  approve/reject never insert a lease or reveal a token)
                 /api/v1/events                   session GET newest-first (#15; 待批准 is 401, stricter than tasks)
                 /api/v1/stats                    session GET { completed_count, completed_by_username } (#15)
-                POST /api/mcp                    device-proof Streamable HTTP (six MCP tools;
+                POST /api/mcp                    device-proof Streamable HTTP (six MCP tools + #53's
+                                                 submit_revision / get_review_feedback /
+                                                 post_discussion_message / open_review_round;
                                                  unbound → 202 authorization_required; claim_task
                                                  optional autonomous, #16)
                 GET/DELETE /api/mcp              405 JSON-RPC -32000 Method not allowed
                 POST /api/v1/webhooks/:publicId  no session, no Bearer — forge signature is the sole auth
                                                  (registerWebhooks; :publicId is a forgeInstances[] id, not a task)
                 pollPendingReviews(db, forgeInstances?)  not a route; setInterval per buildApp({ pollIntervalMs })
-                                                 drives 待验收 → 已完成/已退回 via getPullRequest;
+                                                 drives 待合并 → 已完成 (merged) and 待验收/待修改/待合并 → 已退回
+                                                 (closed) via getPullRequest; backfills head_sha; restacks
+                                                 children of a completed parent (#53);
                                                  skips tasks matching a syncMode: 'webhook' instance
                 attemptWriteback / retryPendingWritebacks  not a route; writeback.ts (#14)
                                                  posts a commentOnIssue status comment for imported tasks
                                                  on 认领 / 提交PR / 完成(merged only); never blocks its caller
                 SQLite users, agent_keys, credential_profiles, tasks, events, leases, submissions,
-                       claim_confirmations (createDb; claim_confirmations and users.trusted_automation new in #16)
+                       claim_confirmations (createDb; claim_confirmations and users.trusted_automation new in #16),
+                       review_rounds, discussion_messages, submission_revisions (#53; tasks.parent_task_id and
+                       submissions.head_sha / head_branch / is_draft / review_round added by idempotent ALTER)
                 unique indexes: leases_one_active_per_task on leases(task_id) WHERE state = 'active';
                        leases_device_request_identity on leases(device_id, request_id) WHERE request_id
                        IS NOT NULL (#36); submissions_lease_id on submissions(lease_id) (#31)
