@@ -56,6 +56,8 @@ browser / kaola-mcp
                                                  back to 待修改 instead of 待认领 once a submission exists, #53)
                 /api/v1/tasks/:publicId/review   session GET rounds + messages + current Review Brief (#53, review.ts)
                 /api/v1/tasks/:publicId/review/messages|rounds|approve|withdraw|terminate
+                                                 (approve first reads the live PR head with the task credential — #54:
+                                                 409 head_sha_stale when it disagrees with the recorded head_sha)
                                                  session POST (active admin|full); 提交本轮意见 / 通过 / 撤回通过 /
                                                  终止本次交付; approve flips Draft → ready off the response path
                 GET /api/v1/stream               session SSE (#53, stream.ts): task_updated / progress /
@@ -74,7 +76,8 @@ browser / kaola-mcp
                                                  (registerWebhooks; :publicId is a forgeInstances[] id, not a task)
                 pollPendingReviews(db, forgeInstances?)  not a route; setInterval per buildApp({ pollIntervalMs })
                                                  drives 待合并 → 已完成 (merged) and 待验收/待修改/待合并 → 已退回
-                                                 (closed) via getPullRequest; backfills head_sha; restacks
+                                                 (closed) via getPullRequest; backfills head_sha; records the
+                                                 observed forge head every tick (#54, task_updated on change); restacks
                                                  children of a completed parent (#53);
                                                  skips tasks matching a syncMode: 'webhook' instance
                 attemptWriteback / retryPendingWritebacks  not a route; writeback.ts (#14)
@@ -83,7 +86,8 @@ browser / kaola-mcp
                 SQLite users, agent_keys, credential_profiles, tasks, events, leases, submissions,
                        claim_confirmations (createDb; claim_confirmations and users.trusted_automation new in #16),
                        review_rounds, discussion_messages, submission_revisions (#53; tasks.parent_task_id and
-                       submissions.head_sha / head_branch / is_draft / review_round added by idempotent ALTER)
+                       submissions.head_sha / head_branch / is_draft / review_round added by idempotent ALTER;
+                       #54 submissions.forge_head_sha / forge_head_seen_at likewise)
                 unique indexes: leases_one_active_per_task on leases(task_id) WHERE state = 'active';
                        leases_device_request_identity on leases(device_id, request_id) WHERE request_id
                        IS NOT NULL (#36); submissions_lease_id on submissions(lease_id) (#31)

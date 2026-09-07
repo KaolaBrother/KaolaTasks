@@ -102,7 +102,7 @@ sequenceDiagram
 | `submit_pr` | 首次交付：forge 上已有 **Draft** PR/MR 后再交 URL（可带 `head_sha`）；同上 `claim_id` 规则，重复提交同一 Claim + 同一 URL 是幂等的。任务已有 PR 时回 `use_submit_revision` |
 | `get_review_feedback` | 读 Review Brief：本轮判定、阻塞项（带锚点、是否已解决）、非阻塞项、全部对话、`head_sha`、`base_branch`（restack 轮是新基线）。只读，不需要 Claim |
 | `post_discussion_message` | 持有活动 Claim 时在讨论里回答（`answer`）、提问、备注，或 `resolution` + `resolves` 标记某条阻塞项已处理 |
-| `submit_revision` | 修订交回：同一 PR 上推了新提交后交新 `head_sha`（必须与上一轮不同）和摘要，任务回「待验收」，租约释放 |
+| `submit_revision` | 修订交回：同一 PR 上推了新提交后交新 `head_sha`（必须与上一轮不同）和摘要，任务回「待验收」，租约释放。评审者「通过」前考拉会核对 forge 当前头与交回的 `head_sha`，不一致会拒绝——交回后不要再推未申报的提交 |
 | `open_review_round` | 在子任务的 Claim 上给父任务开一轮意见；父任务在「待验收」时会被打回「待修改」 |
 
 用返回的 `clone` 去克隆：按 `extra_header` 带令牌，不要把 token 写进 remote URL。提交 PR 只有 MCP 的 `submit_pr`。协议细节见 [docs/api.md](docs/api.md)。
