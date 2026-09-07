@@ -370,6 +370,7 @@ SQLite 足够内部团队规模；Drizzle 之上留好升级 Postgres 的余地�
 
   - **空库 / 零可登录管理员**：只许设置向导。`POST /api/v1/setup` `{ username, password }`（`display_name` 可省，默认等于 username）→ `201` + 会话；第一个人成为 `local` 管理员。向导只跑一次。并发第二次 → `409` `{ error: 'setup_complete' }`。缺字段/空用户名 → `400`。GitLab / Gitea / GitHub OAuth **不得**插 `users`、不得发会话。回调只重定向向导/登录页。
   - **已有管理员之后**：`POST /api/v1/login` `{ username, password }` → `200` + 会话；失败一律 `401`（不透露用户是否存在）。所有 GitLab / Gitea 登录都建发布者（`active`+`full`），不再 `/login?reason=uninvited`，不再插 `待批准` / `claim_only`。
+  - **备用 HTML 表单**：`GET /login` 的向导及登录表单以 `application/x-www-form-urlencoded` 提交到相同 setup/login 端点；仅这两个端点接受该格式。成功建立会话后以 `303` 跳转 `/`；JSON 调用仍返回原 `201`/`200` 公共用户响应。表单携带的 `Origin` 若与 `PUBLIC_URL` 的 origin 不一致（含 `null`）返回 `403 forbidden`，不创建用户或会话；字段及失败状态沿用 JSON 合同。
   - **`GET /login/github` 与 callback 404**（不注册 OAuth start）。不删 GitHub 适配器。
   - **升级**：任何管理员 `POST /api/v1/users/:id/promote` 把 GitLab/Gitea 的 `active`+`full` 升为 `admin`（同一 OAuth 身份，不另开密码号）。已是 `admin` → 幂等 `200`。GitHub / local / 缺失 → `404` 或 `400`。不再用向导开第二个密码管理员。本条不做降级、删用户、改密、自助找回。
   - **`GET /api/v1/users`**：仅管理员 → `{ users: [{ id, provider, username, display_name, status, permission_level }] }`，无哈希。

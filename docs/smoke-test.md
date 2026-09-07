@@ -245,3 +245,101 @@ GitHub 发布冒烟已停（此前仓 [Issue #1](https://github.com/KaolaBrother
 
 - 两家：撤销冒烟 PAT；项目 `kaola-tasks-smoke` 可删。
 - 工作台：删掉对应凭证档案；**解除这台电脑的授权**（不要再走「吊销 Agent Key」当收尾）。若某一轮中途停下、任务还停在 `待认领`/`进行中`/`待验收`/`已退回` 任一非终态，删档案会先被 `409 credential_profile_in_use` 挡住（#36）——需先把那条任务推进到终态再删档案，可行动作按当前状态而定：`待认领`/`已退回` 可由发布者直接取消；`进行中`/`待验收` **不能**直接取消（`已取消` 只允许从 `待认领`/`已退回` 迁移，见 `tasks.ts` 的 `POSTER_TRANSITIONS`）。`进行中` 可以等 lease 过期（`LEASE_TTL_SECONDS = 86400`，即 24 小时）自动掉回 `待认领` 后再取消，或由认领方 `release_task`；`待验收` 的 lease 在 `submit_pr` 时就已释放，没有可等的过期，只能等 PR 合并（`已完成`）或关闭（`已退回`，之后可取消）。
+
+
+## 2026-09-07–08 VPS 综合 UAT（功能闭环通过，仍有未通过／未执行项）
+
+本轮将本机 `main` 从 `13ce1fb` 快进到抓取的 `origin/main` `6ba97d6`，按 DESIGN v0.7 扩展旧闭环，覆盖八状态、十个 MCP 工具、多轮评审、头版本锚定、依赖子任务及 SSE。复用原 `DEBUG_PRIVATE_CA` Ubuntu VPS、管理员、两份共享凭证档案和已配对客户端。部署 API、生产 `kaola-mcp` launcher 与浏览器均连接真实 VPS；Git/forge 操作复用现有 smoke helper。不把注入会话脚本结果计作 VPS 结果。
+
+**结论：两家 Forge 的部署闭环、子任务 restack 和已执行的安全／状态负例通过；本轮不能标记“全项通过”。** Linux Web 自动测试出现内存耗尽；真实 OAuth 重授权、新设备人工绑定及终止按钮确认框未完整执行。它们与已通过项目分别记录。
+
+### 验收证据
+
+| 范围 | 实际证据 | 判定 |
+|---|---|---|
+| 本机基础回归 | frozen install、lint、typecheck、build 退出 0；Node **1049/1049**，Web **166/166** | PASS |
+| GitLab 标准路径 B | [Issue #32](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/issues/32) → [MR !28](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/merge_requests/28)；两轮修订、头漂移拒绝、ready、真实合并与回写 | PASS；不是 VPS 进程 |
+| Gitea 标准路径 B | [Issue #48](https://gitea.com/KaolaBrother/kaola-tasks-smoke/issues/48) → [PR #49](https://gitea.com/KaolaBrother/kaola-tasks-smoke/pulls/49)；同一闭环 | PASS；不是 VPS 进程 |
+| VPS 升级与字节 | 独立目录 frozen install/build；切换前备份旧部署、环境和数据库；新版健康检查成功、评审表创建；**607 个文件 SHA-256 一致**（排除本轮正在写的本手册） | PASS |
+| 旧数据保留 | 备份与升级库按旧列逐行对比：users 3、credential_profiles 2、tasks 2、leases 2、submissions 2 全部一致；旧任务仍可见 | PASS |
+| 既有身份与严格 TLS | 原管理员在真实浏览器登录；原设备经生产 launcher 发现全部 **10 个工具**并 `list_tasks`；显式核验既有根 CA 的严格 HTTPS；匿名列表 401 | PASS；不是新设备批准或真实 OAuth 重授权 |
+| 两家 VPS 原闭环 | 档案复用、真实 Issue 导入／发布、Brief、Claim、clone/push、Draft PR、`submit_pr`、审批、ready、合并、部署 poller 更新 `已完成` | PASS；资源见下表 |
+| Claim 恢复 | active replay 同一 claim_id/token；release 回 `待认领`；终止 receipt 轮换后新 Claim；跨 launcher 进程恢复；percent/phase 心跳 | PASS |
+| 两家多轮评审 | 阻塞消息本身不翻状态；归轮到 `待修改`；反馈、resolution、同 PR 新 SHA 交回；修订 release 回 `待修改`；换 PR 收到 `pr_url_invalid` | PASS |
+| 头漂移与中文界面 | 两家均做未申报 push；浏览器「通过」被中文提示拒绝，显示记录头与当前头；补阻塞意见、归轮、正式交回后可通过 | PASS |
+| 审批锚定与回退 | GitLab 初次通过、子任务通过的审计 `head_verified=true`；两家主任务最后一次通过为 `false`，锚定 SHA 与交回一致，走 §17.7 允许的读取失败回退分支 | PASS；不得把后两次称为实时 Forge 头已核验 |
+| 撤回通过 | GitLab `待合并 → 待修改`；同 SHA 交回被 `head_sha_unchanged` 拒绝；新提交重新交回并通过 | PASS |
+| 子任务完整闭环 | 浏览器发布父子关系；父未就绪拒绝认领；Claim 堆叠到父分支；子任务 `open_review_round` 令父回 `待修改`；父未完成禁止子通过；父合并后自动 restack；rebase 到 main、同 PR 交回、通过、合并 | PASS |
+| 终止、重开、PR 关闭 | 非阻塞意见归轮仍 `待验收`；真实 REST terminate → `已退回`；发布者重开 → `待认领`；新 PR 可重新 `submit_pr`；真实关闭 PR 后部署 poller → `已退回`；随后取消 | PASS；浏览器终止确认单列为未完成 |
+| 签名／状态负例 | 原始 REST 旧 claim_id 收到 `stale_claim`；percent 101 拒绝；nonce 重放及过期时间戳 401；父子取消；终态父不能再创建子任务；非法状态审批 409；匿名评审 401 | PASS |
+| SSE | 浏览器不手动刷新即可观察进度、评审轮数、父子任务及状态换列；独立真实 SSE 流收到 progress/task_updated，未包含 progress note 或令牌 | PASS |
+| 完成与脱敏 | 两家源 Issue 实际收到认领／提交 PR／完成三类评论；`翻ready` 与审批 SHA 有审计；核对 **161 条事件**及已读取响应无两家 PAT／管理员密码 | PASS；重领会产生新的认领评论，不把类别数写成总评论数 |
+| 新客户端信任／待授权 | 全新客户端以已核验根指纹执行生产 `trust install --pem … --fingerprint …`；生产 launcher 返回 `authorization_required`，没有自动绑定或匿名成功 | PASS 到 pending；管理员人工批准尚未执行 |
+| Linux Node 自动回归 | 原测试日志的 **1049 tests、256 suites、1049 pass、0 fail**；随后确实进入 Web 测试 | PASS |
+| Linux Web 自动回归 | 首次 **158/166** 后 worker 异常退出；内核记录 OOM 杀掉测试会话中的 Node。单 worker、600 MiB cgroup／384 MiB V8 堆限制重试仍堆耗尽，出现失败后主动结束本轮测试服务 | 未通过；本机 166/166 不能替代 Linux 结果 |
+| 其余合同回归 | 三 adapter 共享合同、webhook、并发审批、异设备 fencing、租约过期、故障与重试、trust／Runner 兼容 | 自动回归 PASS；未逐一制造真实 VPS 故障场景 |
+| 人工／平台边界 | 真实 GitLab/Gitea OAuth 回调重验、新设备管理员人工绑定、Linux Claim 客户端、Windows 客户端 | 本轮未执行；既有用户和设备保留不替代这些步骤 |
+| 终止按钮确认框 | 浏览器点击后交互超时，未取得可处理的对话框；改以真实 REST 验证状态行为 | UI 未完成；不写成 UI PASS |
+| 公开 CA | 当前采用既有私有 CA 模式 | 不适用；未验证干净机器默认信任 |
+
+### 最终业务现场
+
+| 任务 | 真实 Forge 资源 | 收尾状态 |
+|---|---|---|
+| `kt-2026-0003` GitLab 父任务 | [Issue #33](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/issues/33) / [MR !29](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/merge_requests/29) | PR 已合并，VPS `已完成`，第 6 轮 |
+| `kt-2026-0004` Gitea | [Issue #50](https://gitea.com/KaolaBrother/kaola-tasks-smoke/issues/50) / [PR #51](https://gitea.com/KaolaBrother/kaola-tasks-smoke/pulls/51) | PR 已合并，VPS `已完成`，第 3 轮 |
+| `kt-2026-0005` GitLab 子任务 | [MR !30](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/merge_requests/30) | restack 后合并，VPS `已完成`，第 2 轮 |
+| `kt-2026-0006`、`kt-2026-0007` | 原生负例父子任务，无 PR | 均 `已取消` |
+| `kt-2026-0008` | [Gitea PR #52](https://gitea.com/KaolaBrother/kaola-tasks-smoke/pulls/52)、[PR #53](https://gitea.com/KaolaBrother/kaola-tasks-smoke/pulls/53) | 两个测试 PR 均已关闭，终止／重开／关闭回写验收后 `已取消` |
+
+两条旧任务仍为 `已完成`。停服前全库 **8 个任务均在终态：5 已完成、3 已取消；20 条 lease 全部 released，无活跃 Claim**。保留测试记录、备份及旧部署，不用旧库覆盖本轮数据。
+
+### 连接中断的调查与更正
+
+中段发生 SSH banner exchange 与严格 TLS 握手超时。经用户已登录的 Safari 阿里云 Workbench 成功进入 Linux；随后原 SSH 与 HTTPS 恢复。Linux uptime 连续，任务服务 `NRestarts=0`，没有重启 VPS 或任务服务来恢复连接。内核在 00:03 记录全局 OOM，杀掉本轮测试会话中的 Node；首次 Web 测试于 00:06 以失败结束。恢复时负载均值为 0.10／15.12／58.18、约 937 MB 内存可用。资源压力是有证据支持的主要解释，但不能仅凭这些记录证明每一次握手超时的唯一原因。
+
+用户确认 VPN 始终开启，且早期 SSH、严格 TLS 和 VPS UAT 已在该条件下成功。此前把排查重点放在 VPN 缺乏证据；本轮未改动或关闭 VPN。此小内存共享 VPS 的全量 Web 自动测试没有通过，后续不应再把未限额全量测试与验收服务同时运行。受限重试只约束本轮测试进程，任务服务在验收期间保持运行。
+
+测试驱动的 `trust install` 参数、浅 clone 后 force-with-lease 的期望引用，以及审批回退断言曾不符合现有合同，均在本地不跟踪的驱动中纠正后接续；不把这些驱动错误算作产品故障。GitLab 子任务推送重试先核对远端仍是本轮旧 SHA，再以显式 lease 推送。详细日志和真实环境标识只留在本地 operator receipt。
+
+### 按用户要求停服
+
+验收及业务现场核对完成后，执行 `systemctl stop kaola-tasks`。实测 `ActiveState=inactive`、`SubState=dead`、`MainPID=0`，应用监听已关闭；SSH 仍可登录，反代严格 TLS 仍通过、上游停止后返回 502（此次为预期停服结果）。本轮受限 Web 测试服务也已停止。保留数据库和部署供后续接续。
+
+
+## 2026-09-08 本地 Linux 接续与 UAT 修复
+
+按用户要求，将 `6ba97d6` 的生产构建部署到本机 Colima Linux 容器，使用只绑定 `127.0.0.1:31415` 的本地服务；受保护地迁移停服后的数据库和既有配置。构建上下文来自 Git archive，不含环境文件或 operator receipt。回归镜像补齐测试所需的 MCP workspace manifest、OpenSSL 和 Git；产品 Dockerfile 未改动。本轮随后发现并修复备用 HTML 表单的 415，最终镜像包含下述 auth 修复和四项回归测试。
+
+用户明确授权使用 `.env` 和既有账号会话自主完成剩余操作；本轮由 Agent 操作真实浏览器和 API，不称为本人手动点选。该授权只解释本轮执行方式，不修改本手册其他轮次的配合约定。
+
+| 范围 | 实际结果 |
+|---|---|
+| 原源码 Linux 回归 | Node **1049/1049**、Web **166/166** 全过，补足原 VPS Web OOM 后缺失的 Linux 证据 |
+| 最终修复版 Linux 回归 | Node **1053/1053**、0 fail、0 cancelled；Web 完整复查 **166/166**。2 CPU／4 GiB，Node 并发 2、Web 单 worker |
+| 本地生产服务 | Vue 管理员登录、旧任务保留、10 个 MCP 工具、匿名 401 均通过 |
+| Linux 新设备 | 未绑定先返回 `authorization_required`；以管理员真实 API 绑定；独立 Linux 生产 launcher 认领、跨进程 receipt replay、进度、释放、取消全部通过。修复版复验任务 `kt-2026-0011`，此前用例 `kt-2026-0010`，均已取消 |
+| 网页设备绑定 | Safari 管理员实际点「绑到我自己」，原 pending 新 Mac 设备进入已授权列表；生产 launcher 随后发现 10 个工具并成功 `list_tasks` |
+| GitLab 真实 OAuth | `.env` 原本已有本地应用；首次误选 VPS 配置导致回调被拒。改用已有本地 client 后，Safari 既有 GitLab 会话完成真实回调，工作台显示 `KaolaBrother · GitLab · 发布者`；最终修复版再次通过 |
+| Gitea 真实 OAuth | 使用 `.env` PAT 经真实管理 API 创建本轮独立本地 OAuth 应用；Safari 通过已有 GitHub 登录会话进入 Gitea，实际点击「应用授权」，真实回调后显示 `KaolaBrother · Gitea · 发布者`；最终修复版再次通过。未模拟 token exchange 或 userinfo |
+| 终止 UI | `kt-2026-0009` / [Gitea PR #54](https://gitea.com/KaolaBrother/kaola-tasks-smoke/pulls/54)；Safari 原生确认框点「取消」保持待验收，再点「好」转为已退回。此前内置浏览器确认框工具受限，没有继续替代成 REST 后声称 UI 通过 |
+| 重开与关闭回写 | 同一任务重开、生产 MCP 再认领、[Gitea PR #55](https://gitea.com/KaolaBrother/kaola-tasks-smoke/pulls/55) 重新 submit、真实关闭、部署 poller 转已退回、最终取消；两个测试 PR 均关闭 |
+| 备用 HTML 表单缺陷 | Safari `/login` 原表单 POST 返回 **415 FST_ERR_CTP_INVALID_MEDIA_TYPE**，空库向导同样缺少解析。先补测试复现，再修复仅 setup/login 的 urlencoded parser，成功以 303 回工作台，保留 JSON 201/200；拒绝跨 origin 表单。修复后 Safari 实际表单登录并跳转成功 |
+| 修复回归 | 新增四项测试：表单向导与一次性门闩、正确／错误密码、跨 origin 不建用户或会话、其他 API 不接受表单格式；定向 auth/cookie **25/25**。lint、typecheck、build 全通过 |
+
+完整 Web 回归首次有一项 `App.error-envelope.test.ts` 的 403 发布提示断言报 `missing [data-testid="task-message"]`（165/166）；该文件及 Web 产品代码未改。原样单文件复查 **11/11** 通过。随后原样完整 Web 复查 **166/166、9/9 文件通过**。保留首轮失败，不把重跑写成从未失败；该单次异步提示断言波动的根因未在本轮认定。
+
+### VPS 已按后续指令卸载清理
+
+此前“保留部署和备份”的现场已被用户后续明确清理指令取代。清理前已在本机保存接续所需的受保护配置与停服数据库。VPS 上已删除 Kaola Tasks systemd unit、部署及旧部署、SQLite 数据、该服务备份、私有 CA/反代站点、测试日志与临时构建文件、专用 kaola 用户、安装的 Node 22 目录和对应命令链接；卸载本次安装且无其他使用者的 nginx、Docker/Compose/containerd 及其测试依赖，删除空容器数据和本次安装时产生的 corepack/pnpm 缓存。
+
+清理前核实 Docker 容器、镜像、卷均为空，未发现安装在 VPS 的 GitLab/Gitea 服务；两家 smoke 仓库在外部 forge，不属于 VPS 软件卸载。清理后 `kaola-tasks` 为 `LoadState=not-found`、`ActiveState=inactive`，node/docker/nginx 命令及专用用户均不存在。既有 `kaola-relay`、`rustdesk-hbbs`、`rustdesk-hbbr` 三项服务仍 active。保留共享 SSH 配置、其他服务和系统级 apt/journal 审计记录，不删除整机共享日志。
+
+详细日志与敏感配置只留在不跟踪的本地 operator receipt。Windows 客户端、公开 CA 干净机器默认信任，以及未逐项制造的真实 VPS 故障场景均不包含在本轮通过范围；已有自动合同覆盖与真实设备／服务验收分开计。
+
+
+### 本地接续最终收尾
+
+验收后的数据库为 **11 个任务均终态：5 已完成、6 已取消；24 条 lease 全部 released**。GitLab/Gitea 用户均保持 `active/full`，本地用户为 `active/admin`；没有 OAuth 权限提升。核对 **191 条事件**不含两家 PAT 或管理员密码。修复版容器中的 auth 源码和新增测试 SHA-256 与工作区一致。
+
+本轮选定的 GitLab/Gitea 业务闭环、八状态／十工具扩展、macOS/Linux 客户端、真实 OAuth、设备绑定和终止 UI 已完成；此前缺项由上述本地真实环境接续补齐。Windows、公开 CA 与未制造的故障场景仍按上面的边界记录。验收后已停止本地 `kaola-tasks-local-uat` 容器（`exited`、`Running=false`），保留本地受保护的数据库、配置和证据供复现。VPS 已完成上述卸载清理。

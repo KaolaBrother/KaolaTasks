@@ -25,6 +25,8 @@ Depends on hosting options (unauthenticated):
 
 HTML 200 (`text/html; charset=utf-8`). When `countLoginableAdmins` is 0 (no `active`+`admin` row with `provider` `local` | `gitlab` | `gitea`), the body is the setup wizard (`<form method="post" action="/api/v1/setup">`, username/password; no `/login/gitlab` or `/login/gitea` links, no `/login/github`). After at least one loginable admin: local password form (`POST /api/v1/login`) plus links to `/login/gitlab` and `/login/gitea` only.
 
+Both fallback forms submit `application/x-www-form-urlencoded` to their existing endpoint. Only setup/login accept that media type; successful form requests establish the session and return `303 Location: /`. JSON success responses remain `201`/`200`. A supplied form `Origin` must equal the configured `PUBLIC_URL` origin; a mismatch (including `null`) returns `403 { error: 'forbidden' }` without creating a user or session. Validation and unsuccessful response statuses follow the JSON contract.
+
 `@kaola/web` probes `GET /api/v1/setup` and shows card title `初始向导` vs `登录` the same way (no GitHub button).
 
 ### `GET /api/v1/setup`

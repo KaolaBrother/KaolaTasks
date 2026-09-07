@@ -507,66 +507,83 @@ export function registerAuth(app: FastifyInstance, db: AppDb) {
     return reply.send({ setup_complete: countLoginableAdmins(db) > 0 })
   })
 
-  app.post('/api/v1/setup', async (request, reply) => {
-    if (countLoginableAdmins(db) > 0) {
-      return reply.code(409).send({ error: 'setup_complete' })
-    }
-    const body = request.body as { username?: unknown; password?: unknown; display_name?: unknown }
-    const username = typeof body?.username === 'string' ? body.username.trim() : ''
-    const password = typeof body?.password === 'string' ? body.password : ''
-    if (username === '' || password === '') {
-      return reply.code(400).send({ error: 'invalid_body' })
-    }
-    const displayName =
-      typeof body?.display_name === 'string' && body.display_name.trim() !== ''
-        ? body.display_name.trim()
-        : username
-    const passwordHash = await hashPassword(password)
-    let inserted: User
-    try {
-      const row = db
-        .insert(users)
-        .values({
-          provider: 'local',
-          remoteId: 'local',
-          username,
-          displayName,
-          status: 'active',
-          permissionLevel: 'admin',
-          passwordHash,
-        })
-        .returning()
-        .get()
-      if (row == null) throw new Error('failed to insert local admin')
-      inserted = row
-    } catch (err) {
-      if (isUniqueConstraintError(err) || countLoginableAdmins(db) > 0) {
+  app.register(async function localAuthenticationForms(localAuth) {
+    const formType = 'application/x-www-form-urlencoded'
+    const isForm = (request: FastifyRequest) =>
+      request.headers['content-type']?.split(';')[0]?.trim().toLowerCase() === formType
+    localAuth.addContentTypeParser(formType, { parseAs: 'string' }, (_request, body, done) => {
+      done(null, Object.fromEntries(new URLSearchParams(String(body))))
+    })
+    localAuth.addHook('preValidation', async (request, reply) => {
+      const origin = request.headers.origin
+      if (isForm(request) && origin != null && origin !== new URL(publicUrl).origin) {
+        return reply.code(403).send({ error: 'forbidden' })
+      }
+    })
+
+    localAuth.post('/api/v1/setup', async (request, reply) => {
+      if (countLoginableAdmins(db) > 0) {
         return reply.code(409).send({ error: 'setup_complete' })
       }
-      throw err
-    }
-    insertAuditEvent(db, {
-      type: '管理员创建',
-      actorUserId: inserted.id,
-      details: { user_id: inserted.id },
+      const body = request.body as { username?: unknown; password?: unknown; display_name?: unknown }
+      const username = typeof body?.username === 'string' ? body.username.trim() : ''
+      const password = typeof body?.password === 'string' ? body.password : ''
+      if (username === '' || password === '') {
+        return reply.code(400).send({ error: 'invalid_body' })
+      }
+      const displayName =
+        typeof body?.display_name === 'string' && body.display_name.trim() !== ''
+          ? body.display_name.trim()
+          : username
+      const passwordHash = await hashPassword(password)
+      let inserted: User
+      try {
+        const row = db
+          .insert(users)
+          .values({
+            provider: 'local',
+            remoteId: 'local',
+            username,
+            displayName,
+            status: 'active',
+            permissionLevel: 'admin',
+            passwordHash,
+          })
+          .returning()
+          .get()
+        if (row == null) throw new Error('failed to insert local admin')
+        inserted = row
+      } catch (err) {
+        if (isUniqueConstraintError(err) || countLoginableAdmins(db) > 0) {
+          return reply.code(409).send({ error: 'setup_complete' })
+        }
+        throw err
+      }
+      insertAuditEvent(db, {
+        type: '管理员创建',
+        actorUserId: inserted.id,
+        details: { user_id: inserted.id },
+      })
+      await persistSession(request, inserted.id, { skipUntrusted: true })
+      if (isForm(request)) return reply.redirect('/', 303)
+      return reply.code(201).send(publicUser(inserted))
     })
-    await persistSession(request, inserted.id, { skipUntrusted: true })
-    return reply.code(201).send(publicUser(inserted))
-  })
 
-  app.post('/api/v1/login', async (request, reply) => {
-    const unauthorized = () => reply.code(401).send({ error: 'unauthorized' })
-    const body = request.body as { username?: unknown; password?: unknown }
-    const username = typeof body?.username === 'string' ? body.username : ''
-    const password = typeof body?.password === 'string' ? body.password : ''
-    const user = findLocalUser(db, username)
-    if (user == null || user.passwordHash == null || user.status !== 'active') {
-      return unauthorized()
-    }
-    const ok = await verifyPassword(password, user.passwordHash)
-    if (!ok) return unauthorized()
-    await persistSession(request, user.id, { skipUntrusted: true })
-    return reply.send(publicUser(user))
+    localAuth.post('/api/v1/login', async (request, reply) => {
+      const unauthorized = () => reply.code(401).send({ error: 'unauthorized' })
+      const body = request.body as { username?: unknown; password?: unknown }
+      const username = typeof body?.username === 'string' ? body.username : ''
+      const password = typeof body?.password === 'string' ? body.password : ''
+      const user = findLocalUser(db, username)
+      if (user == null || user.passwordHash == null || user.status !== 'active') {
+        return unauthorized()
+      }
+      const ok = await verifyPassword(password, user.passwordHash)
+      if (!ok) return unauthorized()
+      await persistSession(request, user.id, { skipUntrusted: true })
+      if (isForm(request)) return reply.redirect('/', 303)
+      return reply.send(publicUser(user))
+    })
   })
 
   app.get('/api/v1/me', async (request, reply) => {

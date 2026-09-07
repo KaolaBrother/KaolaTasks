@@ -257,3 +257,59 @@ describe('revoked re-login', () => {
     assert.equal(row.permission_level, 'full')
   })
 })
+
+
+describe('fallback HTML authentication forms', () => {
+  const credentials = { username: 'form-admin', password: 'form + password & 中文' }
+  const formHeaders = { 'content-type': 'application/x-www-form-urlencoded', accept: 'text/html', origin: 'http://localhost:3000' }
+
+  test('wizard form creates an admin session and redirects to the workbench', async (t) => {
+    const app = await createApp(t)
+    const page = await app.inject({ url: '/login' })
+    assert.match(page.body, /action="\/api\/v1\/setup"/)
+    const result = await app.inject({ method: 'POST', url: '/api/v1/setup', headers: formHeaders, payload: new URLSearchParams(credentials).toString() })
+    assert.equal(result.statusCode, 303, result.body)
+    assert.equal(result.headers.location, '/')
+    const me = await app.inject({ url: '/api/v1/me', headers: { accept: 'application/json' }, cookies: cookieJar(result) })
+    assert.equal(me.json().permission_level, 'admin')
+    assert.equal(me.json().username, credentials.username)
+    assert(!result.body.includes(credentials.password))
+    const again = await app.inject({ method: 'POST', url: '/api/v1/setup', headers: formHeaders, payload: new URLSearchParams(credentials).toString() })
+    assert.equal(again.statusCode, 409)
+  })
+
+  test('login form establishes a session; wrong password stays unauthorized', async (t) => {
+    const app = await createApp(t)
+    await ensureSetup(app, credentials)
+    const result = await app.inject({ method: 'POST', url: '/api/v1/login', headers: formHeaders, payload: new URLSearchParams(credentials).toString() })
+    assert.equal(result.statusCode, 303, result.body)
+    assert.equal(result.headers.location, '/')
+    const me = await app.inject({ url: '/api/v1/me', headers: { accept: 'application/json' }, cookies: cookieJar(result) })
+    assert.equal(me.json().username, credentials.username)
+    const wrong = await app.inject({ method: 'POST', url: '/api/v1/login', headers: formHeaders, payload: new URLSearchParams({ ...credentials, password: 'wrong' }).toString() })
+    assert.equal(wrong.statusCode, 401)
+    assert.deepEqual(wrong.json(), { error: 'unauthorized' })
+    assert.equal(wrong.cookies.length, 0)
+  })
+
+  test('cross-origin forms cannot create an admin or log in', async (t) => {
+    const app = await createApp(t)
+    for (const origin of ['https://foreign.example', 'null']) {
+      const result = await app.inject({ method: 'POST', url: '/api/v1/setup', headers: { ...formHeaders, origin }, payload: new URLSearchParams(credentials).toString() })
+      assert.equal(result.statusCode, 403, result.body)
+      assert.equal(result.cookies.length, 0)
+    }
+    assert.equal((await app.inject({ url: '/api/v1/setup' })).json().setup_complete, false)
+    await ensureSetup(app, credentials)
+    const login = await app.inject({ method: 'POST', url: '/api/v1/login', headers: { ...formHeaders, origin: 'https://foreign.example' }, payload: new URLSearchParams(credentials).toString() })
+    assert.equal(login.statusCode, 403)
+    assert.equal(login.cookies.length, 0)
+  })
+
+  test('form parser does not enable urlencoded requests for other APIs', async (t) => {
+    const app = await createApp(t)
+    const admin = await ensureSetup(app, credentials)
+    const result = await app.inject({ method: 'POST', url: '/api/v1/tasks', headers: formHeaders, cookies: admin.cookies, payload: 'title=should-not-parse' })
+    assert.equal(result.statusCode, 415)
+  })
+})
