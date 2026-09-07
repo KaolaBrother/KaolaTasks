@@ -46,7 +46,8 @@ const PR_URL_TAKEN_MESSAGE = '该 pr_url 已被另一任务的进行中提交占
 // Issue #53.
 const USE_SUBMIT_REVISION_MESSAGE = '任务已有首次提交；修订请认领「待修改」任务后调用 submit_revision。'
 const PARENT_NOT_READY_MESSAGE = '父任务尚未提交 PR，子任务暂不可认领。'
-const PERCENT_INVALID_MESSAGE = 'percent 必须是 0–100 的整数。'
+const PERCENT_INVALID_MESSAGE = 'percent 必须是 0–100 的整数；phase 为不超过 200 字的短文本。'
+const PHASE_MAX_CHARS = 200
 // DESIGN §17.4: a sub-task is claimable once its parent has a PR to stack on (or is merged).
 const PARENT_READY_STATUSES: ReadonlySet<string> = new Set(['待验收', '待修改', '待合并', '已完成'])
 const CLAIMABLE_STATUSES: ReadonlySet<string> = new Set(['待认领', '待修改'])
@@ -656,7 +657,8 @@ function readProgressExtras(extras: ProgressExtras | undefined): { percent?: num
     out.percent = percent
   }
   if (extras?.phase !== undefined) {
-    if (typeof extras.phase !== 'string') return undefined
+    // Short text by contract (§9); it is audited and broadcast, so it is capped.
+    if (typeof extras.phase !== 'string' || extras.phase.length > PHASE_MAX_CHARS) return undefined
     out.phase = extras.phase
   }
   return out

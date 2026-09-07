@@ -595,7 +595,7 @@ diff 与行级锚点                      「球在谁手里」的任务状态
 
 ### 17.2 评审者与 REST（会话）
 
-评审者 = 任何 `active` 且 `admin` / `full` 的 Web 用户（MVP 不加 `reviewers` 字段）。非 `admin` / `full` → `403` `{ error: 'forbidden' }`；无会话走现有 401/302。
+评审者 = 任何 `active` 且 `admin` / `full` 的 Web 用户（MVP 不加 `reviewers` 字段）。五条写路由非 `admin` / `full` → `403` `{ error: 'forbidden' }`；`GET …/review` 与看板同一读者群（任何非 `待批准` 会话）；无会话走现有 401/302。消息正文 ≤ 20000 字、锚点字段 ≤ 2000 字、`open_review_round` 单次 ≤ 50 项、`phase` ≤ 200 字，超限 `400`。
 
 | 路由 | 行为 |
 |------|------|

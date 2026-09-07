@@ -965,3 +965,31 @@ describe('issue #53 review loop', { concurrency: false }, () => {
     assertNoSecrets('sub-task flows', notice, childFeedback, opened, eventRows(db))
   })
 })
+
+describe('issue #53 review loop — security-review hardenings', { concurrency: false }, () => {
+  test('GET review refuses a 待批准 session; oversized body_md / phase / items are 400', async (t) => {
+    const { app, stub, admin, db } = await boot(t)
+    const d = await deliverDraft(app, stub, admin, { prNumber: 151 })
+    db.$client.prepare("UPDATE users SET status = '待批准' WHERE id = ?").run(admin.body.id)
+    assert.equal((await reviewGet(app, admin.cookies, d.brief.id)).statusCode, 401)
+    db.$client.prepare("UPDATE users SET status = 'active' WHERE id = ?").run(admin.body.id)
+    assert.equal((await reviewGet(app, admin.cookies, d.brief.id)).statusCode, 200)
+
+    const huge = 'x'.repeat(20_001)
+    assert.equal((await reviewPost(app, admin.cookies, d.brief.id, 'messages', { body_md: huge, kind: 'note' })).statusCode, 400)
+    assert.equal((await reviewPost(app, admin.cookies, d.brief.id, 'messages', { body_md: 'x'.repeat(20_000), kind: 'note' })).statusCode, 201)
+    assert.equal(
+      (await reviewPost(app, admin.cookies, d.brief.id, 'messages', { body_md: 'x', kind: 'note', anchor: { url: 'u'.repeat(2_001) } })).statusCode,
+      400,
+    )
+
+    const dev = await pairClaimantDevice(app, admin.cookies, 'caps')
+    await postReviewerMessage(app, admin.cookies, d.brief.id, { body_md: '阻塞', kind: 'blocking' })
+    await reviewPost(app, admin.cookies, d.brief.id, 'rounds')
+    const claim = await claimOk(app, dev.identity, d.brief.id)
+    const longPhase = await progressHttp(app, dev.identity, d.brief.id, { claim_id: claim.lease.claim_id, phase: 'p'.repeat(201) })
+    assert.equal(longPhase.statusCode, 400)
+    const okPhase = await progressHttp(app, dev.identity, d.brief.id, { claim_id: claim.lease.claim_id, phase: 'p'.repeat(200) })
+    assert.equal(okPhase.statusCode, 200)
+  })
+})

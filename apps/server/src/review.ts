@@ -63,6 +63,12 @@ const STALE_CLAIM_MESSAGE = '提交的 claim_id 与当前认领不匹配。'
 const NOT_A_CHILD_MESSAGE = '该认领所属任务不是此任务的子任务。'
 
 const REVIEWABLE_STATUSES: ReadonlySet<string> = new Set(['待验收', '待修改', '待合并'])
+const PENDING_USER_STATUS = '待批准'
+// Size caps (security review R2): bodies are stored, replayed into Review Briefs and Agent
+// context, so they are bounded well below Fastify's 1 MiB body limit.
+export const MESSAGE_BODY_MAX_CHARS = 20_000
+export const REVIEW_ITEMS_MAX = 50
+const ANCHOR_FIELD_MAX_CHARS = 2_000
 const TERMINATE_FROM_STATUSES: ReadonlySet<string> = new Set(['待验收', '待修改', '待合并'])
 
 export type MessageAnchor = { path?: string; line?: number; head_sha?: string; url?: string }
@@ -134,7 +140,7 @@ export function readAnchor(value: unknown): MessageAnchor | null | undefined {
   const anchor: MessageAnchor = {}
   for (const key of Object.keys(raw)) {
     if (key === 'path' || key === 'head_sha' || key === 'url') {
-      if (typeof raw[key] !== 'string') return undefined
+      if (typeof raw[key] !== 'string' || (raw[key] as string).length > ANCHOR_FIELD_MAX_CHARS) return undefined
       anchor[key] = raw[key] as string
     } else if (key === 'line') {
       if (typeof raw.line !== 'number' || !Number.isInteger(raw.line) || raw.line < 0) return undefined
@@ -442,7 +448,9 @@ function readOptionalId(value: unknown): number | null | undefined {
 export function readMessageInput(body: unknown): MessageInput | undefined {
   if (body == null || typeof body !== 'object') return undefined
   const raw = body as Record<string, unknown>
-  if (typeof raw.body_md !== 'string' || raw.body_md.trim() === '') return undefined
+  if (typeof raw.body_md !== 'string' || raw.body_md.trim() === '' || raw.body_md.length > MESSAGE_BODY_MAX_CHARS) {
+    return undefined
+  }
   const kind = discussionMessageKindSchema.safeParse(raw.kind)
   if (!kind.success) return undefined
   const anchor = readAnchor(raw.anchor)
@@ -827,12 +835,14 @@ export async function submitRevision(
 export type ReviewItemInput = { kind: DiscussionMessageKind; bodyMd: string; anchor: MessageAnchor | null }
 
 export function readReviewItems(value: unknown): ReviewItemInput[] | undefined {
-  if (!Array.isArray(value) || value.length === 0) return undefined
+  if (!Array.isArray(value) || value.length === 0 || value.length > REVIEW_ITEMS_MAX) return undefined
   const items: ReviewItemInput[] = []
   for (const raw of value) {
     if (raw == null || typeof raw !== 'object') return undefined
     const item = raw as Record<string, unknown>
-    if (typeof item.body_md !== 'string' || item.body_md.trim() === '') return undefined
+    if (typeof item.body_md !== 'string' || item.body_md.trim() === '' || item.body_md.length > MESSAGE_BODY_MAX_CHARS) {
+      return undefined
+    }
     const kind = discussionMessageKindSchema.safeParse(item.kind)
     if (!kind.success) return undefined
     const anchor = readAnchor(item.anchor)
@@ -1192,8 +1202,10 @@ function requireReviewer(db: AppDb, request: FastifyRequest, reply: FastifyReply
 
 export function registerReview(app: FastifyInstance, db: AppDb) {
   app.get('/api/v1/tasks/:publicId/review', async (request, reply) => {
+    // Same population as GET /api/v1/events (security review R1): any active session may read
+    // the thread, a 待批准 account may not; writing stays with canPublish below.
     const user = getSessionUser(db, request)
-    if (user == null) return sendUnauthorized(request, reply)
+    if (user == null || user.status === PENDING_USER_STATUS) return sendUnauthorized(request, reply)
     sweepExpiredLeases(db)
     const view = getReviewView(db, (request.params as { publicId: string }).publicId)
     if (view == null) return reply.code(404).send({ error: 'not_found' })

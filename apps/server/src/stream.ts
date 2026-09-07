@@ -10,10 +10,15 @@ const PENDING_STATUS = '待批准'
 
 export type StreamEventName = 'task_updated' | 'progress' | 'review_round' | 'discussion_message'
 
+// Security review R3: a session may hold at most this many concurrent streams; opening one more
+// ends that user's oldest. Each connection carries a heartbeat timer, so the bound is per user.
+export const STREAMS_PER_USER_MAX = 8
+
 type StreamConnection = {
   // The app that served this connection. `app.close()` must end only its own streams: several
   // apps live in one process during tests, and they all share the module-level registry below.
   owner: FastifyInstance
+  userId: number
   raw: ServerResponse
   socket: Socket | null
   timer: NodeJS.Timeout
@@ -114,8 +119,14 @@ export function registerStream(app: FastifyInstance, db: AppDb, options?: { ping
     })
     raw.write(': connected\n\n')
 
+    const mine = [...connections].filter((c) => c.owner === app && c.userId === user.id)
+    for (const stale of mine.slice(0, Math.max(0, mine.length - (STREAMS_PER_USER_MAX - 1)))) {
+      endConnection(stale)
+    }
+
     const connection: StreamConnection = {
       owner: app,
+      userId: user.id,
       raw,
       socket: raw.socket,
       timer: setInterval(() => {
