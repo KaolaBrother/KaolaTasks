@@ -654,3 +654,4 @@ diff 与行级锚点                      「球在谁手里」的任务状态
 - **交回**：`submit_pr` 新建行的 `forge_head_*` 为空；`submit_revision` 记录新 `head_sha` 时清空 `forge_head_*`。二者响应路径都不出站（trade-off：核对放在 poller 与「通过」，避免把 forge 往返放进 Agent 响应路径）。
 - **补救**：`409 head_sha_stale` 后评审者写一条 `blocking` 消息并「提交本轮意见」→ `待修改`，Agent 认领后以新头 `submit_revision` 交回；不提供「采纳 forge 当前头」的一键动作，判定必须经 Agent 声明。
 - **不变式**：新增字段与 `409` 体只含 sha / 时间戳 / 中文提示，不含 token、ciphertext、`body_md`；三家 adapter 的 `getPullRequest().head_sha` 语义不变（§11）。
+- **forge 一致性**：核对对象是 forge 的 PR 对象报告的头，不是分支引用本身。GitLab 在 push 之后由后台任务刷新 MR `sha`（gitlab.com 实测有数秒滞后），Gitea 即时；滞后窗口内的「通过」按 forge 报告的旧头放行且 `head_verified: true`，poller 下一次拉取会把新头记入 `forge_head_sha` 并让面板显示 `head_stale`。考拉不为此轮询等待；这是 forge 的属性，记录于 `docs/smoke-test.md`。

@@ -507,6 +507,22 @@ function pushFollowUp(opts: { dir: string; header: string; branch: string; line:
   return headShaOf(opts.dir, opts.header, opts.secrets)
 }
 
+// Issue #54: a forge reports a pushed head on its PR object only eventually (GitLab refreshes the
+// MR `sha` in a background job after the push; observed lag of several seconds on gitlab.com).
+// Kaola's live check is correct against whatever the forge reports, so the smoke waits until the
+// forge itself has caught up before asking Kaola to notice the drift.
+async function waitForForgeHead(kind: ForgeKind, spec: ForgeSpec, token: string, prUrl: string, expected: string): Promise<void> {
+  const adapter = createForgeAdapter(kind, { baseUrl: spec.baseUrl })
+  const deadline = Date.now() + 90_000
+  let seen = ''
+  while (Date.now() < deadline) {
+    seen = (await adapter.getPullRequest({ token }, prUrl)).head_sha
+    if (seen === expected) return
+    await new Promise((resolve) => setTimeout(resolve, 3_000))
+  }
+  fail(`forge never reported pushed head ${expected.slice(0, 12)} within 90s (last seen ${seen.slice(0, 12)})`)
+}
+
 function parseKind(argv: string[]): ForgeKind {
   const raw = argv.slice(2).find((arg) => arg !== '--')
   if (raw === 'github') {
@@ -769,6 +785,7 @@ async function run(): Promise<void> {
     // show the forge head as stale; the reviewer then sends the task back for a proper hand-back.
     const driftLine = `Smoke undeclared push ${kind} ${task.id} ${stamp}.`
     const driftSha = pushFollowUp({ dir: pushed.dir, header: pushed.header, branch, line: driftLine, secrets })
+    await waitForForgeHead(kind, spec, revealed, pull.url, driftSha)
     const stale = await app.inject({
       method: 'POST',
       url: `/api/v1/tasks/${task.id}/review/approve`,
