@@ -84,7 +84,7 @@ pnpm smoke:uat -- gitea --web
 3. 浏览器：再点「通过」→ `待合并`，forge 上 Draft/WIP 翻 ready。写 `go`，内容恰好一行 `approved`。
 4. 脚本：forge merge + `pollPendingReviews` → `已完成`，核 `回写` 与 `events.details` 无令牌。
 
-`UAT_HOLD_TIMEOUT_MS` 默认 15 分钟。超时或旗标内容不对则失败，不把 UI 步骤编成已通过。未实际打开浏览器的跑法不要写路径 C 通过。
+`UAT_HOLD_TIMEOUT_MS` 默认 30 分钟。人对着工作台点通常远短于这个值；Cloud Agent computer-use 建议显式设 40 分钟（`2400000`），因为登录、关「保存密码」弹层和点评审按钮会吃掉 hold 窗口。超时或旗标内容不对则失败，不把 UI 步骤编成已通过。未实际打开浏览器的跑法不要写路径 C 通过。
 
 ## 目标仓与令牌
 

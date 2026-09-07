@@ -559,8 +559,8 @@ function uatHoldDir(): string {
 
 function uatHoldTimeoutMs(): number {
   const raw = process.env.UAT_HOLD_TIMEOUT_MS
-  const parsed = raw != null && raw !== '' ? Number.parseInt(raw, 10) : 900_000
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : 900_000
+  const parsed = raw != null && raw !== '' ? Number.parseInt(raw, 10) : 1_800_000
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 1_800_000
 }
 
 function writeUatState(dir: string, state: Record<string, unknown>): void {
@@ -571,7 +571,7 @@ function writeUatState(dir: string, state: Record<string, unknown>): void {
 async function waitForUatFlag(dir: string, expected: string, secrets: string[]): Promise<void> {
   const flag = join(dir, 'go')
   const deadline = Date.now() + uatHoldTimeoutMs()
-  console.log(`uat_wait ${expected}`)
+  console.log(`uat_wait ${expected} timeout_ms=${uatHoldTimeoutMs()}`)
   while (Date.now() < deadline) {
     try {
       const got = redact(readFileSync(flag, 'utf8').trim(), secrets)
