@@ -487,7 +487,10 @@ function cloneAndPush(opts: {
 function headShaOf(dir: string, header: string, secrets: string[]): string {
   const rev = runGit(['rev-parse', 'HEAD'], header, dir, secrets)
   if (rev.status !== 0) fail(`git rev-parse failed: ${rev.output}`)
-  return String(rev.stdout ?? '').trim()
+  // runGit folds stdout and stderr into one redacted `output`; the sha is its first 40-hex line.
+  const sha = /\b[0-9a-f]{40}\b/u.exec(rev.output)?.[0]
+  if (sha == null) fail(`git rev-parse produced no sha: ${rev.output}`)
+  return sha
 }
 
 // Issue #53: the revision Claim pushes a follow-up commit onto the SAME branch (one task, one PR).
