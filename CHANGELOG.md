@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- `#58` 冒烟 `waitForForgeHead`：外层仍 90s；每次 `getPullRequest` 仍走 #37 `DEFAULT_TIMEOUT_MS` 10s。单次 `TimeoutError` / abort-timeout 不再整段失败，继续 poll 到 90s 截止。`KAOLA_FORGE_TIMEOUT_MS` 仍未实现，不是活旋钮。不改生产 adapter 默认。仅 harness。
+- `#57` 冒烟 listen：路径 B 始终 `127.0.0.1`（忽略 `UAT_WEB_HOST`），临时端口；路径 C `--web` 默认 `127.0.0.1`，`UAT_WEB_HOST` 非空才覆盖（仍可显式 `0.0.0.0`）。浏览器 URL 仍是 `http://localhost:${UAT_WEB_PORT}`（cookie host），与 listen 地址分开。不改生产 `HOST` / compose `127.0.0.1:31415:31415`。仅 harness。
+- `#56` 路径 C `waitForUatFlag`：缺 `go`（`ENOENT`）或 trim 后为空继续等；非空且不等于期望立刻失败（先 `redact` 再 `JSON.stringify`）；恰好匹配则 unlink 继续。仅 harness。
 - `#55` 路径 C 注入会话浏览器 UAT：`pnpm smoke:uat -- gitlab|gitea --web`（与 `pnpm smoke:forge -- … --web` 相同）把路径 B 的假考拉进程 listen 到 `localhost:31416`（`UAT_WEB_PORT`），代理真实 Vite，用本地管理员登录代替 GitLab Authorize；脚本在 #54 未申报推送之后停住，等浏览器点「通过」看到中文 `409` / 「forge 头已变化」、提交本轮意见、再通过。失败的评审动作会再拉一次 `GET …/review`。登录框带 `login-username` / `login-password` / `login-submit`。手册 `docs/smoke-test.md`。不改 token 揭示通道，不走真实 OAuth。
 
 - `#54` 评审锚定核对（DESIGN v0.7 §17.7）：「通过」不再盲信 Agent 自报的 `head_sha`。poller 每次拉取把 forge 报告的 PR 头记入 `submissions.forge_head_sha` / `forge_head_seen_at`（旧库 `ALTER` 追加，既有行 NULL），观察值变化时发 SSE `task_updated`；`GET …/review` 顶层增加 `forge_head_sha` / `forge_head_seen_at` / `head_stale`，评审面板在 `head_stale` 时显示「forge 头已变化」。`POST …/review/approve` 迁移前用任务凭证实时读一次 `getPullRequest`（超时同翻 ready）：记录为空则补齐放行，相等放行，不等 `409 head_sha_stale`（体含 `recorded_head_sha` / `forge_head_sha`，不翻状态、不开轮、不写事件），forge 不可达按最近观察回退、仍未知则以 `head_verified: false` 放行；成功响应与 `评审通过` 事件带 `head_sha` / `head_verified`；`待验收` 与提交 `open` 在事务内重查，核对期间落地的终态迁移或第二次「通过」得到 `409 illegal_transition` 而非覆盖或 `500`。`submit_revision` 记录新头时清空观察值，响应路径不出站。`scripts/forge-smoke.ts` 增加漂移段（交回后再推一提交 → `409` → 阻塞开轮 → 再认领交回 → `200 head_verified: true`），并等 forge 报告新头再核对（GitLab MR `sha` 后台刷新有数秒滞后）。token 揭示通道不变。
