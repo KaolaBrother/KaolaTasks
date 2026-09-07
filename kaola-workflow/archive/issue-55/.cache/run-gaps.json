@@ -1,0 +1,20 @@
+{
+  "project": "issue-55",
+  "sweptClasses": [
+    {
+      "reasonClass": "manual:harness-flag-catch",
+      "sample": "waitForUatFlag empty catch swallows unexpected go content",
+      "count": 1
+    },
+    {
+      "reasonClass": "manual:harness-bind",
+      "sample": "Path C --web defaults listen 0.0.0.0",
+      "count": 1
+    },
+    {
+      "reasonClass": "manual:forge-timeout",
+      "sample": "GitLab waitForForgeHead getPullRequest 10s aborts the smoke",
+      "count": 1
+    }
+  ]
+}
