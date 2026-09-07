@@ -48,3 +48,10 @@ READY. User authorized complete Workflow Finalization, merge and workspace clean
 ## Archive receipt
 
 finalize status=closed; archived=true; archive=kaola-workflow/archive/issue-60; claim_label_removed=removed; issue_disposition=close-pending; closure_invariants.ok=true with no violations. The transaction did not author a commit (archive_commit=skipped); the orchestrator commits this owned archive before sink. Closure/publication remains the sink transaction's responsibility.
+
+## Sink Findings
+
+post_rebase_tests: skipped
+
+archived_paths:
+- kaola-workflow/archive/issue-60/finalization-summary.md
