@@ -37,10 +37,12 @@ sequenceDiagram
 4. 管理员在工作台 **电脑** 页把 **待授权电脑** 绑到自己或 **认领者**。已绑定后 `claim_task` 才拿到该任务的可复用仓库凭证（并非按次铸造的一次性令牌）；Claim 租约默认 TTL 24 小时，到期只收回考拉侧的认领锁定，不吊销 forge 侧凭证本身。
 5. Agent 实现、推分支、开 **Draft PR**（GitHub draft / GitLab `Draft:` / Gitea `WIP:`），再 `submit_pr`。任务变为「待验收」——球在评审者手里。
 6. 你在考拉的任务详情「评审」面板里写意见（阻塞 / 建议 / 提问，可贴 forge 的代码链接当锚点），攒够后点「提交本轮意见」：含阻塞项就转「待修改」，任何 Agent 都可以 `claim_task` 认领它做修订，先 `get_review_feedback` 再在同一 PR 上推新提交，改完 `submit_revision` 交回「待验收」。没有阻塞项就只记一轮不翻状态。
-7. 你点「通过」，任务变为「待合并」，考拉用任务凭证把 Draft 翻成 ready。你在 forge 上合并（考拉不 approve、不 merge）。考拉默认每分钟看一次 PR；也可以配 webhook。「撤回通过」回到「待修改」，「终止本次交付」直接「已退回」。
+7. 你点「通过」，任务变为「待合并」，考拉在后台用任务凭证把 Draft 翻成 ready；失败会重试，不回滚任务状态。确认 forge 上已 ready 后由你合并（考拉不 approve、不 merge）。考拉默认每分钟看一次 PR；也可以配 webhook。「撤回通过」回到「待修改」，「终止本次交付」直接「已退回」。
 8. 任务变为「已完成」。从 Issue 导入的会在源 Issue 上留一条状态评论。看板与评审面板经 SSE 实时刷新，不用手动刷。
 
-大 Issue 可以拆成有先后顺序的子任务：发布向导里选「拆为子任务」指定父任务。父任务提交 PR 后子任务才能认领，子任务的基线分支就是父 PR 的分支（堆叠）；父任务合并后考拉自动给子任务追加一轮 `restack` 意见，由下一个认领它的 Agent rebase。子任务的「通过」要等父任务「已完成」。
+大 Issue 可以拆成有先后顺序的子任务：发布向导里选「拆为子任务」指定父任务。父任务提交 PR 后子任务才能认领，子任务的基线分支就是父 PR 的分支（堆叠）；父任务合并后考拉自动给子任务追加一轮 `restack` 意见，由处理子任务的 Agent 按 Review Brief 的新基线 rebase；只有「待验收」的子任务会自动转「待修改」，其它非终态只追加意见。子任务的「通过」要等父任务「已完成」；父任务被退回或取消时只通知子任务，由发布者决定后续处理。
+
+「已退回」任务可以重新开放为「待认领」，开始新一轮交付：新建 PR 后用 `submit_pr`，旧交付留作历史。仍在当前交付中的修订继续使用同一 PR 和 `submit_revision`。
 
 页面上没有「认领」按钮。认领只通过 Agent。认领者不必在目标仓库有账号——任务所附令牌就是访问权。
 
@@ -81,6 +83,10 @@ sequenceDiagram
 
 ## Agent 怎么接单
 
+对来自外部 forge Issue、随任务携带该 Issue 凭证的任务，`claim_task` 成功后，当前 Agent **必须直接启动或续跑 Kaola Workflow**，以 `source.issue_url` 为目标；首次交付完成后必须调用 `submit_pr`。只有用户明确要求时才使用 Kaola Project Runner 承载 Workflow。没有随附 forge Issue 的原生任务不在这一约定范围内，不能直接为其启动 Workflow，考拉也不会自动补建 Issue。详见 [Workflow 执行指引](docs/workflow-default.md) 与 [Runner 承载指引](docs/runner-carrier.md)。
+
+Claim 后持续用 `report_progress` 保持租约。请求结果不确定时，复用同一个 `request_id` 恢复 Claim；一旦已有 PR，就复用该 PR 前向恢复，不因响应丢失再开一个 PR。修订 Claim 先读取 `get_review_feedback`，把 Review Brief 作为本轮工作输入，完成后用 `submit_revision` 交回。
+
 本机跑 `kaola-mcp --url http://localhost:31415`（或 `KAOLA_URL`；生产用 `${PUBLIC_URL}`）。桥代签；MCP 配置里不要放 forge token、设备私钥、`ktk_` 或根私钥。换任务不改配置，再调 `claim_task`。未绑定的电脑不能列出或认领，先在工作台「电脑」页绑定。`--url` 为 `https://…` 时保持严格 TLS（运行时默认信任库），不要设 `NODE_TLS_REJECT_UNAUTHORIZED=0`。按下面「安装与证书信任」选择公开 CA 或私有 CA 路径：`STABLE_PUBLIC_CA` 不装额外 CA，也不要把 `NODE_EXTRA_CA_CERTS` 写进 MCP 配置；`DEBUG_PRIVATE_CA` 先用 `kaola-mcp trust install` 核验公开根证书，launcher 只从本机已核验 state 注入桥进程。调用方环境里的 `NODE_EXTRA_CA_CERTS` 不是信任源。
 
 ```json
@@ -101,13 +107,19 @@ sequenceDiagram
 | `claim_task` | 认领。人指定任务时不要带 `autonomous`；可选 `request_id` 让重试幂等（同一 `(设备, request_id)` 重放拿回同一个 Claim）。成功才拿到**该任务**的仓库令牌，租约里的 `claim_id` 之后心跳/释放/提交都要带上。自主轮询才设 `autonomous: true` |
 | `report_progress` | 心跳，可选备注、`percent`（0–100）、`phase`（看板实时显示）；带过 `request_id` 的新式 Claim 必须带 `claim_id` |
 | `release_task` | 放弃，任务回到待认领（已有 PR 的回到待修改）；同上 `claim_id` 规则，重复释放同一 Claim 是幂等的 |
-| `submit_pr` | 首次交付：forge 上已有 **Draft** PR/MR 后再交 URL（可带 `head_sha`）；同上 `claim_id` 规则，重复提交同一 Claim + 同一 URL 是幂等的。任务已有 PR 时回 `use_submit_revision` |
+| `submit_pr` | 首次交付：forge 上已有 **Draft** PR/MR 后再交 URL（可带 `head_sha`、`head_branch`；webhook 模式要供子任务堆叠时应传 `head_branch`）；同上 `claim_id` 规则，重复提交同一 Claim + 同一 URL 是幂等的。任务已有 PR 时回 `use_submit_revision` |
 | `get_review_feedback` | 读 Review Brief：本轮判定、阻塞项（带锚点、是否已解决）、非阻塞项、全部对话、`head_sha`、`base_branch`（restack 轮是新基线）。只读，不需要 Claim |
 | `post_discussion_message` | 持有活动 Claim 时在讨论里回答（`answer`）、提问、备注，或 `resolution` + `resolves` 标记某条阻塞项已处理 |
-| `submit_revision` | 修订交回：同一 PR 上推了新提交后交新 `head_sha`（必须与上一轮不同）和摘要，任务回「待验收」，租约释放。评审者「通过」前考拉会核对 forge 当前头与交回的 `head_sha`，不一致会拒绝——交回后不要再推未申报的提交 |
+| `submit_revision` | 修订交回：同一 PR 上推了新提交后交新 `head_sha`（必须与上一轮不同）和摘要，任务回「待验收」，租约释放。评审者「通过」前核对 forge 报告的 PR 头（见下文边界），已知不一致会拒绝；交回后不要再推未申报的提交 |
 | `open_review_round` | 在子任务的 Claim 上给父任务开一轮意见；父任务在「待验收」时会被打回「待修改」 |
 
-用返回的 `clone` 去克隆：按 `extra_header` 带令牌，不要把 token 写进 remote URL。提交 PR 只有 MCP 的 `submit_pr`。协议细节见 [docs/api.md](docs/api.md)。
+用返回的 `clone` 去克隆：按 `extra_header` 带令牌，不要把 token 写进 remote URL。首次提交用 MCP 的 `submit_pr`，同一交付的后续修订用 `submit_revision`。协议细节见 [docs/api.md](docs/api.md)。
+
+### 评审「通过」核对的是哪次提交
+
+「通过」前，考拉读取 forge 的 PR 头并与 Agent 交回的 `head_sha` 比较。已知不一致时返回 `409 head_sha_stale`，任务不翻状态。评审者应写阻塞意见并「提交本轮意见」，让 Agent 重新认领、交回新头；没有一键采纳未申报提交的入口。
+
+这不是无条件的实时保证：forge 不可达时，考拉改用最近观察值；已知不一致仍拒绝，否则允许通过，并在响应及审计事件中标记 `head_verified: false`。GitLab 的 MR 头可能比实际 push 晚数秒更新，核对依据是 forge 报告值。轮询发现变化后，评审面板显示「forge 头已变化」；webhook 模式不轮询，仍会在「通过」时核对。完整规则见 [DESIGN §17.7](docs/DESIGN.md#177-评审锚定核对54)。
 
 ## 本机跑起来
 
@@ -385,12 +397,22 @@ pnpm test
 pnpm build
 ```
 
+真实 forge 联调有三条路径：
+
+- **A：真实浏览器 / OAuth**，按手册完成人在场的登录、设备与界面操作。
+- **B：注入会话脚本**，`pnpm smoke:forge -- gitlab`（或 `gitea`）；考拉会话是模拟的，forge 仓库和 PAT 必须真实。
+- **C：注入会话浏览器 UAT**，`pnpm smoke:uat -- gitlab --web`（或 `gitea`）；默认只监听 `127.0.0.1`，浏览器打开 `http://localhost:31416`，用本地管理员代替 OAuth。`UAT_WEB_HOST` 仅显式设置时覆盖监听地址。脚本等待手册指定的 `go` 旗标，错误的非空值会立即失败。
+
+B / C 通过不代表真实 OAuth 或公网证书信任已通过。最新综合 UAT 的执行范围、未执行项与后续清理记录见 [冒烟手册](docs/smoke-test.md)，每次验证以实际执行证据为准。
+
 产品契约在 [docs/DESIGN.md](docs/DESIGN.md)。HTTP / MCP 细节在 [docs/api.md](docs/api.md)。实现记录在 [CHANGELOG.md](CHANGELOG.md)。贡献约定见仓库根目录 `AGENTS.md`（Claude 入口仍是 `CLAUDE.md`，只桥接到该合同）。
 
 ## 文档
 
 - [设计文档](docs/DESIGN.md) — 产品与架构源头（§16 冻结双模式 MCP 安装与证书信任）
 - [GitLab / Gitea 冒烟手册](docs/smoke-test.md) — 浏览器 **配合** vs 脚本 B vs 路径 C（B 只模拟考拉进程；C 把同一进程 listen 出来用真实工作台点评审面板；`GITLAB_TOKEN` / `GITEA_TOKEN` 仍须真实 PAT）
+- [Workflow 执行指引](docs/workflow-default.md) — 外部 Issue 任务的强制 Workflow、恢复与 PR 收尾
+- [Runner 承载指引](docs/runner-carrier.md) — 仅在明确选用时承载 Workflow
 - [文档索引](docs/README.md)
 - [变更日志](CHANGELOG.md)
 
