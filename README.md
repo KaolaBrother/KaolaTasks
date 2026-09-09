@@ -202,6 +202,13 @@ Gitea 回调：`http://localhost:31415/login/gitea/callback`（Scopes 勾 **`rea
 
 如果现有服务器的 HTTPS 入口和 CA 模式不变，先备份 SQLite、`.env`、leaf/key 和上一版应用，再更新代码、重新构建并重启；数据库结构会在应用启动时幂等升级，不手工改 SQLite，也不清空数据：
 
+为保留现有登录、设备授权、活动 Claim、任务/评审记录和已加密的 forge 凭证，普通升级必须保持以下身份材料不变：
+
+- 继续挂载原 `SQLITE_PATH` 或 Compose 的 `kaola-data` 卷；禁止 `docker compose down -v`、删除卷、换成空库或把 `SQLITE_PATH` 留空变成内存库。
+- 保持原 `VAULT_MASTER_KEY`；更换它会使库中已有 forge 凭证无法解密。保持原 `SESSION_SECRET` 可避免现有浏览器会话失效。
+- 保持 `${PUBLIC_URL}` 的 scheme、hostname 和 port，以及原实例 SQLite 中的 `instance_id`。改变 origin 会被客户端视为另一套服务，不能冒充普通升级。
+- 保持当前 CA/root 与 leaf 链。需要换 root、域名或入口时，按后文「卸载、轮换、退出团队、迁到公开 CA」执行，不与普通应用升级同时偷换。
+
 ```bash
 # Docker Compose
 git pull --ff-only
@@ -220,7 +227,9 @@ sudo systemctl restart kaola-tasks
 | `STABLE_PUBLIC_CA` | 保留 ACME DNS-01 取得并自动续期的公开 fullchain；不要设置 `KAOLA_PAIRING_MODE=private_ca` 或私有根路径 | 客户端直接使用 `kaola-mcp --url ${PUBLIC_URL}`；出现待授权设备后，管理员到「电脑 → 待授权电脑」选择 owner 并绑定 |
 | `DEBUG_PRIVATE_CA` | 在服务环境加入 `KAOLA_PAIRING_MODE=private_ca`、`KAOLA_PUBLIC_ROOT_CA_PATH=<public-root.pem>`；`PUBLIC_URL` 必须是 HTTPS 且被当前 leaf SAN 覆盖。应用无法从自身探测该入口时才补 `KAOLA_PUBLIC_LEAF_CHAIN_PATH=<leaf-fullchain.pem>`。公开根文件不得包含根私钥 | 每台新认领电脑运行 `kaola-mcp pair --url ${PUBLIC_URL}`；管理员到「电脑 → 待授权电脑」找到对应配对申请，输入配对密语，选择 owner 后点「绑定」（或点「绑到我自己」） |
 
-`DEBUG_PRIVATE_CA` 还要求服务进程实际使用 OpenSSL 3.x；`KAOLA_PAIRING_TTL_SECONDS` 可不设置，默认配对窗口为 86400 秒。根 CA 私钥始终留在隔离签发端，不复制到应用服务器或认领电脑。批准后客户端会自动完成严格 TLS、active `whoami` 和 v2 信任落地，无需手工 `trust install` 或重启 MCP。
+`DEBUG_PRIVATE_CA` 还要求服务进程实际使用 OpenSSL 3.x；`KAOLA_PAIRING_TTL_SECONDS` 可不设置，默认配对窗口为 86400 秒。根 CA 私钥始终留在隔离签发端，不复制到应用服务器或认领电脑。批准后，正在等待（或随后恢复）的 `pair` CLI 会自动完成严格 TLS、active `whoami` 和 v2 信任落地，无需手工 `trust install` 或为了安装根证书额外重启；此前因 `pairing_required` 退出的普通 MCP 连接仍须由 MCP 宿主重新启动或重连。
+
+满足上述保持条件时，启动迁移保留已有数据和策略，不重写既有设备到期时间；活动 Claim/lease 仍在原 SQLite 中。重启期间 MCP 连接和 poller 暂停，服务恢复后客户端用原设备身份、v2 信任、`claim_id` 和本机 receipt 重连并继续，不需要重新配对或重新认领。服务重启本身不轮换、吊销或重新揭示 forge token。
 
 升级后至少确认：原 SQLite 中的任务仍可见；浏览器能经 `${PUBLIC_URL}` 登录；公开 CA 客户端由系统默认根完成严格 TLS，或私有 CA 的一台新电脑能完成 `pair → 工作台批准 → active whoami`；随后 `kaola-mcp --url ${PUBLIC_URL}` 能初始化并调用 `list_tasks`。失败时恢复升级前备份，不用 `--insecure`、`curl -k` 或关闭 TLS 校验换取连通。
 
@@ -362,6 +371,8 @@ Cookie / `trustProxy` / webhook 配置见 [docs/api.md](docs/api.md)。
 
 这里的“配对密语”不是长期设备私钥或 forge token。它由认领电脑临时生成；初始 bootstrap 请求只提交 commitment，不发送密语原文。Agent 把一次性密语通过受信私密渠道交给管理员，管理员只在已受信的 Kaola Tasks 工作台中输入。管理员无需 SSH 登录服务器。
 
+管理员绑定不会向 MCP 推送“开始任务”命令，也不会自动认领任务。绑定后，`pair` CLI 只负责完成批准证明校验、v2 信任落地和 active `whoami`；它成功退出后，MCP 宿主启动或重连原来的 `kaola-mcp --url <kaola-origin>`，Agent 才通过 `list_tasks`、`get_task_brief` 和 `claim_task` 自己选择并认领任务。若等待中的 `pair` 进程已中断，重跑同一条 `pair --url` 会用本机未过期 receipt 恢复原申请。
+
 认领者默认路径（[#63](https://github.com/KaolaBrother/KaolaTasks/issues/63) / DESIGN §16.8）：
 
 ```text
@@ -371,7 +382,8 @@ Cookie / `trustProxy` / webhook 配置见 [docs/api.md](docs/api.md)。
   -> 管理员在「电脑 → 待授权电脑」找到对应配对申请
   -> 输入配对密语，选择 owner 后点「绑定」（或点「绑到我自己」）
   -> 客户端验证批准证明、自动安装公开根、全新严格 TLS + active whoami
-  -> ready，再用原来的 kaola-mcp --url 配置 list_tasks / claim_task
+  -> pair 成功退出；MCP 宿主启动或重连原来的 kaola-mcp --url
+  -> Agent 调用 list_tasks / get_task_brief / claim_task，不自动接单
 ```
 
 认领者不接触 PEM、证书指纹、`NODE_EXTRA_CA_CERTS` 或重启。`kaola-mcp --url` 保持严格、非交互；HTTPS 尚未配对时打印 `pairing_required` 并退出码 `2`，提示同一条 `pair --url` 命令。`--cancel` 只删本机回执，不撤销服务端申请。
