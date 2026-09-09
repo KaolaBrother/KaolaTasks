@@ -1,7 +1,16 @@
 import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
-import { mkdtempSync, readFileSync, readdirSync, rmSync, existsSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { PassThrough } from 'node:stream'
@@ -20,12 +29,14 @@ import {
   inspectV2Trust,
   isBootstrapPathAllowed,
   pairingReceiptPath,
+  prepareHttpsLauncher,
   runPairCli,
   verifyPairingApproval,
   v2TrustDir,
   type PairingHttpRequest,
   type PairingTransport,
 } from './pair.ts'
+import { readVerifiedExtraCaPem, trustDir, trustRootCaPath, trustStatePath } from './trust.ts'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const VECTOR_PATH = join(HERE, '../../../docs/decisions/0031-pairing-test-vectors.json')
@@ -500,6 +511,267 @@ describe('kaola-mcp pair (#63)', { concurrency: false }, () => {
     assert.equal(code, 0, streams.stderr())
     assert.equal(seenNonce, clientNonce)
     assert.match(streams.stdout(), new RegExp(secret.replace(/(.{4})/g, '$1-').replace(/-$/, '')))
+  })
+
+  test('approval with a substituted root does not write v2', async (t) => {
+    const home = tmpHome(t)
+    const origin = 'https://kaola.example.test'
+    const root = mintRoot(t)
+    const other = mintRoot(t)
+    const base = pairingTransport({ home, origin, root })
+    const transport: PairingTransport = {
+      async request(input) {
+        const url = new URL(input.url)
+        if (url.pathname.endsWith('/status')) {
+          const res = await base.request(input)
+          const body = JSON.parse(res.body)
+          body.approval.payload.root_sha256 = other.sha256
+          return { ...res, body: JSON.stringify(body) }
+        }
+        return base.request(input)
+      },
+    }
+    const streams = captureIo()
+    const code = await runPairCli(['--url', origin], { KAOLA_HOME: home }, streams.io, {
+      transport,
+      sleep: async () => {},
+      pollIntervalMs: 0,
+    })
+    assert.equal(code, 1)
+    assert.match(streams.stderr(), /root mismatch|proof/)
+    assert.equal(inspectV2Trust(home, origin).ready, false)
+  })
+
+  test('legacy v1 extra CA remains v:1 and is not rewritten as v2', async (t) => {
+    const home = tmpHome(t)
+    const origin = 'https://kaola.example.test'
+    const root = mintRoot(t)
+    mkdirSync(trustDir(home), { recursive: true, mode: 0o700 })
+    writeFileSync(trustRootCaPath(home), root.pem, { mode: 0o600 })
+    writeFileSync(
+      trustStatePath(home),
+      `${JSON.stringify({ v: 1, alg: 'sha256', fingerprintSha256: root.sha256 })}\n`,
+      { mode: 0o600 },
+    )
+    chmodSync(trustDir(home), 0o700)
+    chmodSync(trustRootCaPath(home), 0o600)
+    chmodSync(trustStatePath(home), 0o600)
+    const transport = pairingTransport({ home, origin, root })
+    const streams = captureIo()
+    const code = await runPairCli(['--url', origin], { KAOLA_HOME: home }, streams.io, {
+      transport,
+      sleep: async () => {},
+      pollIntervalMs: 0,
+    })
+    assert.equal(code, 0, streams.stderr())
+    assert.match(streams.stdout(), /无需再次配对/)
+    const v1 = JSON.parse(readFileSync(trustStatePath(home), 'utf8')) as { v: number }
+    assert.equal(v1.v, 1)
+    assert.equal(inspectV2Trust(home, origin).present, false)
+  })
+
+  test('launcher overlap writes old+new extra CA; new-only proof later drops the previous root', async (t) => {
+    const home = tmpHome(t)
+    const origin = 'https://kaola.example.test'
+    const root = mintRoot(t)
+    const next = mintRoot(t)
+    const pairStreams = captureIo()
+    const pairCode = await runPairCli(['--url', origin], { KAOLA_HOME: home }, pairStreams.io, {
+      transport: pairingTransport({ home, origin, root }),
+      sleep: async () => {},
+      pollIntervalMs: 0,
+    })
+    assert.equal(pairCode, 0, pairStreams.stderr())
+    const overlap = await prepareHttpsLauncher({
+      url: origin,
+      env: { KAOLA_HOME: home },
+      transport: {
+        async request(input) {
+          const url = new URL(input.url)
+          const certs = [...(input.extraCaPem ?? '').matchAll(/-----BEGIN CERTIFICATE-----/g)].length
+          if (url.pathname === '/api/v1/setup') {
+            if (certs === 0) unknownIssuer()
+            if (certs === 1) {
+              const inspected = inspectPublicRootPem(input.extraCaPem ?? '')
+              if (inspected.ok && inspected.fingerprintSha256 === next.sha256) unknownIssuer()
+            }
+            return { status: 200, headers: {}, body: '{"setup_complete":true}' }
+          }
+          if (url.pathname === '/api/v1/device-trust/next-root') {
+            return {
+              status: 200,
+              headers: {},
+              body: JSON.stringify({
+                root_pem: next.pem,
+                root_sha256: next.sha256,
+                trust_epoch: 2,
+              }),
+            }
+          }
+          throw new Error(`unexpected ${url.pathname}`)
+        },
+      },
+    })
+    assert.equal(overlap.ok, true, overlap.ok ? '' : overlap.message)
+    const overlapping = inspectV2Trust(home, origin)
+    assert.equal(overlapping.ready, true)
+    if (!overlapping.ready) return
+    assert.equal([...overlapping.pem.matchAll(/-----BEGIN CERTIFICATE-----/g)].length, 2)
+    assert.equal(overlapping.state.previousFingerprintSha256, root.sha256)
+    assert.equal(overlapping.state.fingerprintSha256, next.sha256)
+    assert.equal(overlapping.state.trustEpoch, 2)
+    if (overlap.ok && overlap.extraCaPemPath != null) {
+      const extra = readVerifiedExtraCaPem(overlap.extraCaPemPath)
+      assert.equal(extra.ok, true, extra.ok ? '' : extra.message)
+    }
+
+    const dropped = await prepareHttpsLauncher({
+      url: origin,
+      env: { KAOLA_HOME: home },
+      transport: {
+        async request(input) {
+          const url = new URL(input.url)
+          const certs = [...(input.extraCaPem ?? '').matchAll(/-----BEGIN CERTIFICATE-----/g)].length
+          if (url.pathname === '/api/v1/setup') {
+            if (certs === 0) unknownIssuer()
+            if (certs === 1) {
+              const inspected = inspectPublicRootPem(input.extraCaPem ?? '')
+              if (!inspected.ok || inspected.fingerprintSha256 !== next.sha256) unknownIssuer()
+            }
+            return { status: 200, headers: {}, body: '{"setup_complete":true}' }
+          }
+          if (url.pathname === '/api/v1/device-trust/next-root') {
+            return { status: 404, headers: {}, body: '{"error":"not_found"}' }
+          }
+          throw new Error(`unexpected ${url.pathname}`)
+        },
+      },
+    })
+    assert.equal(dropped.ok, true, dropped.ok ? '' : dropped.message)
+    const after = inspectV2Trust(home, origin)
+    assert.equal(after.ready, true)
+    if (!after.ready) return
+    assert.equal([...after.pem.matchAll(/-----BEGIN CERTIFICATE-----/g)].length, 1)
+    assert.equal(after.state.previousFingerprintSha256, undefined)
+    assert.equal(after.state.fingerprintSha256, next.sha256)
+  })
+
+  test('failed next-root leaves the existing v2 extra CA unchanged', async (t) => {
+    const home = tmpHome(t)
+    const origin = 'https://kaola.example.test'
+    const root = mintRoot(t)
+    const pairStreams = captureIo()
+    const pairCode = await runPairCli(['--url', origin], { KAOLA_HOME: home }, pairStreams.io, {
+      transport: pairingTransport({ home, origin, root }),
+      sleep: async () => {},
+      pollIntervalMs: 0,
+    })
+    assert.equal(pairCode, 0, pairStreams.stderr())
+    const before = inspectV2Trust(home, origin)
+    assert.equal(before.ready, true)
+    const pemBefore = before.ready ? before.pem : ''
+    const prep = await prepareHttpsLauncher({
+      url: origin,
+      env: { KAOLA_HOME: home },
+      transport: {
+        async request(input) {
+          const url = new URL(input.url)
+          if (url.pathname === '/api/v1/setup') {
+            if (input.extraCaPem == null || input.extraCaPem.length === 0) unknownIssuer()
+            return { status: 200, headers: {}, body: '{"setup_complete":true}' }
+          }
+          if (url.pathname === '/api/v1/device-trust/next-root') {
+            return { status: 500, headers: {}, body: '{"error":"unavailable"}' }
+          }
+          throw new Error(`unexpected ${url.pathname}`)
+        },
+      },
+    })
+    assert.equal(prep.ok, true, prep.ok ? '' : prep.message)
+    const after = inspectV2Trust(home, origin)
+    assert.equal(after.ready, true)
+    if (!after.ready) return
+    assert.equal(after.pem, pemBefore)
+    assert.equal(after.state.fingerprintSha256, root.sha256)
+    assert.equal(after.state.previousFingerprintSha256, undefined)
+  })
+
+  test('missed overlap unknown-issuer returns pairing_required', async (t) => {
+    const home = tmpHome(t)
+    const origin = 'https://kaola.example.test'
+    const root = mintRoot(t)
+    const pairStreams = captureIo()
+    const pairCode = await runPairCli(['--url', origin], { KAOLA_HOME: home }, pairStreams.io, {
+      transport: pairingTransport({ home, origin, root }),
+      sleep: async () => {},
+      pollIntervalMs: 0,
+    })
+    assert.equal(pairCode, 0, pairStreams.stderr())
+    const prep = await prepareHttpsLauncher({
+      url: origin,
+      env: { KAOLA_HOME: home },
+      transport: {
+        async request() {
+          unknownIssuer()
+        },
+      },
+    })
+    assert.equal(prep.ok, false)
+    if (prep.ok) return
+    assert.equal(prep.pairingRequired, true)
+    assert.match(prep.message, /pairing_required/)
+    assert.equal(inspectV2Trust(home, origin).ready, true)
+  })
+
+  test('public-CA migration deletes only this origin digest v2 extra root', async (t) => {
+    const home = tmpHome(t)
+    const origin = 'https://kaola.example.test'
+    const root = mintRoot(t)
+    const pairStreams = captureIo()
+    const pairCode = await runPairCli(['--url', origin], { KAOLA_HOME: home }, pairStreams.io, {
+      transport: pairingTransport({ home, origin, root }),
+      sleep: async () => {},
+      pollIntervalMs: 0,
+    })
+    assert.equal(pairCode, 0, pairStreams.stderr())
+    assert.equal(inspectV2Trust(home, origin).ready, true)
+    const { ensureDeviceIdentity } = await import('./main.ts')
+    const device = await ensureDeviceIdentity(home)
+    const { deviceFingerprint } = await import('@kaola/shared')
+    const fp = deviceFingerprint(Buffer.from(device.publicKeySpki, 'base64'))
+    const devicePath = join(home, 'device.json')
+    const prep = await prepareHttpsLauncher({
+      url: origin,
+      env: { KAOLA_HOME: home },
+      transport: {
+        async request(input) {
+          const url = new URL(input.url)
+          if (url.pathname === '/api/v1/setup') {
+            return { status: 200, headers: {}, body: '{"setup_complete":true}' }
+          }
+          if (url.pathname === '/api/v1/agent/whoami') {
+            assert.equal(input.extraCaPem, undefined)
+            return {
+              status: 200,
+              headers: {},
+              body: JSON.stringify({
+                device_id: 1,
+                fingerprint: fp,
+                hostname: 'test',
+                status: 'active',
+                instance_id: INSTANCE_ID,
+              }),
+            }
+          }
+          throw new Error(`unexpected ${url.pathname}`)
+        },
+      },
+    })
+    assert.equal(prep.ok, true, prep.ok ? '' : prep.message)
+    if (!prep.ok) return
+    assert.equal(prep.extraCaPemPath, undefined)
+    assert.equal(inspectV2Trust(home, origin).present, false)
+    assert.equal(existsSync(devicePath), true)
   })
 })
 

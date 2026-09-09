@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `#63` 补齐重启/重放/中间人替换/legacy v1、根 overlap 轮换与公开 CA 迁移：launcher 用旧严格 TLS + active 设备拉 `next-root`，原子写 old+new，新链证明后才丢旧根；错过 overlap 为 `pairing_required`。默认库 + 匹配 `whoami` 后只删该 origin digest 的 v2 extra root，不删 `device.json` / v1。README 认领路径改为 `kaola-mcp pair --url`；`trust install` 标明为 #48 显式兼容/恢复。
 - `#63` 交付 `kaola-mcp pair --url`：本机 `0600` receipt、批准证明核验、原子 v2 公开根、全新严格 TLS + active `whoami` 才 ready。正常路径不接触 PEM/指纹/env/重启。`kaola-mcp --url` 在 HTTPS unknown-issuer 且无 v2/v1 时 typed `pairing_required` 退出码 `2`。公开 CA 成功不装额外根。Node `UNABLE_TO_VERIFY_LEAF_SIGNATURE` 视为 unknown-issuer 类。README 用户路径与 overlap 轮换仍待下一检查点。
 - `#63` 服务端可恢复 pairing 状态、受限 bootstrap REST、管理员密语绑定事务与中文工作台（电脑页 `配对密语`）。pending 设备仍不能 `list_tasks` / `claim_task`；有 pairing 行的 bind 额外要求 `pairing_id` + `pairing_secret`。配对 attempt TTL 默认与下限 `86400`（从该次申请到 `expires_at`；幂等恢复不滑动；较早 pending 只延长不缩短）。批准后设备授权默认 **90** 天；升级路径重建 SQL DEFAULT，不猜迁存量 30 与既有 `expires_at`。`kaola-mcp pair` 与 README 用户路径仍待下一检查点。
 - `#63` 冻结管理员批准绑定的私有 CA 自动配对合同（DESIGN v0.8 §16.8 / ADR 0031 + test vectors）。认领端 `kaola-mcp pair --url`、密语不经 bootstrap、批准证明绑定 instance/origin/device/root/nonces/owner/expiry、原子公开根与全新严格 TLS + active whoami 才 ready；`kaola-mcp --url` 保持严格非交互。配对 attempt TTL 默认与下限 `86400`（从该次申请起至少 24 小时，到 `expires_at` 才过期；幂等恢复不滑动；不得用更短 secret/proof/receipt/pending 截止让一天内批准恢复失效）；批准后设备授权默认 **90** 天（`paired_at + device_max_age_days`）。存量 30 天策略与既有 `expires_at` 不猜迁。产品行为按该合同实现；README 用户路径仍待 `pair` 落地后改。

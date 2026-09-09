@@ -304,6 +304,14 @@ function parseV2State(raw: string): V2TrustState | undefined {
     }
     if (!Number.isInteger(parsed.trustEpoch) || parsed.trustEpoch < 1) return undefined
     if (!Number.isInteger(parsed.pairedAt) || parsed.pairedAt < 0) return undefined
+    if (parsed.previousFingerprintSha256 != null) {
+      if (
+        typeof parsed.previousFingerprintSha256 !== 'string' ||
+        !/^[0-9a-f]{64}$/.test(parsed.previousFingerprintSha256)
+      ) {
+        return undefined
+      }
+    }
     if (typeof (parsed as { origin?: unknown }).origin === 'string') return undefined
     if (typeof (parsed as { secret?: unknown }).secret === 'string') return undefined
     return parsed
@@ -359,11 +367,8 @@ export function inspectV2Trust(kaolaHome: string, origin: string): InspectedV2Tr
   if (state.originDigest !== pairingOriginDigest(origin)) {
     return fail('v2 trust origin digest does not match this --url')
   }
-  const inspected = inspectPublicRootPem(pemText)
-  if (!inspected.ok) return fail(`v2 root PEM rejected: ${inspected.code}`)
-  if (!timingSafeEqualHex(inspected.fingerprintSha256, state.fingerprintSha256)) {
-    return fail('v2 root PEM does not match pinned fingerprint')
-  }
+  const bundle = inspectV2PemBundle(pemText, state)
+  if (!bundle.ok) return fail(bundle.message)
   const deviceFp = fingerprintFromDeviceJson(kaolaHome)
   if (deviceFp == null || deviceFp !== state.deviceFingerprint) {
     return fail('v2 trust device fingerprint does not match device.json')
@@ -377,9 +382,59 @@ export function inspectV2Trust(kaolaHome: string, origin: string): InspectedV2Tr
     dir,
     pemPath,
     statePath,
-    pem: inspected.pem,
+    pem: bundle.pem,
     state,
   }
+}
+
+function splitCaPemBlocks(pemText: string): string[] | null {
+  const blocks: string[] = []
+  const begin = '-----BEGIN CERTIFICATE-----'
+  const end = '-----END CERTIFICATE-----'
+  let cursor = 0
+  while (true) {
+    const start = pemText.indexOf(begin, cursor)
+    if (start === -1) break
+    const stop = pemText.indexOf(end, start)
+    if (stop === -1) return null
+    blocks.push(`${pemText.slice(start, stop + end.length)}\n`)
+    cursor = stop + end.length
+  }
+  return blocks
+}
+
+function inspectV2PemBundle(
+  pemText: string,
+  state: V2TrustState,
+): { ok: true; pem: string } | { ok: false; message: string } {
+  if (/BEGIN [A-Z0-9 ]*PRIVATE KEY/.test(pemText)) {
+    return { ok: false, message: 'v2 root PEM contains private key material' }
+  }
+  const blocks = splitCaPemBlocks(pemText)
+  if (blocks == null) return { ok: false, message: 'v2 root PEM is truncated' }
+  if (blocks.length < 1 || blocks.length > 2) {
+    return { ok: false, message: 'v2 root PEM must contain one CA, or two during overlap' }
+  }
+  const shas: string[] = []
+  for (const pem of blocks) {
+    const inspected = inspectPublicRootPem(pem)
+    if (!inspected.ok) return { ok: false, message: `v2 root PEM rejected: ${inspected.code}` }
+    shas.push(inspected.fingerprintSha256)
+  }
+  if (blocks.length === 1) {
+    if (!timingSafeEqualHex(shas[0] ?? '', state.fingerprintSha256)) {
+      return { ok: false, message: 'v2 root PEM does not match pinned fingerprint' }
+    }
+    return { ok: true, pem: blocks[0] ?? pemText }
+  }
+  const previous = state.previousFingerprintSha256
+  if (previous == null || !timingSafeEqualHex(shas[0] ?? '', previous)) {
+    return { ok: false, message: 'overlap PEM first root must match previousFingerprintSha256' }
+  }
+  if (!timingSafeEqualHex(shas[1] ?? '', state.fingerprintSha256)) {
+    return { ok: false, message: 'overlap PEM second root must match fingerprintSha256' }
+  }
+  return { ok: true, pem: `${blocks[0]}${blocks[1]}` }
 }
 
 function fingerprintOfDevice(device: DeviceIdentity): string {
@@ -560,6 +615,188 @@ export async function probeHttpsOrigin(
 
 export function pairingRequiredMessage(origin: string): string {
   return `pairing_required\n运行: kaola-mcp pair --url ${origin}`
+}
+
+export type PreparedHttpsLauncher =
+  | { ok: true; extraCaPem?: string; extraCaPemPath?: string }
+  | { ok: false; pairingRequired?: boolean; message: string }
+
+export async function prepareHttpsLauncher(input: {
+  url: string
+  env: NodeJS.ProcessEnv
+  transport?: PairingTransport
+}): Promise<PreparedHttpsLauncher> {
+  if (tlsVerificationDisabled(input.env)) {
+    return { ok: false, message: 'NODE_TLS_REJECT_UNAUTHORIZED=0/false is not a success path' }
+  }
+  let origin: string
+  try {
+    origin = normalizePairingOrigin(input.url)
+  } catch {
+    return { ok: false, message: 'KAOLA url is not an absolute URL' }
+  }
+  const kaolaHome = resolveKaolaHome(input.env)
+  const transport = input.transport ?? createDefaultPairingTransport()
+  const v2 = inspectV2Trust(kaolaHome, origin)
+  if (v2.present && !v2.ready) return { ok: false, message: v2.message }
+  const v1 = inspectInstalledTrust(kaolaHome)
+  const callerExtra = input.env.NODE_EXTRA_CA_CERTS
+  const hasCallerExtra = typeof callerExtra === 'string' && callerExtra.trim().length > 0
+  if (hasCallerExtra && !v2.ready && !v1.ready) {
+    return {
+      ok: false,
+      message:
+        'NODE_EXTRA_CA_CERTS is not a trust source; public-CA mode refuses caller extra CA without verified local trust state',
+    }
+  }
+
+  if (v2.ready) {
+    const migrated = await migratePublicCaIfPossible({
+      kaolaHome,
+      origin,
+      v2,
+      transport,
+    })
+    if (migrated.ok && migrated.removed) {
+      const probe = await probeHttpsOrigin(origin, undefined, transport)
+      if (!probe.ok) return { ok: false, message: probe.message }
+      return { ok: true }
+    }
+    await applyNextRootIfOffered({ kaolaHome, origin, v2, transport })
+    const afterNext = inspectV2Trust(kaolaHome, origin)
+    if (afterNext.ready) {
+      await dropOldRootIfNewChainProves({
+        kaolaHome,
+        origin,
+        v2: afterNext,
+        transport,
+      })
+    }
+  }
+
+  const extraPem = extraCaPemForOrigin(kaolaHome, origin)
+  const extraPath = inspectV2Trust(kaolaHome, origin)
+  const extraCaPemPath = extraPath.ready ? extraPath.pemPath : undefined
+  const probe = await probeHttpsOrigin(origin, extraPem, transport)
+  if (probe.ok) {
+    return { ok: true, extraCaPem: extraPem, extraCaPemPath }
+  }
+  if (probe.class === 'unknown_issuer') {
+    return { ok: false, pairingRequired: true, message: pairingRequiredMessage(origin) }
+  }
+  return { ok: false, message: probe.message }
+}
+
+async function migratePublicCaIfPossible(input: {
+  kaolaHome: string
+  origin: string
+  v2: Extract<InspectedV2Trust, { ready: true }>
+  transport: PairingTransport
+}): Promise<{ ok: true; removed: boolean }> {
+  const probe = await probeHttpsOrigin(input.origin, undefined, input.transport)
+  if (!probe.ok) return { ok: true, removed: false }
+  const { ensureDeviceIdentity } = await import('./main.ts')
+  const device = await ensureDeviceIdentity(input.kaolaHome)
+  const who = await signedJson(input.transport, device, {
+    origin: input.origin,
+    method: 'GET',
+    pathname: '/api/v1/agent/whoami',
+    payload: null,
+    mode: 'strict',
+  })
+  const body = jsonParse(who.body) ?? {}
+  if (
+    who.status === 200 &&
+    body.status === 'active' &&
+    body.fingerprint === input.v2.state.deviceFingerprint &&
+    body.instance_id === input.v2.state.instanceId &&
+    Object.hasOwn(body, 'token') === false
+  ) {
+    rmSync(input.v2.dir, { recursive: true, force: true })
+    return { ok: true, removed: true }
+  }
+  return { ok: true, removed: false }
+}
+
+async function applyNextRootIfOffered(input: {
+  kaolaHome: string
+  origin: string
+  v2: Extract<InspectedV2Trust, { ready: true }>
+  transport: PairingTransport
+}): Promise<void> {
+  const { ensureDeviceIdentity } = await import('./main.ts')
+  const device = await ensureDeviceIdentity(input.kaolaHome)
+  let res: PairingHttpResponse
+  try {
+    res = await signedJson(input.transport, device, {
+      origin: input.origin,
+      method: 'POST',
+      pathname: '/api/v1/device-trust/next-root',
+      payload: {},
+      mode: 'strict',
+      extraCaPem: input.v2.pem,
+    })
+  } catch {
+    return
+  }
+  if (res.status === 404 || res.status === 202) return
+  if (res.status !== 200) return
+  const body = jsonParse(res.body) ?? {}
+  const rootPem = typeof body.root_pem === 'string' ? body.root_pem : ''
+  const rootSha = typeof body.root_sha256 === 'string' ? body.root_sha256 : ''
+  const inspected = inspectPublicRootPem(rootPem)
+  if (!inspected.ok) return
+  if (!timingSafeEqualHex(inspected.fingerprintSha256, rootSha)) return
+  if (timingSafeEqualHex(rootSha, input.v2.state.fingerprintSha256)) return
+  if (input.v2.state.previousFingerprintSha256 != null) return
+  const overlapPem = `${input.v2.pem.trim()}\n${inspected.pem}`
+  const state: V2TrustState = {
+    ...input.v2.state,
+    fingerprintSha256: rootSha,
+    previousFingerprintSha256: input.v2.state.fingerprintSha256,
+    trustEpoch: input.v2.state.trustEpoch + 1,
+  }
+  const staging = writeV2Staging({ kaolaHome: input.kaolaHome, origin: input.origin, pem: overlapPem, state })
+  try {
+    const probe = await probeHttpsOrigin(input.origin, overlapPem, input.transport)
+    if (!probe.ok) {
+      discardStaging(staging)
+      return
+    }
+    commitV2Staging(staging, input.origin, input.kaolaHome)
+  } catch {
+    discardStaging(staging)
+  }
+}
+
+async function dropOldRootIfNewChainProves(input: {
+  kaolaHome: string
+  origin: string
+  v2: Extract<InspectedV2Trust, { ready: true }>
+  transport: PairingTransport
+}): Promise<void> {
+  if (input.v2.state.previousFingerprintSha256 == null) return
+  const blocks = splitCaPemBlocks(input.v2.pem)
+  if (blocks == null || blocks.length !== 2) return
+  const newPem = blocks[1] ?? ''
+  const probe = await probeHttpsOrigin(input.origin, newPem, input.transport)
+  if (!probe.ok) return
+  const state: V2TrustState = {
+    v: input.v2.state.v,
+    alg: input.v2.state.alg,
+    originDigest: input.v2.state.originDigest,
+    instanceId: input.v2.state.instanceId,
+    deviceFingerprint: input.v2.state.deviceFingerprint,
+    fingerprintSha256: input.v2.state.fingerprintSha256,
+    trustEpoch: input.v2.state.trustEpoch,
+    pairedAt: input.v2.state.pairedAt,
+  }
+  const staging = writeV2Staging({ kaolaHome: input.kaolaHome, origin: input.origin, pem: newPem, state })
+  try {
+    commitV2Staging(staging, input.origin, input.kaolaHome)
+  } catch {
+    discardStaging(staging)
+  }
 }
 
 function jsonParse(body: string): Record<string, unknown> | undefined {

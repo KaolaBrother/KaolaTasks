@@ -12,7 +12,7 @@ import {
   pairingIsLive,
 } from '@kaola/shared'
 import { applyOauthTestEnv, ensureSetup, sqliteFile } from './auth.test-helpers.ts'
-import { generateDeviceIdentity, injectSigned } from './device-proof.test-helpers.ts'
+import { generateDeviceIdentity, injectSigned, signedInjectHeaders } from './device-proof.test-helpers.ts'
 import { createDb } from './db.ts'
 import { loadPairingConfig } from './pairing.ts'
 
@@ -635,6 +635,39 @@ describe('issue #63 approval-bound private-CA pairing', { concurrency: false }, 
     assert.equal(again.statusCode, 409, again.body)
     assert.equal(jsonBody(again).error, 'conflict')
     assert.match(String(jsonBody(again).message), /根轮换/)
+  })
+
+  test('replaying the same device-proof nonce is 401 and does not create a second pairing', async (t) => {
+    freezeNow(t)
+    enablePairing(t)
+    const sqlitePath = sqliteFile(t, 'kaola-pairing-replay-')
+    const app = await createApp(t, sqlitePath)
+    const identity = generateDeviceIdentity()
+    const payload = JSON.stringify({ client_nonce: clientNonce() })
+    const headers = signedInjectHeaders({
+      identity,
+      method: 'POST',
+      pathname: '/api/v1/device-pairings',
+      payload,
+      extra: { accept: 'application/json', 'content-type': 'application/json' },
+    })
+    const first = await app.inject({
+      method: 'POST',
+      url: '/api/v1/device-pairings',
+      headers,
+      payload,
+    })
+    assert.equal(first.statusCode, 201, first.body)
+    const replay = await app.inject({
+      method: 'POST',
+      url: '/api/v1/device-pairings',
+      headers,
+      payload,
+    })
+    assert.equal(replay.statusCode, 401, replay.body)
+    assert.equal(jsonBody(replay).error, 'unauthorized')
+    const rows = sqliteRows(sqlitePath)
+    assert.equal(rows.pairing != null, true)
   })
 
   test('next-root and complete stay 202 for pending devices', async (t) => {

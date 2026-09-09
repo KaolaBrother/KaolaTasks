@@ -448,8 +448,8 @@ export function exportMcpTrustEnv(options: {
 /**
  * Fail-closed read of a process-level extra CA file (the path typically placed in
  * `NODE_EXTRA_CA_CERTS`). Used by the stdio bridge: Node only loads that env var at
- * process start, so an in-process `env` argument must still be a single public CA
- * cert with no private key or the HTTPS connection is refused.
+ * process start, so an in-process `env` argument must still be one public CA, or two
+ * during v2 overlap, with no private key, or the HTTPS connection is refused.
  */
 export function readVerifiedExtraCaPem(pemPath: string): TrustVerifyOk | TrustVerifyErr | { ok: false; code: 'unreadable'; message: string } {
   const resolved = resolve(pemPath)
@@ -463,7 +463,51 @@ export function readVerifiedExtraCaPem(pemPath: string): TrustVerifyOk | TrustVe
       message: `cannot read extra CA PEM at ${resolved}`,
     }
   }
-  return verifyRootCaStructure(text)
+  if (text.trim().length === 0) {
+    return { ok: false, code: 'empty_pem', message: 'PEM is empty' }
+  }
+  if (PRIVATE_KEY_MARKER.test(text)) {
+    return {
+      ok: false,
+      code: 'private_key_present',
+      message: 'PEM contains private key material; root private keys must never be distributed to clients',
+    }
+  }
+  const blocks: string[] = []
+  let cursor = 0
+  while (true) {
+    const start = text.indexOf(CERT_BEGIN, cursor)
+    if (start === -1) break
+    const stop = text.indexOf(CERT_END, start)
+    if (stop === -1) {
+      return { ok: false, code: 'certificate_count', message: 'extra CA PEM is truncated' }
+    }
+    blocks.push(`${text.slice(start, stop + CERT_END.length)}\n`)
+    cursor = stop + CERT_END.length
+  }
+  if (blocks.length < 1 || blocks.length > 2) {
+    return {
+      ok: false,
+      code: 'certificate_count',
+      message: `extra CA PEM must contain one CA, or two during overlap (found ${blocks.length})`,
+    }
+  }
+  const verified: TrustVerifyOk[] = []
+  for (const block of blocks) {
+    const one = verifyRootCaStructure(block)
+    if (!one.ok) return one
+    verified.push(one)
+  }
+  const last = verified[verified.length - 1]
+  if (last == null) {
+    return { ok: false, code: 'certificate_count', message: 'extra CA PEM must contain one CA, or two during overlap' }
+  }
+  return {
+    ok: true,
+    fingerprintSha256: last.fingerprintSha256,
+    pem: verified.map((item) => item.pem).join(''),
+    subject: last.subject,
+  }
 }
 
 /**
