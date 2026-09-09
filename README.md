@@ -315,7 +315,7 @@ Cookie / `trustProxy` / webhook 配置见 [docs/api.md](docs/api.md)。
 3. 不要设置 `NODE_EXTRA_CA_CERTS`，不要 `NODE_TLS_REJECT_UNAUTHORIZED=0`，不要 `--insecure`，不要 `curl -k`，不要点浏览器证书例外。
 4. 若本机 MCP 配置或进程环境还留着 `NODE_EXTRA_CA_CERTS`，或系统信任库还留着测试私有根，说明还没从测试模式迁完，先按下面「卸载、轮换、迁移」清掉再连。
 
-浏览器 OAuth、MCP `authorization_required`、管理员绑定、绑定后 `list_tasks` 都走系统默认信任链。入口若从私有 CA 改成公开 CA，本机残留的 v2 extra root 由操作者 `kaola-mcp trust uninstall` 或删除 `$KAOLA_HOME/trust/v2/`；launcher **不会**在默认库能验证后自动删掉私有根（[#63 范围纠正](https://github.com/KaolaBrother/KaolaTasks/issues/63#issuecomment-5595770991)）。
+浏览器 OAuth、MCP `authorization_required`、管理员绑定、绑定后 `list_tasks` 都走系统默认信任链。入口从私有 CA 迁到公开 CA 后，已配对客户端会在默认库能验证同一 origin 且 `whoami` 匹配后自动删除该 origin 的 v2 extra root。
 
 ### 方案 2：私有 CA（测试，每台电脑都要配对）
 
@@ -388,11 +388,11 @@ Linux 必须显式传 `--platform linux-debian` 或 `--platform linux-fedora`，
 ### 卸载、轮换、退出团队、迁到公开 CA
 
 - **核验**：`kaola-mcp trust status`，或用上面恢复路径的 `openssl` 命令对照带外指纹。不一致就停止连接。
-- **卸载 MCP 额外 CA**：`kaola-mcp trust uninstall` 卸 v1；v2 由操作者删除对应 `$KAOLA_HOME/trust/v2/<origin-digest>/`。不要删 `device.json` / Claim receipts。卸载后公开 CA 路径不得再注入额外 CA；调用方若仍设置 `NODE_EXTRA_CA_CERTS`，launcher 必须拒绝。
+- **卸载 MCP 额外 CA**：`kaola-mcp trust uninstall` 卸 v1；v2 可在公开 CA 证明后由 launcher 自动删除该 origin digest 目录，或由操作者删除 `$KAOLA_HOME/trust/v2/`。不要删 `device.json` / Claim receipts。卸载后公开 CA 路径不得再注入额外 CA；调用方若仍设置 `NODE_EXTRA_CA_CERTS`，launcher 必须拒绝。
 - **卸载系统/浏览器信任**：按各 OS 提权命令手工删除该根；卸载 MCP 信任不会同时撤系统信任。Pair / launcher 从不静默装/卸系统根。
 - **根 CA 轮换（已配对 v2）**：服务端 overlap 期间，已配对客户端用旧严格 TLS + 活跃设备证明 `POST /api/v1/device-trust/next-root`，原子写入 old+new；切 leaf 并证明新链后才丢旧根。错过 overlap 再跑 `kaola-mcp pair`，不做不安全恢复。v1 操作者路径仍是带外分发新根指纹或清单后 `kaola-mcp trust install` 并重启 MCP。新旧根的私钥都不分发。
 - **电脑退出团队**：管理员解除该设备；本机卸 extra CA；若曾做系统信任则再撤系统根。
-- **迁到 `STABLE_PUBLIC_CA`**：#63 **不**自动从私有 extra root 迁到公开 CA。入口改为公开 CA 链后，操作者卸 v2/v1 extra CA，只保留 `--url <kaola-origin>`。系统级测试根仍须操作者手工撤。
+- **迁到 `STABLE_PUBLIC_CA`**：入口改为公开 CA 链之后，已配对客户端在默认库 + 匹配 `whoami` 后删除该 origin 的 v2 extra root，只保留 `--url <kaola-origin>`。系统级测试根仍须操作者手工撤。
 
 ## 给开发者
 

@@ -723,7 +723,7 @@ describe('kaola-mcp pair (#63)', { concurrency: false }, () => {
     assert.equal(inspectV2Trust(home, origin).ready, true)
   })
 
-  test('default-store success does not auto-delete a ready v2 extra root', async (t) => {
+  test('public-CA migration deletes only this origin digest v2 extra root', async (t) => {
     const home = tmpHome(t)
     const origin = 'https://kaola.example.test'
     const root = mintRoot(t)
@@ -734,8 +734,11 @@ describe('kaola-mcp pair (#63)', { concurrency: false }, () => {
       pollIntervalMs: 0,
     })
     assert.equal(pairCode, 0, pairStreams.stderr())
-    const before = inspectV2Trust(home, origin)
-    assert.equal(before.ready, true)
+    assert.equal(inspectV2Trust(home, origin).ready, true)
+    const { ensureDeviceIdentity } = await import('./main.ts')
+    const device = await ensureDeviceIdentity(home)
+    const { deviceFingerprint } = await import('@kaola/shared')
+    const fp = deviceFingerprint(Buffer.from(device.publicKeySpki, 'base64'))
     const devicePath = join(home, 'device.json')
     const prep = await prepareHttpsLauncher({
       url: origin,
@@ -746,8 +749,19 @@ describe('kaola-mcp pair (#63)', { concurrency: false }, () => {
           if (url.pathname === '/api/v1/setup') {
             return { status: 200, headers: {}, body: '{"setup_complete":true}' }
           }
-          if (url.pathname === '/api/v1/device-trust/next-root') {
-            return { status: 404, headers: {}, body: '{"error":"not_found"}' }
+          if (url.pathname === '/api/v1/agent/whoami') {
+            assert.equal(input.extraCaPem, undefined)
+            return {
+              status: 200,
+              headers: {},
+              body: JSON.stringify({
+                device_id: 1,
+                fingerprint: fp,
+                hostname: 'test',
+                status: 'active',
+                instance_id: INSTANCE_ID,
+              }),
+            }
           }
           throw new Error(`unexpected ${url.pathname}`)
         },
@@ -755,10 +769,9 @@ describe('kaola-mcp pair (#63)', { concurrency: false }, () => {
     })
     assert.equal(prep.ok, true, prep.ok ? '' : prep.message)
     if (!prep.ok) return
-    const after = inspectV2Trust(home, origin)
-    assert.equal(after.ready, true)
+    assert.equal(prep.extraCaPemPath, undefined)
+    assert.equal(inspectV2Trust(home, origin).present, false)
     assert.equal(existsSync(devicePath), true)
-    assert.equal(prep.extraCaPemPath, after.ready ? after.pemPath : undefined)
   })
 })
 

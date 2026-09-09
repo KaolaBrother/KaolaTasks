@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `#63` 按 [评论 5595967717](https://github.com/KaolaBrother/KaolaTasks/issues/63#issuecomment-5595967717) 恢复公开 CA 迁移：默认库 + 匹配 `whoami` 后删除该 origin digest 的 v2 extra root（不删 `device.json` / v1）。不改写 `5a4f1e1` 移除检查点。
 - `#63` 范围纠正（[评论 5595770991](https://github.com/KaolaBrother/KaolaTasks/issues/63#issuecomment-5595770991)）：去掉 launcher 在默认库证明后自动删除 v2 私有 extra root 的私有→公开迁移。保留 `kaola-mcp pair` 恢复、私有根 overlap 轮换、以及无 extra CA 的公开 CA 直连。操作者卸根仍走 `trust uninstall` / 删除 v2 目录。
 - `#63` 全量验收门禁与诚实 UAT 前置清单：`pnpm lint` / `typecheck` / Node **1091** / Web **169** / `build` / `git diff --check` 通过；新增行 secret scan 无私钥与真实 forge/Claim token。活网私有 CA、浏览器密语绑定、macOS/Windows/Linux package-bin 明确未执行，见 `docs/smoke-test.md`。不部署。
 - `#63` 独立安全审查：create/recover 的 live 查找与插入收进同一事务，避免并发撞 `device_pairings_one_live`。补齐连字符密语绑定、跨设备 status 404、consumed 不再重放 proof、以及 unique live 行的失败关闭证据。未发现 bootstrap 可读 Task、secret 进事件、或 leftover `ktk_` 授权 pairing 的回归。

@@ -651,6 +651,17 @@ export async function prepareHttpsLauncher(input: {
   }
 
   if (v2.ready) {
+    const migrated = await migratePublicCaIfPossible({
+      kaolaHome,
+      origin,
+      v2,
+      transport,
+    })
+    if (migrated.ok && migrated.removed) {
+      const probe = await probeHttpsOrigin(origin, undefined, transport)
+      if (!probe.ok) return { ok: false, message: probe.message }
+      return { ok: true }
+    }
     await applyNextRootIfOffered({ kaolaHome, origin, v2, transport })
     const afterNext = inspectV2Trust(kaolaHome, origin)
     if (afterNext.ready) {
@@ -674,6 +685,37 @@ export async function prepareHttpsLauncher(input: {
     return { ok: false, pairingRequired: true, message: pairingRequiredMessage(origin) }
   }
   return { ok: false, message: probe.message }
+}
+
+async function migratePublicCaIfPossible(input: {
+  kaolaHome: string
+  origin: string
+  v2: Extract<InspectedV2Trust, { ready: true }>
+  transport: PairingTransport
+}): Promise<{ ok: true; removed: boolean }> {
+  const probe = await probeHttpsOrigin(input.origin, undefined, input.transport)
+  if (!probe.ok) return { ok: true, removed: false }
+  const { ensureDeviceIdentity } = await import('./main.ts')
+  const device = await ensureDeviceIdentity(input.kaolaHome)
+  const who = await signedJson(input.transport, device, {
+    origin: input.origin,
+    method: 'GET',
+    pathname: '/api/v1/agent/whoami',
+    payload: null,
+    mode: 'strict',
+  })
+  const body = jsonParse(who.body) ?? {}
+  if (
+    who.status === 200 &&
+    body.status === 'active' &&
+    body.fingerprint === input.v2.state.deviceFingerprint &&
+    body.instance_id === input.v2.state.instanceId &&
+    Object.hasOwn(body, 'token') === false
+  ) {
+    rmSync(input.v2.dir, { recursive: true, force: true })
+    return { ok: true, removed: true }
+  }
+  return { ok: true, removed: false }
 }
 
 async function applyNextRootIfOffered(input: {

@@ -400,3 +400,7 @@ Windows 客户端、公开 CA 干净机器、以及未制造的故障场景仍�
 保留：私有 CA `pair` 恢复、overlap 轮换、无 extra CA 的公开 CA 直连（`pair` 成功且不装额外根）。去掉：`--url` 在默认库 + `whoami` 后 `rm` 该 origin 的 v2 目录。
 
 受影响验证在纠正提交上重跑，不沿用上一节全量 PASS 数字。活网 UAT / 部署仍未执行。
+
+## 2026-09-09 #63 范围恢复：保留公开 CA 迁移
+
+正式评论 [5595967717](https://github.com/KaolaBrother/KaolaTasks/issues/63#issuecomment-5595967717) 取代 5595770991 的移除要求。产品行为恢复为 `8be16f6` / `09a01f5` 已验证的 launcher 迁移：默认库严格 TLS + 匹配 active `whoami` 后只删该 origin 的 v2 extra root。历史 `5a4f1e1` 与上一节不改写。UAT 仍未执行，sink 后按本手册记录。
