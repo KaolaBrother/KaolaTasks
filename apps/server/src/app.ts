@@ -6,6 +6,7 @@ import { registerAgentKeys } from './agent-keys.ts'
 import { COOKIE_SECURE_TRUST_PROXY, cookieSecureFromPublicUrl, registerAuth } from './auth.ts'
 import { registerClaim } from './claim.ts'
 import { registerDevices } from './devices.ts'
+import { loadPairingConfig, registerPairing } from './pairing.ts'
 import { registerClaimConfirmations } from './claim-confirmations.ts'
 import { registerCredentialProfiles } from './credential-profiles.ts'
 import { createDb } from './db.ts'
@@ -90,12 +91,17 @@ export function buildApp(options?: {
     })
   }
 
+  if (process.env.KAOLA_PAIRING_MODE === 'private_ca') {
+    loadPairingConfig(db)
+  }
+
   registerAuth(app, db)
   registerAgentKeys(app, db)
   registerCredentialProfiles(app, db)
   registerTasks(app, db)
   registerClaim(app, db)
   registerDevices(app, db)
+  registerPairing(app, db)
   registerClaimConfirmations(app, db)
   registerEvents(app, db)
   registerReview(app, db)

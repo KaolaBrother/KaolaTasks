@@ -601,6 +601,18 @@ describe('issue #23 device proof + admin bind', { concurrency: false }, () => {
     assert.equal(jsonBody(bound).ok, true)
     assert.equal(jsonBody(bound).owner?.kind, 'user')
     assert.equal(Number(jsonBody(bound).owner?.user_id), Number(admin.body.id))
+    const listedBound = await app.inject({
+      method: 'GET',
+      url: '/api/v1/devices',
+      cookies: admin.cookies,
+      headers: JSON_HEADERS,
+    })
+    const boundRow = jsonBody(listedBound).devices.find((d) => Number(d.id) === Number(row.id))
+    assert.equal(
+      Date.parse(boundRow.expires_at) - Date.parse(boundRow.paired_at),
+      90 * 86400 * 1000,
+      `new default policy must bind paired_at + 90 days, got ${boundRow.paired_at} → ${boundRow.expires_at}`,
+    )
   })
 
   test('bind to existing claimant_id', async (t) => {
@@ -746,6 +758,11 @@ describe('issue #23 device proof + admin bind', { concurrency: false }, () => {
     assert.ok(boundRow, `bound device missing from GET /api/v1/devices: ${mine.body}`)
     const originalExpires = boundRow.expires_at
     assert.equal(typeof originalExpires, 'string')
+    assert.equal(
+      Date.parse(originalExpires) - Date.parse(boundRow.paired_at),
+      90 * 86400 * 1000,
+      'new claimant default must be paired_at + 90 days',
+    )
 
     const patched = await app.inject({
       method: 'PATCH',

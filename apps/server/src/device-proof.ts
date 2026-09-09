@@ -22,6 +22,7 @@ declare module 'fastify' {
   interface FastifyRequest {
     rawBody?: Buffer
     deviceAuth?: AgentPrincipal
+    pairingDevice?: Device
   }
 }
 
@@ -157,7 +158,12 @@ function upsertPending(
   return existing
 }
 
-export function addDeviceProofHook(app: FastifyInstance, db: AppDb): void {
+export function addDeviceProofHook(
+  app: FastifyInstance,
+  db: AppDb,
+  options?: { pending: 'authorization_required' | 'continue'; rejectAuthorization?: boolean },
+): void {
+  const pendingPolicy = options?.pending ?? 'authorization_required'
   app.addHook('preParsing', async (request, _reply, payload) => {
     const chunks: Buffer[] = []
     for await (const chunk of payload) {
@@ -169,6 +175,9 @@ export function addDeviceProofHook(app: FastifyInstance, db: AppDb): void {
   })
 
   app.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
+    if (options?.rejectAuthorization === true && headerString(request.headers.authorization) != null) {
+      return sendDeviceUnauthorized(reply)
+    }
     const keyB64 = headerString(request.headers['x-kaola-key'])
     const tsRaw = headerString(request.headers['x-kaola-ts'])
     const nonce = headerString(request.headers['x-kaola-nonce'])
@@ -216,6 +225,8 @@ export function addDeviceProofHook(app: FastifyInstance, db: AppDb): void {
 
     if (device == null || device.status === 'pending') {
       device = upsertPending(db, { fingerprint, publicKey: keyB64, hostname, now })
+      request.pairingDevice = device
+      if (pendingPolicy === 'continue') return
       const pendingExp = device.pendingExpiresAt ?? device.createdAt + PENDING_WINDOW_SECONDS
       return sendAuthorizationRequired(reply, pendingExp)
     }
@@ -255,7 +266,9 @@ export function addDeviceProofHook(app: FastifyInstance, db: AppDb): void {
     }
 
     db.update(devices).set({ lastSeen: now }).where(eq(devices.id, device.id)).run()
-    request.deviceAuth = { device: { ...device, lastSeen: now }, owner }
+    const current = { ...device, lastSeen: now }
+    request.pairingDevice = current
+    request.deviceAuth = { device: current, owner }
   })
 }
 

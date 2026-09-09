@@ -2,9 +2,11 @@ import Database from 'better-sqlite3'
 import { drizzle } from 'drizzle-orm/better-sqlite3'
 import {
   agentKeys,
+  appSettings,
   claimConfirmations,
   claimants,
   credentialProfiles,
+  devicePairings,
   devices,
   discussionMessages,
   events,
@@ -15,6 +17,7 @@ import {
   tasks,
   users,
 } from './schema.ts'
+import { randomUUID } from 'node:crypto'
 
 const USERS_DDL = `
 CREATE TABLE IF NOT EXISTS users (
@@ -27,7 +30,7 @@ CREATE TABLE IF NOT EXISTS users (
   permission_level TEXT NOT NULL,
   password_hash TEXT,
   trusted_automation INTEGER NOT NULL DEFAULT 0,
-  device_max_age_days INTEGER NOT NULL DEFAULT 30,
+  device_max_age_days INTEGER NOT NULL DEFAULT 90,
   max_devices INTEGER NOT NULL DEFAULT 5,
   device_idle_days INTEGER NOT NULL DEFAULT 0,
   UNIQUE (provider, remote_id)
@@ -39,7 +42,7 @@ ALTER TABLE users ADD COLUMN trusted_automation INTEGER NOT NULL DEFAULT 0
 `
 
 const USERS_ADD_DEVICE_MAX_AGE_DDL = `
-ALTER TABLE users ADD COLUMN device_max_age_days INTEGER NOT NULL DEFAULT 30
+ALTER TABLE users ADD COLUMN device_max_age_days INTEGER NOT NULL DEFAULT 90
 `
 
 const USERS_ADD_MAX_DEVICES_DDL = `
@@ -134,7 +137,7 @@ function reportStrandedRebuildOrphan(
   )
 }
 
-type SqliteTableColumn = { name: string; notnull: number }
+type SqliteTableColumn = { name: string; notnull: number; dflt_value: string | number | null }
 
 function tableColumns(
   sqlite: InstanceType<typeof Database>,
@@ -149,6 +152,81 @@ function columnIsNotNull(
 ): boolean {
   const column = columns.find((row) => row.name === name)
   return column != null && column.notnull === 1
+}
+
+function sqliteColumnDefaultIs(
+  sqlite: InstanceType<typeof Database>,
+  table: string,
+  columnName: string,
+  expected: string,
+): boolean {
+  const column = tableColumns(sqlite, table).find((row) => row.name === columnName)
+  if (column == null || column.dflt_value == null) return false
+  return String(column.dflt_value).replace(/^['"]|['"]$/g, '') === expected
+}
+
+// Issue #63: CREATE TABLE IF NOT EXISTS never rewrites an existing DEFAULT 30. Rebuild copies
+// every row unchanged (stored 30 stays 30) and only changes the table default so later inserts
+// omit-column get 90. Do not UPDATE existing device_max_age_days values.
+function rebuildUsersDeviceMaxAgeDefaultIfStillThirty(sqlite: InstanceType<typeof Database>): void {
+  if (!sqliteColumnDefaultIs(sqlite, 'users', 'device_max_age_days', '30')) return
+  sqlite.transaction(() => {
+    sqlite.exec(`
+      DROP TABLE IF EXISTS users__rebuild;
+      CREATE TABLE users__rebuild (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        provider TEXT NOT NULL,
+        remote_id TEXT NOT NULL,
+        username TEXT NOT NULL,
+        display_name TEXT NOT NULL,
+        status TEXT NOT NULL,
+        permission_level TEXT NOT NULL,
+        password_hash TEXT,
+        trusted_automation INTEGER NOT NULL DEFAULT 0,
+        device_max_age_days INTEGER NOT NULL DEFAULT 90,
+        max_devices INTEGER NOT NULL DEFAULT 5,
+        device_idle_days INTEGER NOT NULL DEFAULT 0,
+        UNIQUE (provider, remote_id)
+      );
+      INSERT INTO users__rebuild (
+        id, provider, remote_id, username, display_name, status, permission_level,
+        password_hash, trusted_automation, device_max_age_days, max_devices, device_idle_days
+      )
+      SELECT
+        id, provider, remote_id, username, display_name, status, permission_level,
+        password_hash, trusted_automation, device_max_age_days, max_devices, device_idle_days
+      FROM users;
+      DROP TABLE users;
+      ALTER TABLE users__rebuild RENAME TO users;
+      CREATE UNIQUE INDEX IF NOT EXISTS users_local_username
+        ON users(lower(trim(username))) WHERE provider = 'local';
+    `)
+  })()
+}
+
+function rebuildClaimantsDeviceMaxAgeDefaultIfStillThirty(sqlite: InstanceType<typeof Database>): void {
+  if (!sqliteColumnDefaultIs(sqlite, 'claimants', 'device_max_age_days', '30')) return
+  sqlite.transaction(() => {
+    sqlite.exec(`
+      DROP TABLE IF EXISTS claimants__rebuild;
+      CREATE TABLE claimants__rebuild (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        display_name TEXT NOT NULL,
+        status TEXT NOT NULL,
+        device_max_age_days INTEGER NOT NULL DEFAULT 90,
+        max_devices INTEGER NOT NULL DEFAULT 5,
+        device_idle_days INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL
+      );
+      INSERT INTO claimants__rebuild (
+        id, display_name, status, device_max_age_days, max_devices, device_idle_days, created_at
+      )
+      SELECT id, display_name, status, device_max_age_days, max_devices, device_idle_days, created_at
+      FROM claimants;
+      DROP TABLE claimants;
+      ALTER TABLE claimants__rebuild RENAME TO claimants;
+    `)
+  })()
 }
 
 // Guarded and transactional: sqlite.exec() is not transactional on its own, so a fault partway
@@ -473,7 +551,7 @@ CREATE TABLE IF NOT EXISTS claimants (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   display_name TEXT NOT NULL,
   status TEXT NOT NULL,
-  device_max_age_days INTEGER NOT NULL DEFAULT 30,
+  device_max_age_days INTEGER NOT NULL DEFAULT 90,
   max_devices INTEGER NOT NULL DEFAULT 5,
   device_idle_days INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL
@@ -497,6 +575,50 @@ CREATE TABLE IF NOT EXISTS devices (
 )
 `
 
+const APP_SETTINGS_DDL = `
+CREATE TABLE IF NOT EXISTS app_settings (
+  k TEXT PRIMARY KEY,
+  v TEXT NOT NULL
+)
+`
+
+const DEVICE_PAIRINGS_DDL = `
+CREATE TABLE IF NOT EXISTS device_pairings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  pairing_id TEXT NOT NULL UNIQUE,
+  device_id INTEGER NOT NULL,
+  protocol_version TEXT NOT NULL,
+  client_nonce_hex TEXT NOT NULL,
+  server_nonce_hex TEXT NOT NULL,
+  origin TEXT NOT NULL,
+  instance_id TEXT NOT NULL,
+  root_sha256 TEXT NOT NULL,
+  commitment_hex TEXT,
+  status TEXT NOT NULL,
+  approval_payload TEXT,
+  approval_proof TEXT,
+  failed_attempts INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  approved_at INTEGER,
+  consumed_at INTEGER
+)
+`
+
+const DEVICE_PAIRINGS_ONE_LIVE_INDEX_DDL = `
+CREATE UNIQUE INDEX IF NOT EXISTS device_pairings_one_live
+  ON device_pairings(device_id)
+  WHERE status IN ('created', 'committed', 'approved') AND consumed_at IS NULL
+`
+
+function ensureInstanceId(sqlite: InstanceType<typeof Database>): void {
+  const row = sqlite.prepare(`SELECT v FROM app_settings WHERE k = 'instance_id'`).get() as
+    | { v: string }
+    | undefined
+  if (row != null && typeof row.v === 'string' && row.v.length > 0) return
+  sqlite.prepare(`INSERT INTO app_settings (k, v) VALUES ('instance_id', ?)`).run(randomUUID())
+}
+
 export function createDb(path = ':memory:') {
   const sqlite = new Database(path)
   sqlite.exec(USERS_DDL)
@@ -505,6 +627,8 @@ export function createDb(path = ':memory:') {
   tryAddColumn(sqlite, USERS_ADD_MAX_DEVICES_DDL)
   tryAddColumn(sqlite, USERS_ADD_DEVICE_IDLE_DDL)
   tryAddColumn(sqlite, USERS_ADD_PASSWORD_HASH_DDL)
+  rebuildUsersDeviceMaxAgeDefaultIfStillThirty(sqlite)
+  reportStrandedRebuildOrphan(sqlite, 'users', 'users__rebuild')
   sqlite.exec(USERS_LOCAL_USERNAME_INDEX_DDL)
   promoteEarliestLoginableAdmin(sqlite)
   sqlite.exec(AGENT_KEYS_DDL)
@@ -539,7 +663,13 @@ export function createDb(path = ':memory:') {
   rebuildClaimConfirmationsIfAgentKeyStillRequired(sqlite)
   reportStrandedRebuildOrphan(sqlite, 'claim_confirmations', 'claim_confirmations__rebuild')
   sqlite.exec(CLAIMANTS_DDL)
+  rebuildClaimantsDeviceMaxAgeDefaultIfStillThirty(sqlite)
+  reportStrandedRebuildOrphan(sqlite, 'claimants', 'claimants__rebuild')
   sqlite.exec(DEVICES_DDL)
+  sqlite.exec(APP_SETTINGS_DDL)
+  ensureInstanceId(sqlite)
+  sqlite.exec(DEVICE_PAIRINGS_DDL)
+  sqlite.exec(DEVICE_PAIRINGS_ONE_LIVE_INDEX_DDL)
   return drizzle(sqlite, {
     schema: {
       users,
@@ -555,6 +685,8 @@ export function createDb(path = ':memory:') {
       claimConfirmations,
       claimants,
       devices,
+      appSettings,
+      devicePairings,
     },
   })
 }

@@ -61,7 +61,7 @@
       "window_starts_at": "this pairing create, not leftover pending first-seen",
       "idempotent_recover_slides_expires_at": false,
       "pending_extended_never_shortened": true,
-      "post_bind_device_max_age_days_default": 30,
+      "post_bind_device_max_age_days_default": 90,
       "vector_expires_at_note": "vectors[].expires_at is a synthetic absolute unix time for transcript bytes; it is not a 900-second TTL"
     }
   },
@@ -158,7 +158,7 @@
     },
     {
       "id": "post_bind_device_max_age_independent",
-      "expect": "after approve, devices.expires_at uses owner device_max_age_days default 30, not pairing TTL"
+      "expect": "after approve, devices.expires_at uses owner device_max_age_days default 90, not pairing TTL; stored 30 and existing expires_at are not rewritten"
     },
     {
       "id": "replay_approval",

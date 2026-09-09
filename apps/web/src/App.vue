@@ -650,9 +650,20 @@
                         <n-text>
                           {{ device.hostname }} · {{ device.fingerprint }} · {{ device.expires_at }}
                         </n-text>
+                        <n-text v-if="device.requires_pairing_secret" data-testid="device-bind-pairing-id">
+                          配对申请 {{ device.pairing_id }}
+                        </n-text>
                       </n-space>
                       <template v-if="pendingDevices.length > 0">
                         <n-space class="keys-inline" align="center">
+                          <n-input
+                            v-if="pendingBindRequiresSecret"
+                            data-testid="device-bind-pairing-secret"
+                            type="password"
+                            v-model:value="bindPairingSecret"
+                            placeholder="配对密语"
+                            style="width: 220px"
+                          />
                           <n-input
                             data-testid="device-bind-claimant-name"
                             v-model:value="bindClaimantName"
@@ -704,7 +715,7 @@
                         class="claim-row"
                         align="center"
                       >
-                        <n-text>{{ claimant.display_name }}</n-text>
+                        <n-text>{{ claimant.display_name }} · 授权 {{ claimant.device_max_age_days }} 天</n-text>
                         <n-button
                           data-testid="claimant-revoke"
                           class="has-ripple"
@@ -934,6 +945,9 @@ type DeviceRow = {
   paired_at?: string | null
   expires_at: string
   last_seen?: string | null
+  pairing_id?: string
+  pairing_expires_at?: string
+  requires_pairing_secret?: boolean
 }
 
 type ClaimantRow = {
@@ -1108,6 +1122,7 @@ const claimants = ref<ClaimantRow[]>([])
 const listedUsers = ref<ListedUser[]>([])
 const bindClaimantName = ref('')
 const bindClaimantId = ref<number | null>(null)
+const bindPairingSecret = ref('')
 const deviceBinding = ref(false)
 const deviceBindMessage = ref('')
 const deviceBindOk = ref(false)
@@ -2107,6 +2122,17 @@ function pendingBindTargetId(): number | undefined {
   return pendingDevices.value[0]?.id
 }
 
+const pendingBindRequiresSecret = computed(() => pendingDevices.value[0]?.requires_pairing_secret === true)
+
+function pairingBindFields(): Record<string, unknown> {
+  const device = pendingDevices.value[0]
+  if (device?.requires_pairing_secret !== true) return {}
+  return {
+    pairing_id: device.pairing_id,
+    pairing_secret: bindPairingSecret.value,
+  }
+}
+
 async function postJson(url: string, body: Record<string, unknown>): Promise<Response> {
   return fetch(url, {
     method: 'POST',
@@ -2122,6 +2148,12 @@ async function refreshDeviceLists() {
   await loadClaimants()
 }
 
+const PAIRING_BIND_ERROR_ZH: Record<string, string> = {
+  pairing_secret_invalid: '配对密语不正确',
+  pairing_expired: '配对申请已过期',
+  pairing_mode_disabled: '配对功能未开启',
+}
+
 async function bindPendingDevice(body: Record<string, unknown>) {
   const id = pendingBindTargetId()
   if (id == null) return
@@ -2130,8 +2162,11 @@ async function bindPendingDevice(body: Record<string, unknown>) {
   try {
     const res = await postJson(`/api/v1/devices/${id}/bind`, body)
     if (!res.ok) {
+      const bodyJson = (await res.json().catch(() => null)) as Record<string, unknown> | null
+      const code = typeof bodyJson?.error === 'string' ? bodyJson.error : ''
       deviceBindOk.value = false
-      deviceBindMessage.value = `绑定失败（${res.status}）`
+      deviceBindMessage.value =
+        PAIRING_BIND_ERROR_ZH[code] ?? typedErrorMessage(bodyJson) ?? `绑定失败（${res.status}）`
       return
     }
     await res.json().catch(() => null)
@@ -2139,6 +2174,7 @@ async function bindPendingDevice(body: Record<string, unknown>) {
     deviceBindMessage.value = '已绑定。'
     bindClaimantName.value = ''
     bindClaimantId.value = null
+    bindPairingSecret.value = ''
     await refreshDeviceLists()
   } catch {
     deviceBindOk.value = false
@@ -2149,15 +2185,15 @@ async function bindPendingDevice(body: Record<string, unknown>) {
 }
 
 async function bindDeviceToSelf() {
-  await bindPendingDevice({ bind_to_self: true })
+  await bindPendingDevice({ bind_to_self: true, ...pairingBindFields() })
 }
 
 async function submitBindClaimant() {
   if (bindClaimantId.value != null) {
-    await bindPendingDevice({ claimant_id: bindClaimantId.value })
+    await bindPendingDevice({ claimant_id: bindClaimantId.value, ...pairingBindFields() })
     return
   }
-  await bindPendingDevice({ claimant_display_name: bindClaimantName.value })
+  await bindPendingDevice({ claimant_display_name: bindClaimantName.value, ...pairingBindFields() })
 }
 
 async function revokeDevice(id: number) {

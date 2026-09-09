@@ -560,3 +560,139 @@ describe('createDb #54 head-anchoring migration (pre-existing submissions)', { c
     assert.equal(row.forge_head_seen_at, 1700000000)
   })
 })
+
+function columnDefault(sqlite, table, name) {
+  const column = tableColumns(sqlite, table).find((row) => row.name === name)
+  assert.ok(column, `expected column ${name} on ${table}`)
+  return column.dflt_value == null ? null : String(column.dflt_value).replace(/^['"]|['"]$/g, '')
+}
+
+function seedLegacyDeviceMaxAgeDefaultThirty(sqlitePath) {
+  const raw = new Database(sqlitePath)
+  raw.exec(`
+    CREATE TABLE users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      provider TEXT NOT NULL,
+      remote_id TEXT NOT NULL,
+      username TEXT NOT NULL,
+      display_name TEXT NOT NULL,
+      status TEXT NOT NULL,
+      permission_level TEXT NOT NULL,
+      password_hash TEXT,
+      trusted_automation INTEGER NOT NULL DEFAULT 0,
+      device_max_age_days INTEGER NOT NULL DEFAULT 30,
+      max_devices INTEGER NOT NULL DEFAULT 5,
+      device_idle_days INTEGER NOT NULL DEFAULT 0,
+      UNIQUE (provider, remote_id)
+    );
+    CREATE TABLE claimants (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      display_name TEXT NOT NULL,
+      status TEXT NOT NULL,
+      device_max_age_days INTEGER NOT NULL DEFAULT 30,
+      max_devices INTEGER NOT NULL DEFAULT 5,
+      device_idle_days INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL
+    );
+    CREATE TABLE devices (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      fingerprint TEXT NOT NULL UNIQUE,
+      public_key TEXT NOT NULL,
+      hostname TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL,
+      claimant_id INTEGER,
+      user_id INTEGER,
+      created_at INTEGER NOT NULL,
+      pending_expires_at INTEGER,
+      paired_at INTEGER,
+      expires_at INTEGER,
+      last_seen INTEGER
+    );
+  `)
+  raw
+    .prepare(
+      `INSERT INTO users (provider, remote_id, username, display_name, status, permission_level, device_max_age_days)
+       VALUES ('local', 'local', 'old-admin', 'old-admin', 'active', 'admin', 30)`,
+    )
+    .run()
+  raw
+    .prepare(
+      `INSERT INTO users (provider, remote_id, username, display_name, status, permission_level, device_max_age_days)
+       VALUES ('gitlab', '7', 'custom-age', 'custom-age', 'active', 'full', 14)`,
+    )
+    .run()
+  raw
+    .prepare(
+      `INSERT INTO claimants (display_name, status, device_max_age_days, created_at)
+       VALUES ('legacy-claimant', 'active', 30, 1700000000)`,
+    )
+    .run()
+  raw
+    .prepare(
+      `INSERT INTO devices (fingerprint, public_key, hostname, status, user_id, created_at, paired_at, expires_at)
+       VALUES (?, 'pk', 'legacy-host', 'active', 1, 1700000000, 1700000000, ?)`,
+    )
+    .run('a'.repeat(64), 1700000000 + 30 * 86400)
+  raw.close()
+}
+
+describe('issue #63 device_max_age_days default 90', () => {
+  test('fresh database SQL default is 90; omit-column insert and bind owners get 90', (t) => {
+    const db = createDb(':memory:')
+    t.after(() => db.$client.close())
+    const sqlite = db.$client
+    assert.equal(columnDefault(sqlite, 'users', 'device_max_age_days'), '90')
+    assert.equal(columnDefault(sqlite, 'claimants', 'device_max_age_days'), '90')
+    sqlite
+      .prepare(
+        `INSERT INTO users (provider, remote_id, username, display_name, status, permission_level)
+         VALUES ('local', 'fresh', 'fresh-admin', 'fresh-admin', 'active', 'admin')`,
+      )
+      .run()
+    sqlite
+      .prepare(`INSERT INTO claimants (display_name, status, created_at) VALUES ('fresh-claimant', 'active', 1)`)
+      .run()
+    assert.equal(sqlite.prepare(`SELECT device_max_age_days FROM users WHERE username = 'fresh-admin'`).get().device_max_age_days, 90)
+    assert.equal(
+      sqlite.prepare(`SELECT device_max_age_days FROM claimants WHERE display_name = 'fresh-claimant'`).get().device_max_age_days,
+      90,
+    )
+  })
+
+  test('upgraded DEFAULT 30 database keeps stored 30/custom and existing expires_at; new omit-column owners get 90', (t) => {
+    const sqlitePath = sqliteFile(t)
+    seedLegacyDeviceMaxAgeDefaultThirty(sqlitePath)
+    const db = createDb(sqlitePath)
+    t.after(() => db.$client.close())
+    const sqlite = db.$client
+    assert.equal(columnDefault(sqlite, 'users', 'device_max_age_days'), '90')
+    assert.equal(columnDefault(sqlite, 'claimants', 'device_max_age_days'), '90')
+    assert.equal(sqlite.prepare(`SELECT device_max_age_days FROM users WHERE username = 'old-admin'`).get().device_max_age_days, 30)
+    assert.equal(sqlite.prepare(`SELECT device_max_age_days FROM users WHERE username = 'custom-age'`).get().device_max_age_days, 14)
+    assert.equal(
+      sqlite.prepare(`SELECT device_max_age_days FROM claimants WHERE display_name = 'legacy-claimant'`).get().device_max_age_days,
+      30,
+    )
+    assert.equal(sqlite.prepare(`SELECT expires_at FROM devices WHERE id = 1`).get().expires_at, 1700000000 + 30 * 86400)
+
+    sqlite
+      .prepare(
+        `INSERT INTO users (provider, remote_id, username, display_name, status, permission_level)
+         VALUES ('gitea', '99', 'post-upgrade', 'post-upgrade', 'active', 'full')`,
+      )
+      .run()
+    sqlite
+      .prepare(`INSERT INTO claimants (display_name, status, created_at) VALUES ('post-upgrade-claimant', 'active', 2)`)
+      .run()
+    assert.equal(
+      sqlite.prepare(`SELECT device_max_age_days FROM users WHERE username = 'post-upgrade'`).get().device_max_age_days,
+      90,
+      'upgraded SQL DEFAULT must not leave new owners on leftover DEFAULT 30',
+    )
+    assert.equal(
+      sqlite.prepare(`SELECT device_max_age_days FROM claimants WHERE display_name = 'post-upgrade-claimant'`).get()
+        .device_max_age_days,
+      90,
+    )
+  })
+})

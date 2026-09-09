@@ -60,6 +60,15 @@ const PENDING_DEVICE = {
   expires_at: '2026-08-22T03:00:00.000Z',
 }
 
+const PENDING_PAIRING_DEVICE = {
+  ...PENDING_DEVICE,
+  pairing_id: 'kpr_aabbccddeeff00112233445566778899',
+  pairing_expires_at: '2026-08-22T04:00:00.000Z',
+  requires_pairing_secret: true,
+}
+
+const PAIRING_SECRET = 'a0a1-a2a3-a4a5-a6a7-a8a9-aaab-acad-aeaf'
+
 const EXISTING_CLAIMANT = {
   id: 42,
   display_name: 'Ada Claimant',
@@ -396,6 +405,7 @@ describe('电脑页 — full+active 列表与绑定', () => {
     expect(node(wrapper, 'device-bind-claimant-select').exists()).toBe(true)
     expect(node(wrapper, 'device-bind-self').exists()).toBe(true)
     expect(textOf(wrapper, 'device-bind-self')).toContain('绑到我自己')
+    expect(node(wrapper, 'device-bind-pairing-secret').exists()).toBe(false)
   })
 
   it('空 我的电脑 列表显示 暂无已绑定的电脑。', async () => {
@@ -484,6 +494,60 @@ describe('电脑页 — full+active 列表与绑定', () => {
     expectMutationHeaders(posts[0])
   })
 
+  it('配对密语输入出现在 requires_pairing_secret 行，绑定带 pairing_id 与 pairing_secret，不回显密语', async () => {
+    const { wrapper, calls, routes } = await mountApp(ME_ADMIN, { pending: [PENDING_PAIRING_DEVICE] })
+    expect(textOf(wrapper, 'device-bind-pairing-id')).toContain(PENDING_PAIRING_DEVICE.pairing_id)
+    expect(node(wrapper, 'device-bind-pairing-secret').exists()).toBe(true)
+    expect(wrapper.text()).toContain('配对密语')
+    expect(wrapper.text()).not.toContain(PAIRING_SECRET)
+
+    await setField(wrapper, 'device-bind-pairing-secret', PAIRING_SECRET)
+    routes.set(`POST /api/v1/devices/${PENDING_PAIRING_DEVICE.id}/bind`, () =>
+      jsonResponse(200, {
+        ok: true,
+        device_id: PENDING_PAIRING_DEVICE.id,
+        owner: { kind: 'user', user_id: 1 },
+        token: BIND_TRAP_TOKEN,
+        pairing_secret: PAIRING_SECRET,
+      }),
+    )
+    routes.set('GET /api/v1/devices/pending', () => jsonResponse(200, { devices: [] }))
+
+    await node(wrapper, 'device-bind-self').trigger('click')
+    await settle()
+
+    const posts = calls.filter(
+      (call) =>
+        call.method === 'POST' && call.url === `/api/v1/devices/${PENDING_PAIRING_DEVICE.id}/bind`,
+    )
+    expect(posts).toHaveLength(1)
+    expect(posts[0].body).toEqual({
+      bind_to_self: true,
+      pairing_id: PENDING_PAIRING_DEVICE.pairing_id,
+      pairing_secret: PAIRING_SECRET,
+    })
+    expectMutationHeaders(posts[0])
+    expect(wrapper.text()).not.toContain(BIND_TRAP_TOKEN)
+    expect(wrapper.text()).not.toContain(PAIRING_SECRET)
+  })
+
+  it('错误密语显示通用中文错误，不回显密语或 commitment', async () => {
+    const { wrapper, routes } = await mountApp(ME_ADMIN, { pending: [PENDING_PAIRING_DEVICE] })
+    await setField(wrapper, 'device-bind-pairing-secret', PAIRING_SECRET)
+    routes.set(`POST /api/v1/devices/${PENDING_PAIRING_DEVICE.id}/bind`, () =>
+      jsonResponse(403, {
+        error: 'pairing_secret_invalid',
+        commitment: 'should-not-render',
+        pairing_secret: PAIRING_SECRET,
+      }),
+    )
+    await node(wrapper, 'device-bind-self').trigger('click')
+    await settle()
+    expect(wrapper.text()).toContain('配对密语不正确')
+    expect(wrapper.text()).not.toContain('should-not-render')
+    expect(wrapper.text()).not.toContain(PAIRING_SECRET)
+  })
+
   it('解除这台电脑 POST /api/v1/devices/:id/revoke', async () => {
     const { wrapper, calls, routes } = await mountApp(ME_ADMIN)
     routes.set(`POST /api/v1/devices/${MINE_DEVICE.id}/revoke`, () => jsonResponse(200, { ok: true }))
@@ -502,6 +566,15 @@ describe('电脑页 — full+active 列表与绑定', () => {
     expectMutationHeaders(posts[0])
   })
 
+  it('认领者列表显示服务端授权天数，新默认 90 天与自定义 30 天都能看见', async () => {
+    const ninety = { ...EXISTING_CLAIMANT, id: 90, display_name: 'Ninety Default', device_max_age_days: 90 }
+    const { wrapper } = await mountApp(ME_ADMIN, { claimants: [EXISTING_CLAIMANT, ninety] })
+    const listed = textOf(wrapper, 'claimants-list')
+    expect(listed).toContain('授权 30 天')
+    expect(listed).toContain('授权 90 天')
+    expect(listed).toContain('Ninety Default')
+  })
+
   it('解除认领者 POST /api/v1/claimants/:id/revoke', async () => {
     const { wrapper, calls, routes } = await mountApp(ME_ADMIN)
     routes.set(`POST /api/v1/claimants/${EXISTING_CLAIMANT.id}/revoke`, () =>
@@ -511,6 +584,7 @@ describe('电脑页 — full+active 列表与绑定', () => {
 
     expect(node(wrapper, 'claimants-list').exists()).toBe(true)
     expect(textOf(wrapper, 'claimants-list')).toContain(EXISTING_CLAIMANT.display_name)
+    expect(textOf(wrapper, 'claimants-list')).toContain('授权 30 天')
     expect(node(wrapper, 'claimant-revoke').exists()).toBe(true)
     expect(textOf(wrapper, 'claimant-revoke')).toContain('解除认领者')
     await node(wrapper, 'claimant-revoke').trigger('click')

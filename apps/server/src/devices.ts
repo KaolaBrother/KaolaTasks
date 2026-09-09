@@ -4,7 +4,14 @@ import { getSessionUser, sendUnauthorized } from './auth.ts'
 import type { AppDb } from './db.ts'
 import { canManageInstance } from './permissions.ts'
 import { unixNow } from './leases.ts'
-import { type Claimant, type Device, type User, claimants, devices } from './schema.ts'
+import {
+  checkPairingSecret,
+  deviceHasPairingHistory,
+  instanceIdOf,
+  pendingPairingFields,
+  persistPairingApproval,
+} from './pairing.ts'
+import { DEFAULT_DEVICE_MAX_AGE_DAYS, type Claimant, type Device, type DevicePairing, type User, claimants, devices } from './schema.ts'
 import { insertAuditEvent } from './vault.ts'
 
 function isoUnix(unix: number | null | undefined): string | null {
@@ -46,13 +53,14 @@ function ownerJson(device: Device, claimant: Claimant | undefined): Record<strin
   return null
 }
 
-function pendingJson(device: Device) {
+function pendingJson(db: AppDb, device: Device, now: number) {
   return {
     id: device.id,
     hostname: device.hostname,
     fingerprint: device.fingerprint,
     created_at: isoUnix(device.createdAt),
     expires_at: isoUnix(device.pendingExpiresAt),
+    ...pendingPairingFields(db, device.id, now),
   }
 }
 
@@ -124,7 +132,7 @@ function readPolicyBody(body: unknown): { deviceMaxAgeDays?: number; maxDevices?
   return out
 }
 
-function countActiveDevices(db: AppDb, owner: { claimantId?: number; userId?: number }): number {
+function countActiveDevices(db: { select: AppDb['select'] }, owner: { claimantId?: number; userId?: number }): number {
   const rows = db.select().from(devices).all()
   return rows.filter((row) => {
     if (row.status !== 'active') return false
@@ -145,7 +153,7 @@ export function registerDevices(app: FastifyInstance, db: AppDb): void {
         row.status === 'pending' &&
         (row.pendingExpiresAt == null || row.pendingExpiresAt > now),
     )
-    return reply.send({ devices: pending.map(pendingJson) })
+    return reply.send({ devices: pending.map((row) => pendingJson(db, row, now)) })
   })
 
   app.get('/api/v1/devices', async (request, reply) => {
@@ -181,83 +189,142 @@ export function registerDevices(app: FastifyInstance, db: AppDb): void {
 
     const device = db.select().from(devices).where(eq(devices.id, id)).get()
     const now = unixNow()
-    if (
-      device == null ||
-      device.status !== 'pending' ||
-      (device.pendingExpiresAt != null && device.pendingExpiresAt <= now)
-    ) {
+    if (device == null || device.status !== 'pending') {
       return reply.code(409).send({
         error: 'conflict',
         message: '电脑申请已过期或不在待授权状态。',
       })
     }
 
-    let claimantId: number | null = null
-    let userId: number | null = null
-    let maxAgeDays = 30
-    let maxDevices = 5
-    let ownerPayload: Record<string, unknown>
-
-    if (bind.variant === 'bind_to_self') {
-      userId = admin.id
-      maxAgeDays = admin.deviceMaxAgeDays
-      maxDevices = admin.maxDevices
-      if (countActiveDevices(db, { userId }) >= maxDevices) {
-        return reply.code(409).send({ error: 'conflict', message: '已达该身份的电脑台数上限。' })
+    const rec = request.body as Record<string, unknown>
+    let pairingCheck: { row: DevicePairing; secret: Buffer } | undefined
+    if (deviceHasPairingHistory(db, device.id)) {
+      const pairingId = rec.pairing_id
+      const pairingSecret = rec.pairing_secret
+      if (typeof pairingId !== 'string' || pairingId === '' || typeof pairingSecret !== 'string') {
+        return reply.code(400).send({ error: 'invalid_body' })
       }
-      ownerPayload = { kind: 'user', user_id: admin.id }
-    } else if (bind.variant === 'claimant_id') {
-      const claimant = db.select().from(claimants).where(eq(claimants.id, bind.claimantId)).get()
-      if (claimant == null || claimant.status !== 'active') {
-        return reply.code(404).send({ error: 'not_found' })
-      }
-      claimantId = claimant.id
-      maxAgeDays = claimant.deviceMaxAgeDays
-      maxDevices = claimant.maxDevices
-      if (countActiveDevices(db, { claimantId }) >= maxDevices) {
-        return reply.code(409).send({ error: 'conflict', message: '已达该身份的电脑台数上限。' })
-      }
-      ownerPayload = { kind: 'claimant', claimant_id: claimant.id, display_name: claimant.displayName }
-    } else {
-      const inserted = db
-        .insert(claimants)
-        .values({
-          displayName: bind.displayName,
-          status: 'active',
-          createdAt: now,
-        })
-        .returning()
-        .get()
-      if (inserted == null) throw new Error('failed to insert claimant')
-      claimantId = inserted.id
-      maxAgeDays = inserted.deviceMaxAgeDays
-      maxDevices = inserted.maxDevices
-      ownerPayload = { kind: 'claimant', claimant_id: inserted.id, display_name: inserted.displayName }
+      const checked = checkPairingSecret(db, { device, pairingId, pairingSecret, now })
+      if (!checked.ok) return reply.code(checked.httpStatus).send(checked.body)
+      pairingCheck = { row: checked.row, secret: checked.secret }
+    }
+    if (device.pendingExpiresAt != null && device.pendingExpiresAt <= now) {
+      return reply.code(409).send({
+        error: 'conflict',
+        message: '电脑申请已过期或不在待授权状态。',
+      })
     }
 
-    const pairedAt = now
-    const expiresAt = now + maxAgeDays * 86400
-    db.update(devices)
-      .set({
-        status: 'active',
-        claimantId,
-        userId,
-        pairedAt,
-        expiresAt,
-        pendingExpiresAt: null,
-      })
-      .where(eq(devices.id, device.id))
-      .run()
+    class BindAbort extends Error {
+      httpStatus: number
+      body: Record<string, unknown>
+      constructor(httpStatus: number, body: Record<string, unknown>) {
+        super('bind abort')
+        this.httpStatus = httpStatus
+        this.body = body
+      }
+    }
 
-    insertAuditEvent(db, {
-      type: '电脑授权',
-      actorUserId: admin.id,
-      details: {
-        device_id: device.id,
-        fingerprint: device.fingerprint,
-        ...(claimantId != null ? { claimant_id: claimantId } : { user_id: userId }),
-      },
-    })
+    let ownerPayload: Record<string, unknown>
+    try {
+      ownerPayload = db.transaction((tx) => {
+        const fresh = tx.select().from(devices).where(eq(devices.id, device.id)).get()
+        if (
+          fresh == null ||
+          fresh.status !== 'pending' ||
+          (fresh.pendingExpiresAt != null && fresh.pendingExpiresAt <= now)
+        ) {
+          throw new BindAbort(409, { error: 'conflict', message: '电脑申请已过期或不在待授权状态。' })
+        }
+
+        let claimantId: number | null = null
+        let userId: number | null = null
+        let maxAgeDays = DEFAULT_DEVICE_MAX_AGE_DAYS
+        let maxDevices = 5
+        let payload: Record<string, unknown>
+        let pairingOwner: { kind: 'claimant'; claimant_id: number } | { kind: 'user'; user_id: number }
+
+        if (bind.variant === 'bind_to_self') {
+          userId = admin.id
+          maxAgeDays = admin.deviceMaxAgeDays
+          maxDevices = admin.maxDevices
+          if (countActiveDevices(tx, { userId }) >= maxDevices) {
+            throw new BindAbort(409, { error: 'conflict', message: '已达该身份的电脑台数上限。' })
+          }
+          payload = { kind: 'user', user_id: admin.id }
+          pairingOwner = { kind: 'user', user_id: admin.id }
+        } else if (bind.variant === 'claimant_id') {
+          const claimant = tx.select().from(claimants).where(eq(claimants.id, bind.claimantId)).get()
+          if (claimant == null || claimant.status !== 'active') {
+            throw new BindAbort(404, { error: 'not_found' })
+          }
+          claimantId = claimant.id
+          maxAgeDays = claimant.deviceMaxAgeDays
+          maxDevices = claimant.maxDevices
+          if (countActiveDevices(tx, { claimantId }) >= maxDevices) {
+            throw new BindAbort(409, { error: 'conflict', message: '已达该身份的电脑台数上限。' })
+          }
+          payload = { kind: 'claimant', claimant_id: claimant.id, display_name: claimant.displayName }
+          pairingOwner = { kind: 'claimant', claimant_id: claimant.id }
+        } else {
+          const inserted = tx
+            .insert(claimants)
+            .values({
+              displayName: bind.displayName,
+              status: 'active',
+              createdAt: now,
+              deviceMaxAgeDays: DEFAULT_DEVICE_MAX_AGE_DAYS,
+            })
+            .returning()
+            .get()
+          if (inserted == null) throw new Error('failed to insert claimant')
+          claimantId = inserted.id
+          maxAgeDays = inserted.deviceMaxAgeDays
+          maxDevices = inserted.maxDevices
+          payload = { kind: 'claimant', claimant_id: inserted.id, display_name: inserted.displayName }
+          pairingOwner = { kind: 'claimant', claimant_id: inserted.id }
+        }
+
+        const pairedAt = now
+        const expiresAt = now + maxAgeDays * 86400
+        tx.update(devices)
+          .set({
+            status: 'active',
+            claimantId,
+            userId,
+            pairedAt,
+            expiresAt,
+            pendingExpiresAt: null,
+          })
+          .where(eq(devices.id, fresh.id))
+          .run()
+
+        if (pairingCheck != null) {
+          persistPairingApproval(tx, {
+            device: fresh,
+            row: pairingCheck.row,
+            owner: pairingOwner,
+            secret: pairingCheck.secret,
+            now,
+          })
+        }
+
+        insertAuditEvent(tx, {
+          type: '电脑授权',
+          actorUserId: admin.id,
+          details: {
+            device_id: fresh.id,
+            fingerprint: fresh.fingerprint,
+            ...(claimantId != null ? { claimant_id: claimantId } : { user_id: userId }),
+            ...(pairingCheck != null ? { pairing_id: pairingCheck.row.pairingId } : {}),
+          },
+        })
+        return payload
+      })
+    } catch (err) {
+      if (err instanceof BindAbort) return reply.code(err.httpStatus).send(err.body)
+      throw err
+    }
 
     return reply.send({
       ok: true,
@@ -355,6 +422,7 @@ export function registerDevices(app: FastifyInstance, db: AppDb): void {
         fingerprint: device.fingerprint,
         hostname: device.hostname,
         status: 'active',
+        instance_id: instanceIdOf(db),
         owner:
           owner.kind === 'user'
             ? { kind: 'user', user_id: owner.user.id }

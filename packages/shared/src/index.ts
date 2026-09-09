@@ -120,3 +120,26 @@ export {
   deviceFingerprint,
   deviceProofCanonical,
 } from './device-proof.ts'
+
+export {
+  DEFAULT_PAIRING_TTL_SECONDS,
+  MAX_PAIRING_TTL_SECONDS,
+  MIN_PAIRING_TTL_SECONDS,
+  PAIRING_MAX_FAILED_ATTEMPTS,
+  PAIRING_PROTOCOL_VERSION,
+  alignPendingExpiresAt,
+  derivePairingKey,
+  encodeApprovalTranscript,
+  encodePairingTranscript,
+  inspectPublicRootPem,
+  newPairingId,
+  newPairingNonce,
+  normalizePairingOrigin,
+  pairingApprovalProof,
+  pairingCommitment,
+  pairingExpiresAt,
+  pairingIsLive,
+  parsePairingSecret,
+  parsePairingTtlSeconds,
+  timingSafeEqualHex,
+} from './pairing.ts'

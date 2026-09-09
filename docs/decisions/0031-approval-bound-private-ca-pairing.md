@@ -193,9 +193,9 @@ This is the clock for **one pairing application**, not the bound-device lifetime
 | Idempotent recover | Same unexpired row is returned unchanged. **Do not** add ttl, **do not** restamp `created_at` / `expires_at`, **do not** extend `pending_expires_at` again. |
 | Already-pending device | DESIGN §7 / §10 pending window remains first-seen + 1 day. A **new** pair must still last ≥24h from this application. Set `devices.pending_expires_at = max(existing pending_expires_at, pairing.expires_at)` so a leftover 1-hour pending cannot expire before the pairing and block bind. Never shorten either deadline. |
 | Receipt / secret / proof | Receipt `expires_at` equals the server pairing `expires_at`. Polling, HMAC verification, and restart recovery must not use a shorter timeout (900s, 15m, etc.). |
-| After bind | `devices.expires_at = paired_at + owner.device_max_age_days * 86400`. Default `device_max_age_days` stays **30**. Pairing TTL does not become the bound-device TTL. |
+| After bind | `devices.expires_at = paired_at + owner.device_max_age_days * 86400`. Default `device_max_age_days` is **90** ([issue comment](https://github.com/KaolaBrother/KaolaTasks/issues/63#issuecomment-5595041812)). Pairing TTL does not become the bound-device TTL. Existing stored 30-day policies and existing `devices.expires_at` are not rewritten (cannot distinguish old default from an explicit setting). |
 
-Acceptance: bind and recover at `created_at + 1` and at `expires_at - 1` succeed; at `expires_at` they fail closed. A device that has already been pending for 20 hours and then starts pair remains approvable for a full 24 hours from that pair request.
+Acceptance: bind and recover at `created_at + 1` and at `expires_at - 1` succeed; at `expires_at` they fail closed. A device that has already been pending for 20 hours and then starts pair remains approvable for a full 24 hours from that pair request. Fresh and upgraded databases must create new users/claimants with SQL DEFAULT 90 (rebuild the table default if it is still 30). Do not `UPDATE` existing `device_max_age_days = 30` rows or existing `devices.expires_at`.
 
 When `KAOLA_PAIRING_MODE=private_ca`, boot fails closed unless:
 
@@ -577,7 +577,7 @@ These are frozen now so implementation cannot weaken them to get green:
    Bind/recover succeed for the whole `[created_at, expires_at)` interval (at least 24 hours).
    An already-pending device that starts pair keeps a ≥24h pairing window from that request;
    pending is extended if it would otherwise expire first. After bind, device authorization
-   is still `device_max_age_days` (default 30), not the pairing TTL.
+   is still `device_max_age_days` (default 90), not the pairing TTL.
 3. Wrong secret, root/instance/origin/device/nonce substitution, expiry, replay, non-admin
    approval, and fake bootstrap all fail closed; trust bytes unchanged.
 4. Pairing routes cannot read or claim tasks or touch credential plaintext. Responses, logs,

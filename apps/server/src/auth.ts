@@ -8,7 +8,7 @@ import { Readable } from 'node:stream'
 import type { AppDb } from './db.ts'
 import { hashPassword, verifyPassword } from './password.ts'
 import { canManageInstance, isLoginableAdmin } from './permissions.ts'
-import { type User, users } from './schema.ts'
+import { type User, users, DEFAULT_DEVICE_MAX_AGE_DAYS } from './schema.ts'
 import { insertAuditEvent } from './vault.ts'
 
 const PENDING_STATUS = '待批准'
@@ -47,6 +47,10 @@ function trimTrailingSlash(url: string): string {
 
 function publicUrlFromEnv(): string {
   return trimTrailingSlash(process.env.PUBLIC_URL ?? 'http://localhost:31415')
+}
+
+export function getPublicUrl(): string {
+  return publicUrlFromEnv()
 }
 
 /** True when PUBLIC_URL (trailing slash trimmed) is https — drives cookie Secure and trustProxy. */
@@ -233,6 +237,7 @@ function completeUserLogin(
       displayName: profile.displayName,
       status: 'active',
       permissionLevel: 'full',
+      deviceMaxAgeDays: DEFAULT_DEVICE_MAX_AGE_DAYS,
     })
     .returning()
     .get()
@@ -548,6 +553,7 @@ export function registerAuth(app: FastifyInstance, db: AppDb) {
             status: 'active',
             permissionLevel: 'admin',
             passwordHash,
+            deviceMaxAgeDays: DEFAULT_DEVICE_MAX_AGE_DAYS,
           })
           .returning()
           .get()

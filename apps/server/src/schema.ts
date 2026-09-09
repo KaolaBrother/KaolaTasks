@@ -1,6 +1,8 @@
 import { sql } from 'drizzle-orm'
 import { check, integer, sqliteTable, text, unique } from 'drizzle-orm/sqlite-core'
 
+export const DEFAULT_DEVICE_MAX_AGE_DAYS = 90
+
 export const users = sqliteTable(
   'users',
   {
@@ -15,7 +17,7 @@ export const users = sqliteTable(
     // Issue #16: default off — autonomous claims from this user need a per-claim confirmation
     // until the user opts in via PUT /api/v1/me/settings.
     trustedAutomation: integer('trusted_automation', { mode: 'boolean' }).notNull().default(false),
-    deviceMaxAgeDays: integer('device_max_age_days').notNull().default(30),
+    deviceMaxAgeDays: integer('device_max_age_days').notNull().default(DEFAULT_DEVICE_MAX_AGE_DAYS),
     maxDevices: integer('max_devices').notNull().default(5),
     deviceIdleDays: integer('device_idle_days').notNull().default(0),
   },
@@ -210,7 +212,7 @@ export const claimants = sqliteTable('claimants', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   displayName: text('display_name').notNull(),
   status: text('status', { enum: ['active', 'revoked'] }).notNull(),
-  deviceMaxAgeDays: integer('device_max_age_days').notNull().default(30),
+  deviceMaxAgeDays: integer('device_max_age_days').notNull().default(DEFAULT_DEVICE_MAX_AGE_DAYS),
   maxDevices: integer('max_devices').notNull().default(5),
   deviceIdleDays: integer('device_idle_days').notNull().default(0),
   createdAt: integer('created_at').notNull(),
@@ -249,3 +251,40 @@ export type DiscussionMessage = typeof discussionMessages.$inferSelect
 export type ClaimConfirmation = typeof claimConfirmations.$inferSelect
 export type Claimant = typeof claimants.$inferSelect
 export type Device = typeof devices.$inferSelect
+
+export const appSettings = sqliteTable('app_settings', {
+  k: text('k').primaryKey(),
+  v: text('v').notNull(),
+})
+
+export const devicePairings = sqliteTable(
+  'device_pairings',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    pairingId: text('pairing_id').notNull(),
+    deviceId: integer('device_id').notNull(),
+    protocolVersion: text('protocol_version').notNull(),
+    clientNonceHex: text('client_nonce_hex').notNull(),
+    serverNonceHex: text('server_nonce_hex').notNull(),
+    origin: text('origin').notNull(),
+    instanceId: text('instance_id').notNull(),
+    rootSha256: text('root_sha256').notNull(),
+    commitmentHex: text('commitment_hex'),
+    status: text('status', {
+      enum: ['created', 'committed', 'approved', 'consumed', 'rejected', 'expired'],
+    }).notNull(),
+    approvalPayload: text('approval_payload'),
+    approvalProof: text('approval_proof'),
+    failedAttempts: integer('failed_attempts').notNull().default(0),
+    createdAt: integer('created_at').notNull(),
+    expiresAt: integer('expires_at').notNull(),
+    approvedAt: integer('approved_at'),
+    consumedAt: integer('consumed_at'),
+  },
+  (t) => [unique('device_pairings_pairing_id').on(t.pairingId)],
+)
+
+export type AppSetting = typeof appSettings.$inferSelect
+export type DevicePairing = typeof devicePairings.$inferSelect
+export type NewDevicePairing = typeof devicePairings.$inferInsert
+

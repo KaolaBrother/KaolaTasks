@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-- `#63` 冻结管理员批准绑定的私有 CA 自动配对合同（DESIGN v0.8 §16.8 / ADR 0031 + test vectors）。认领端 `kaola-mcp pair --url`、密语不经 bootstrap、批准证明绑定 instance/origin/device/root/nonces/owner/expiry、原子公开根与全新严格 TLS + active whoami 才 ready；`kaola-mcp --url` 保持严格非交互。配对 attempt TTL 默认与下限 `86400`（从该次申请起至少 24 小时，到 `expires_at` 才过期；幂等恢复不滑动；不得用更短 secret/proof/receipt/pending 截止让一天内批准恢复失效）；批准后设备授权默认仍 30 天。产品行为、README 用户路径尚未改。
+- `#63` 服务端可恢复 pairing 状态、受限 bootstrap REST、管理员密语绑定事务与中文工作台（电脑页 `配对密语`）。pending 设备仍不能 `list_tasks` / `claim_task`；有 pairing 行的 bind 额外要求 `pairing_id` + `pairing_secret`。配对 attempt TTL 默认与下限 `86400`（从该次申请到 `expires_at`；幂等恢复不滑动；较早 pending 只延长不缩短）。批准后设备授权默认 **90** 天；升级路径重建 SQL DEFAULT，不猜迁存量 30 与既有 `expires_at`。`kaola-mcp pair` 与 README 用户路径仍待下一检查点。
+- `#63` 冻结管理员批准绑定的私有 CA 自动配对合同（DESIGN v0.8 §16.8 / ADR 0031 + test vectors）。认领端 `kaola-mcp pair --url`、密语不经 bootstrap、批准证明绑定 instance/origin/device/root/nonces/owner/expiry、原子公开根与全新严格 TLS + active whoami 才 ready；`kaola-mcp --url` 保持严格非交互。配对 attempt TTL 默认与下限 `86400`（从该次申请起至少 24 小时，到 `expires_at` 才过期；幂等恢复不滑动；不得用更短 secret/proof/receipt/pending 截止让一天内批准恢复失效）；批准后设备授权默认 **90** 天（`paired_at + device_max_age_days`）。存量 30 天策略与既有 `expires_at` 不猜迁。产品行为按该合同实现；README 用户路径仍待 `pair` 落地后改。
 
 - `#60` 修复 `/login` 备用向导／登录表单返回 415：仅 setup/login 接受 urlencoded，成功建立会话后 303 回工作台，JSON 201/200 不变；跨 origin 表单返回 403。补齐 GitLab/Gitea 真实 OAuth、macOS/Linux 设备、评审循环与 restack 的综合 UAT 记录；Web 单次异步提示波动另见 #61。
 
