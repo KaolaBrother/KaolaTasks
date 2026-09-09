@@ -6,21 +6,22 @@
 
 ## 2026-09-09 更正：本机隔离 Linux 全 Agent（路径 L，优先）
 
-正式评论 [5596896971](https://github.com/KaolaBrother/KaolaTasks/issues/63#issuecomment-5596896971) **优先于** [5596887868](https://github.com/KaolaBrother/KaolaTasks/issues/63#issuecomment-5596887868) 以及下文历史「配合 / 停下来和人一起做 / 等人批准」的句子。本例外**只**覆盖本机隔离 Linux UAT，不修改生产管理员授权规则。
+正式评论 [5596896971](https://github.com/KaolaBrother/KaolaTasks/issues/63#issuecomment-5596896971) **优先于** [5596887868](https://github.com/KaolaBrother/KaolaTasks/issues/63#issuecomment-5596887868) 以及下文历史「配合 / 停下来和人一起做 / 等人批准」的句子。本例外**只**覆盖本机隔离 Linux UAT，不修改生产管理员授权规则。本轮增量术语是 **Private CA / 私有 CA**，不是 Privacy AI。
 
-- 全程由 Agent 完成：配置、管理端真实登录与工作台配对批准、发布、认领 Agent 生产 MCP、GitLab/Gitea 完整交付与评审合并。必要时 Computer Use / 浏览器自动化。不设等待人工门。
+- 全程由 Agent 完成：配置、管理端真实登录（含已有 `.env` OAuth 客户端时的 GitLab/Gitea 网页授权）与工作台配对批准、发布、认领 Agent 生产 MCP、GitLab/Gitea 完整交付与评审合并。必要时 Computer Use / 浏览器自动化。不设等待人工门。早期停下来等人批准/OAuth 的做法已被用户纠正，不要再抄。
 - 所需 token/key 已在主仓 gitignored `.env`。Agent 读取但不输出、不再索取、不写入仓库/聊天/remote URL，不把整份 `.env` 或 PAT 预装认领端。
 - 发布/管理端与认领端权限隔离。认领端只从成功 `claim_task` 获得该任务 forge 凭证。
-- 不得 `inject`、直改 SQLite、或旧 `pairDeviceToSelf` 冒充新配对。不得把路径 B 再加一次孤立 `pair` 拼成新机制全闭环 PASS。
+- 不得 `inject`、直改 SQLite、或旧 `pairDeviceToSelf` / 无密语「绑到我自己」冒充新 **Private CA** 配对。不得把路径 B 再加一次孤立 `pair` 拼成新机制全闭环 PASS。
 - 真实 Linux 认领端必须独立干净 `KAOLA_HOME` 和默认信任；服务器 Linux 容器不等于认领端。
-- 真实 HTTPS 私有 CA → 自动 `pair` → 工作台批准 → 严格 `whoami` → v2 → 生产 MCP 认领至 `已完成` 必须是**同一闭环**。
+- 真实 HTTPS **Private CA** → 自动 `pair` → 工作台批准 → 严格 `whoami` → v2 → 再接续下文「标准闭环」与 2026-09-08 本机 Linux 接续同一套生产交付，必须是**同一闭环**。不要为 #63 另造一套无关评审/OAuth/forge 流程。
 - 浏览器自动化实际跑过工作台才记 UI 通过。真实 REST 可作协议诊断。外部 OAuth 人机挑战阻断则如实记阻塞，不伪造。
 - 旧路径 A 的人工规则保留给历史记录；本路径按上述用户授权执行。
+- 2026-09-07–08 VPS 与 2026-09-08 本机接续的历史 PASS **不是** 路径 L 本轮证据。旧容器已停/清理；执行前核实现场。若仍存在 `.kw/local-receipts/uat-20260907/` 只读参考，不把旧库/旧绑定当本轮 PASS。
 - 本节是**可执行设计**。写入时 UAT **尚未启动**。执行顺序：产品候选复核通过 → finalize keep-open merge/push/archive → 再启动路径 L。结果仍只追加本文件。
 
 项目根 `AGENTS.md` 同步了同一作用域。
 
-每家走同一条形状：导入 Issue → 凭证档案 → 发布 → 电脑配对 → `claim_task` → 按 `clone` 四键改仓开 PR → `submit_pr` → 合并 → 轮询 `已完成` → 源 Issue 三条回写（认领 / 提交PR / 完成）。
+每家走同一条形状：**Private CA 自动配对（本轮增补）** 之后，沿用标准闭环：导入 Issue → 凭证档案 → 发布 → `claim_task` → 按 `clone` 四键改仓开 PR → `submit_pr` → 多轮评审 / 未申报头拒绝 / 修订 → 合并 → 轮询 `已完成` → 源 Issue 回写；并覆盖 Claim 恢复、八状态/十工具、依赖 restack、SSE、终止/重开。不要缩成「只改 README」。
 
 认领侧契约以 GitHub [#23](https://github.com/KaolaBrother/KaolaTasks/issues/23) **最新评论**为准（不要重开 #22）。#63 认领端默认 `kaola-mcp pair --url`，不是 #48 `trust install`。
 
@@ -36,7 +37,7 @@
 
 ## 四种跑法
 
-路径 A 是真人浏览器 + 真 OAuth。路径 B 是无人值守脚本（`inject` + 生产 MCP，不打开 Vue）。路径 C 把 B 的假考拉进程 **listen** 出来，用真实工作台代替真人点评审面板，仍不走 GitLab Authorize。**路径 L** 是本机隔离 Linux 上的生产服务 + 真实私有 CA + 独立认领端 + 真实工作台批准，用来验收 #63 新配对机制；**不能**用 B 或 C 代替。
+路径 A 是真人浏览器 + 真 OAuth。路径 B 是无人值守脚本（`inject` + 生产 MCP，不打开 Vue）。路径 C 把 B 的假考拉进程 **listen** 出来，用真实工作台代替真人点评审面板，仍不走 GitLab Authorize。**路径 L** 是本机隔离 Linux 上的生产服务 + 真实 **Private CA** + 独立认领端 + 真实工作台密语批准，用来验收 #63 新配对机制，并**沿用**下文标准闭环与 2026-09-08 本机接续的交付面；**不能**用 B 或 C 代替，也不能把旧 VPS/本机历史 PASS 算进本轮。
 
 ### L. 本机隔离 Linux 全 Agent 私有 CA 闭环（#63）
 
@@ -53,7 +54,17 @@
 | 管理端 Agent | 本机 Cursor CLI Runner + Computer Use 操作真实工作台 | 路径 B 的 stub 登录冒充 UI 通过 |
 | 认领端 Agent | 该 Linux 内真实 Agent 会话（优先 Cursor Agent CLI / 已安装 Linux 承载）+ 生产 `apps/mcp/bin/kaola-mcp.mjs` | `scripts/forge-smoke.ts`、`pairDeviceToSelf`、仅 REST 的「假 Agent」 |
 
-镜像 tag 设计为 `kaolatasks-issue63-uat:final`，构建上下文 = 冻结候选 SHA 的 source，不是审查 FAIL 的旧 SHA。`start-linux.mjs` 的 `server.env` 为 `wx`，重建前勿残留。回收：停路径 L 容器与 proxy、删该隔离 `data/` 与认领端 `KAOLA_HOME`；不动其它 Docker。
+镜像 tag 设计为 `kaolatasks-issue63-uat:final`，构建上下文 = 冻结候选 SHA 的 source，不是审查 FAIL 的旧 SHA。`start-linux.mjs` 的 `server.env` 为 `wx`，重建前勿残留。回收：停路径 L 容器与 proxy、删该隔离 `data/` 与认领端 `KAOLA_HOME`；不动其它 Docker。2026-09-07 VPS 与 2026-09-08 `kaola-tasks-local-uat` 已停/清理，**不要**默认复用；执行前 `docker ps -a` 核实现场。旧证据与受保护库只保留，不挂进本轮隔离根当 PASS。
+
+#### 沿用 vs 增补（不重造无关流程）
+
+| | 做什么 | 不要做什么 |
+|--|--------|------------|
+| **沿用** | 下文「标准闭环」#1–14（含 12b 未申报头）、Claim 恢复/fencing、八状态、十个 MCP 工具、依赖子任务/restack、SSE、终止确认/重开/关 PR、真实 GitLab/Gitea OAuth（已有 `.env` 客户端时 Agent Computer Use）、源 Issue 回写。形状与 2026-09-08「本地 Linux 接续」相同。 | 为 #63 另写一套评审/OAuth/merge 剧本；把路径 B 的 `pairDeviceToSelf` 或缩水 README-only 当成完整 smoke |
+| **本轮增补** | 干净 Linux 认领端 **Private CA** 自动配对：`pairing_required` → `kaola-mcp pair --url` → 工作台 `配对密语` → 严格 TLS + active `whoami` → v2，再进入沿用交付。恢复/负例见下表。 | 手工 `trust install`、预挂根、旧「绑到我自己」无密语路径、Privacy AI 误称 |
+| **历史节** | 2026-09-07–08 VPS 与 2026-09-08 本机接续原文不动 | 把那些行的 PASS 改写成路径 L 本轮通过 |
+
+若本地仍有 `.kw/local-receipts/uat-20260907/` helper，只读对照步骤与脱敏结构；其中 DB、绑定、token 不是本轮现场。
 
 #### 凭证与信任
 
@@ -70,16 +81,29 @@
 |---|------|------|------|------|----------|
 | L1 | 冻结 SHA 已 merge 或经授权在隔离目录刷新 source | 重建 `:final`，启动 server + TLS proxy + 空 SQLite | 服务健康；`private_ca` 启动成功（配置根+leaf 与 `PUBLIC_URL` 一致） | 容器日志无 token；`openssl s_client -verify_hostname localhost` 对入口成功 | 错根/错 SAN 应启动失败；修配置后重建，不改旧库 |
 | L2 | 空库 | Computer Use：初始向导建本地管理员；**不要**空库 OAuth | `active`+`admin` | 工作台已登录；SQLite 有本地管理员，无密码入日志 | 向导失败则停，不 inject 用户 |
-| L3 | 管理员会话 | 工作台或**该会话**下 REST 建 GitLab/Gitea 凭证档案（PAT 只从 `.env` 进页面或带 cookie 的请求） | 档案列表无 token 字段 | UI 实际走过才记 UI；仅 REST 则记「协议诊断」 | 缺 PAT 记阻塞，不编 token |
+| L2b | 已有管理员；`.env` 已有 OAuth 客户端 | Computer Use：真实 GitLab / Gitea Authorize（与 2026-09-08 本机接续相同）。空库之后才允许 OAuth 建发布者 | 工作台显示发布者；无权限提升成第二个密码管理员 | 实际走过回调才记 OAuth UI；人机挑战阻断则记阻塞 | 勿用 stub userinfo 充真实 OAuth |
+| L3 | 管理员或发布者会话 | 工作台或**该会话**下 REST 建 GitLab/Gitea 凭证档案（PAT 只从 `.env` 进页面或带 cookie 的请求） | 档案列表无 token 字段 | UI 实际走过才记 UI；仅 REST 则记「协议诊断」 | 缺 PAT 记阻塞，不编 token |
 | L4 | 档案 | 工作台导入并发布 smoke Issue（`KaolaBrother/kaola-tasks-smoke`） | 任务 `待认领` | publicId、源 Issue URL | 导入失败不改库顶替 |
 | L5 | 干净认领端 | 生产 `kaola-mcp --url ${PUBLIC_URL}` | HTTPS unknown-issuer → 打印 `pairing_required`，退出码 `2`；不能 `list_tasks` / `claim_task` | 认领端无 v2 目录；服务端无 active 设备 | 若已有 v2 则拓扑不干净，换新 `KAOLA_HOME` |
 | L6 | L5 | 同一认领端 `kaola-mcp pair --url ${PUBLIC_URL}` | 终端展示密语；receipt `0600`；pending 设备 | 密语不在服务响应/聊天 | `--cancel` 只删本机 receipt 后重来 |
 | L7 | L6 密语 | 管理端 Computer Use：电脑页 `配对密语` 绑到管理员（`data-testid=device-bind-pairing-secret`） | 设备 `active`；pair 完成严格 TLS + active `whoami`；v2 落地 | 认领端 `$KAOLA_HOME/trust/v2/<origin-digest>/`；whoami 有 `instance_id` 无 forge token | 错密语显示「配对密语不正确」；不得 SQL 改 status |
 | L8 | L7 | 同一设备生产 MCP `tools/list`、`list_tasks`、`claim_task` | 认领成功才揭示该任务凭证 | claim `201`；日志无 PAT 前缀 | pending 仍 `202` 则配对未完成 |
-| L9 | L8 | 真实 clone 四键、改 README、Draft PR、`submit_pr`、评审一轮、`submit_revision`、通过、forge API 合并、`pollPendingReviews` | 任务 `已完成`；源 Issue 认领/提交PR/完成回写 | forge URL、SQLite 状态、回写条数；`events.details` 无令牌 | 按手册既有评审循环恢复，不跳过 PR |
-| L10 | 第一家完成 | 对另一家 forge 重复 L3–L9（仍同一隔离服务，认领端可新 `KAOLA_HOME` 或证明同设备多任务） | 两家都 `已完成` | 各一家 Issue/PR | 一家失败不把另一家外推 |
+| L9 | L8；沿用标准闭环，不另造剧本 | 认领端 Agent：真实 clone 四键、Draft PR、`submit_pr`、多轮评审、`submit_revision`、12b 未申报头 `409`、通过、forge API 合并、`pollPendingReviews`；另做 Claim 恢复/fencing、十工具、依赖 restack、SSE、终止确认/重开（形状同 2026-09-08 本机接续，详见下表） | 任务终态与回写符合标准闭环；不是 README-only | forge URL、SQLite 状态、回写条数、`events.details` 无令牌 | 按手册既有评审循环恢复，不跳过 PR、不拿历史节 PASS 顶替 |
+| L10 | 第一家完成 | 对另一家 forge 重复 L3–L9（仍同一隔离服务，认领端可新 `KAOLA_HOME` 或证明同设备多任务） | 两家都走完沿用闭环 | 各一家 Issue/PR | 一家失败不把另一家外推 |
 
 `pair` 不是 MCP tool。MCP 协议驱动器（stdio bridge）≠ coding Agent；L8–L9 必须是认领端 Agent 会话调生产工具，不能只跑 Node 测试或 forge-smoke。
+
+沿用面（L9）对照 2026-09-08 本机接续与「标准闭环」，**本轮必须再跑**；历史节判定保持原样：
+
+| 沿用项 | 本轮怎么跑 | 旧证据 |
+|--------|------------|--------|
+| 标准闭环 #8–14 + 12b | 配对完成后的生产 MCP / 工作台 | 2026-09-07 VPS / 路径 B 行 **不是** 本轮 |
+| Claim 恢复与异设备 fencing | 同设备 replay、release、跨进程 receipt；另一设备 `403` | 历史 PASS 不顶替 |
+| 八状态 / 十工具 | `tools/list` 见 10 个工具；状态按 DESIGN 中文规范走完 | 旧 launcher 10 工具不是新配对证明 |
+| 依赖 / restack | 有父子任务时按 §17；无则记未造该场景，不编 PASS | 旧 `kt-2026-0005` 不复用 |
+| SSE | 工作台不手动刷新可见换列；独立 SSE 无 token | 旧 SSE 行不是本轮 |
+| 终止 UI / 重开 / 关 PR | Computer Use 点确认框；REST 只作协议诊断 | 2026-09-08 终止 UI 已完成 ≠ 本轮已做 |
+| 真实 OAuth | L2b | 2026-09-08 Safari OAuth 行不是本轮 |
 
 #### 恢复 / 负例矩阵
 
@@ -103,10 +127,10 @@
 ```
 日期 / 候选 SHA / 镜像 tag / Node / OpenSSL
 隔离目录 / 服务端容器 / 认领端 KAOLA_HOME（路径可记，不含 secret）
-GitLab Issue/MR 与任务状态
-Gitea Issue/PR 与任务状态
-配对：pair 出口、v2 digest 是否存在、whoami 无 token
+Private CA 配对：pair 出口、v2 digest 是否存在、whoami 无 token
+沿用交付：GitLab Issue/MR、Gitea Issue/PR、八状态/十工具、12b、restack/SSE/终止（做了哪些）
 未执行 / 外部阻塞（OAuth 人机、缺 Linux Agent 承载、forge 故障）
+历史 2026-09-07–08 行未改写成 PASS
 ```
 
 未启动前本段保持「设计已写、执行未做」。
@@ -337,6 +361,8 @@ GitHub 发布冒烟已停（此前仓 [Issue #1](https://github.com/KaolaBrother
 
 ## 2026-09-07–08 VPS 综合 UAT（功能闭环通过，仍有未通过／未执行项）
 
+> 路径 L **沿用**本节与下一节的交付面，但这些历史 PASS **不是** 2026-09-09 路径 L 本轮证据。术语是 Private CA，不是 Privacy AI。
+
 本轮将本机 `main` 从 `13ce1fb` 快进到抓取的 `origin/main` `6ba97d6`，按 DESIGN v0.7 扩展旧闭环，覆盖八状态、十个 MCP 工具、多轮评审、头版本锚定、依赖子任务及 SSE。复用原 `DEBUG_PRIVATE_CA` Ubuntu VPS、管理员、两份共享凭证档案和已配对客户端。部署 API、生产 `kaola-mcp` launcher 与浏览器均连接真实 VPS；Git/forge 操作复用现有 smoke helper。不把注入会话脚本结果计作 VPS 结果。
 
 **结论：两家 Forge 的部署闭环、子任务 restack 和已执行的安全／状态负例通过；本轮不能标记“全项通过”。** Linux Web 自动测试出现内存耗尽；真实 OAuth 重授权、新设备人工绑定及终止按钮确认框未完整执行。它们与已通过项目分别记录。
@@ -396,6 +422,8 @@ GitHub 发布冒烟已停（此前仓 [Issue #1](https://github.com/KaolaBrother
 
 
 ## 2026-09-08 本地 Linux 接续与 UAT 修复
+
+> 路径 L 的执行风格（Agent 完成 OAuth / 网页绑定 / 独立 Linux Claim）以本节为参考；**绑定机制改为 Private CA `pair` + 密语**，不得把本节的 `trust install` / 无密语绑定或下列 PASS 记作路径 L 本轮通过。
 
 按用户要求，将 `6ba97d6` 的生产构建部署到本机 Colima Linux 容器，使用只绑定 `127.0.0.1:31415` 的本地服务；受保护地迁移停服后的数据库和既有配置。构建上下文来自 Git archive，不含环境文件或 operator receipt。回归镜像补齐测试所需的 MCP workspace manifest、OpenSSL 和 Git；产品 Dockerfile 未改动。本轮随后发现并修复备用 HTML 表单的 415，最终镜像包含下述 auth 修复和四项回归测试。
 
