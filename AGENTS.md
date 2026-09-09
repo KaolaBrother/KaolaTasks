@@ -35,7 +35,7 @@
 路径 L **沿用** 2026-09-07–08 已写入手册的完整 smoke（本机隔离 Linux 服务 + 独立 Linux 认领、真实 GitLab/Gitea、生产 MCP、Claim 恢复/fencing、八状态/十工具、多轮评审、未申报头拒绝、依赖/restack、SSE、终止/重开、合并与回写；OAuth 与网页绑定由 Agent 做）。**只增补** 干净认领端的 Private CA 自动配对（`kaola-mcp pair --url` → 工作台密语批准 → 严格 TLS + active `whoami` → v2）。不要重造评审/OAuth/forge 交付流程。下文历史节的 VPS/本机 PASS **不是** 本轮证据；旧容器已停/清理，执行前核实现场，保留旧证据与库，不拿旧库当本轮 PASS。早期「停下来等人批准/OAuth」已被用户纠正，不要再抄。
 
 1. **作用域。** 只覆盖本机隔离拓扑（独立 Linux 服务端容器 + 独立干净 Linux 认领端 + 本机 TLS 入口）。不授权外部部署、不碰旧库与无关 Docker 容器、不改生产授权模型。
-2. **执行者。** 配置、管理端真实登录（含已有配置下的 GitLab/Gitea OAuth）与工作台配对批准、发布、认领 Agent 生产 MCP、GitLab/Gitea 完整交付与评审合并均由 Agent 做。管理端可用 Computer Use 操作真实工作台；认领端必须是独立 Linux 上的真实 Agent 会话 + 生产 `kaola-mcp` package-bin。`kaola-mcp pair --url` 是辅助 CLI，不是 MCP tool。缺少 Linux 认领承载时记「缺项」，不得用路径 B / `inject` / `pairDeviceToSelf` 顶替。
+2. **执行者。** 配置、管理端真实登录（含已有配置下的 GitLab/Gitea OAuth）与工作台配对批准、发布、认领 Agent 生产 MCP、GitLab/Gitea 完整交付与评审合并均由 Agent 做。沿用上次实际方法：主控 Codex 通过 stdio MCP 驱动独立 Linux 容器里的生产 `kaola-mcp` package-bin，管理端用 Computer Use / 浏览器自动化操作真实工作台；不要求额外安装或启动另一套 coding Agent CLI。`kaola-mcp pair --url` 是辅助 CLI，不是 MCP tool。不得用路径 B / `inject` / `pairDeviceToSelf` 顶替真实配对。
 3. **禁止冒充新配对。** 不得直接改 SQLite、测试注入身份、或旧 `pairDeviceToSelf` / 无密语「绑到我自己」当作路径 L 的 **Private CA** 配对 PASS。不得把路径 B 脚本再加一次孤立 `pair` 拼成新机制全闭环通过。
 4. **凭证隔离。** 发布/管理端才读主仓 `.env` 的 `GITLAB_TOKEN` / `GITEA_TOKEN`。认领端初始无额外根、无 receipt、无设备授权、无 forge PAT；只允许成功 `claim_task` 揭示该任务凭证。不输出 secret，不写入仓库/聊天/remote URL。
 5. **信任拓扑。** 服务器 Linux ≠ 认领端 Linux。认领端独立空 `KAOLA_HOME`、默认信任库；不得预挂根、手工 `trust install`、手工 PEM/指纹/`NODE_EXTRA_CA_CERTS`/重启作为自动配对成功条件。CA 签发私钥只留隔离签发端。浏览器（管理端）信任与 MCP 用户级 v2 信任分开。

@@ -52,7 +52,7 @@
 | 签发端 | 隔离目录内 root/leaf；私钥不进认领端、不进 git | 认领端预挂 PEM |
 | 认领端 | **第二个** Linux 容器：`--network container:kaolatasks-issue63-uat` 共享服务端网络命名空间，但文件系统与空 `KAOLA_HOME` 独立；默认 CA 库、无 `NODE_EXTRA_CA_CERTS`、无 PAT、无 receipt，不挂服务端配置、证书或数据库 | 只把服务器容器叫「Linux 认领」 |
 | 管理端 Agent | 主控 Codex + Computer Use / 浏览器自动化操作真实工作台；Runner 只用于明确 Issue 的代码修改，不承包 UAT | 路径 B 的 stub 登录冒充 UI 通过 |
-| 认领端 Agent | 该 Linux 内真实 Agent 会话（优先 Cursor Agent CLI / 已安装 Linux 承载）+ 生产 `apps/mcp/bin/kaola-mcp.mjs` | `scripts/forge-smoke.ts`、`pairDeviceToSelf`、仅 REST 的「假 Agent」 |
+| 认领端 Agent | 主控 Codex 经 stdio MCP 驱动独立 Linux 容器内生产 `apps/mcp/bin/kaola-mcp.mjs`，与上次实际 `docker run --network container:…` 方法相同；不另起 coding Agent CLI | `scripts/forge-smoke.ts`、`pairDeviceToSelf` 或仅 REST 冒充生产 MCP |
 
 镜像 tag 设计为 `kaolatasks-issue63-uat:final`，构建上下文 = 冻结候选 SHA 的 source，不是审查 FAIL 的旧 SHA。`start-linux.mjs` 的 `server.env` 为 `wx`，重建前勿残留。回收：停路径 L 容器与 proxy、删该隔离 `data/` 与认领端 `KAOLA_HOME`；不动其它 Docker。2026-09-07 VPS 与 2026-09-08 `kaola-tasks-local-uat` 已停/清理，**不要**默认复用；执行前 `docker ps -a` 核实现场。旧证据与受保护库只保留，不挂进本轮隔离根当 PASS。
 
@@ -98,7 +98,7 @@ L5 前分别核验宿主和认领容器的 TCP 可达性。认领端默认信任
 | L9 | L8；沿用标准闭环，不另造剧本 | 认领端 Agent：真实 clone 四键、Draft PR、`submit_pr`、多轮评审、`submit_revision`、12b 未申报头 `409`、通过、forge API 合并、`pollPendingReviews`；另做 Claim 恢复/fencing、十工具、依赖 restack、SSE、终止确认/重开（形状同 2026-09-08 本机接续，详见下表） | 任务终态与回写符合标准闭环；不是 README-only | forge URL、SQLite 状态、回写条数、`events.details` 无令牌 | 按手册既有评审循环恢复，不跳过 PR、不拿历史节 PASS 顶替 |
 | L10 | 第一家完成 | 对另一家 forge 重复 L3–L9（仍同一隔离服务，认领端可新 `KAOLA_HOME` 或证明同设备多任务） | 两家都走完沿用闭环 | 各一家 Issue/PR | 一家失败不把另一家外推 |
 
-`pair` 不是 MCP tool。MCP 协议驱动器（stdio bridge）≠ coding Agent；L8–L9 必须是认领端 Agent 会话调生产工具，不能只跑 Node 测试或 forge-smoke。
+`pair` 不是 MCP tool。L8–L9 由主控 Agent 经真实 stdio MCP 调 Linux 中的生产工具；协议驱动器只是通道，不冒称独立 AI 会话。不能只跑 Node 测试或 forge-smoke。
 
 沿用面（L9）对照 2026-09-08 本机接续与「标准闭环」，**本轮必须再跑**；历史节判定保持原样：
 
@@ -527,3 +527,58 @@ GitHub 发布冒烟已停（此前仓 [Issue #1](https://github.com/KaolaBrother
 ## 2026-09-09 #63 范围恢复：保留公开 CA 迁移
 
 正式评论 [5595967717](https://github.com/KaolaBrother/KaolaTasks/issues/63#issuecomment-5595967717) 取代 5595770991 的移除要求。产品行为恢复为 `8be16f6` / `09a01f5` 已验证的 launcher 迁移：默认库严格 TLS + 匹配 active `whoami` 后只删该 origin 的 v2 extra root。历史 `5a4f1e1` 与上一节不改写。其后 UAT 设计见顶部路径 L；**设计写入时仍未执行**。
+
+## 2026-09-09 路径 L 实际执行：Private CA Linux 闭环
+
+**判定：私有 CA 自动配对和已执行的交付链路通过；整套 UAT 不是全项通过。** OAuth 存在真实配置阻塞，配对轮询有监听器警告，回写有额外重复。以下是本轮新证据，不沿用历史 PASS，也不把自动测试写成真实环境验收。结果只记本手册，未发到 GitHub Issue。
+
+### 候选与隔离现场
+
+- 先完成 `bundle-63` 独立审查、finalize keep-open、merge/push/archive，再开始本轮；测试源为主分支 `0eeb2c00c67994d1f573c002fd0d4613be009587`。#63 仍开放。归档验证命令为 `pnpm lint && pnpm typecheck && PATH=/opt/homebrew/opt/openssl@3/bin:$PATH pnpm test && pnpm build && git diff --check`；Node 1109、Web 170 通过。macOS 默认 LibreSSL 不满足本次测试要求，改用已安装的 OpenSSL 3 后通过；不是忽略失败。
+- Colima 中两个独立文件系统的 Linux 容器：`kaolatasks-issue63-uat` 和 `kaolatasks-issue63-claimant`，镜像 `kaolatasks-issue63-uat:final`，Node `22.23.2` / Debian Bookworm OpenSSL `3.0.20`。认领端共享服务端网络命名空间以保持 `localhost` SAN，但只挂自己的 `/client`，不挂服务端数据库、`.env`、PAT 或签发根。
+- 真实私有 CA HTTPS 入口为 `https://localhost:34463`；TLS proxy 在服务容器中转发生产服务。本机管理侧使用仅发布在 loopback 的 `http://localhost:31415`。**管理页面不是浏览器 HTTPS 信任验收**。根 CA 私钥只留隔离签发目录；TLS 终端持有自己的 leaf key，认领端没有根或 leaf 私钥。未安装系统/浏览器根，未绕过证书警告。
+- 主控 Codex 自己完成管理端 UI、生产 stdio MCP、Linux git、真实 forge API 交付与验收，未把 UAT 委派 Runner；未在 Linux 另起 coding Agent CLI，也未宣称执行了一套额外 Workflow/Runner carrier。没有 `inject`、直接改 SQLite 或旧 `pairDeviceToSelf`。SQLite 仅在结尾只读核验。
+- 受保护、gitignored 现场为 `.kw/local-receipts/uat-20260909/`。其中管理员密码、环境、设备私钥、配对终端输出不提交；`*-safe.json`、状态/协议检查记录仅作本机定位。该目录不能整体上传。
+
+### 本轮通过项
+
+| 验收面 | 实际操作与结果 |
+| --- | --- |
+| 干净认领端 | 默认严格 HTTPS 返回 unknown issuer，生产 launcher 输出 `pairing_required`、退出 2；初始无 trust、receipt、授权和 PAT。这是传输负例，不冒称 pending 授权证据。 |
+| pending 授权 | 配对申请建立后、批准前，以该真实设备签名做单独 HTTPS 授权诊断；`list_tasks`、`claim_task` 均为 `202 authorization_required`，无 token。诊断只在管理侧信任公开测试 CA，未给认领端装根。 |
+| 真实网页批准 | UI 建本地管理员；错误密语显示「配对密语不正确」；正确密语「绑到我自己」后，pair 自动完成严格 TLS / active whoami / v2，随后新生产 MCP 进程可列工具和任务。无手工 PEM、env 或重启作为首次就绪条件。 |
+| 配对恢复 | 首台设备 pending 期间中断 pair 后恢复，同 receipt SHA-256；第三台设备在服务端与认领容器重启后恢复同 pairing id、receipt SHA-256、instance 和 `expires_at`，再由网页批准成功。前者隔离验证客户端重启；后者联合验证服务/客户端重启，不宣称只重启了服务端。 |
+| 期限与消费 | 只读 DB：三次 attempt 的 `expires_at-created_at` 均为 `86400`；三台批准设备 `expires_at-paired_at` 均为 `7776000`（90 天）；三次 pairing 均 `consumed`，本机一次性 receipt 均删除。没有改真实时钟或声称等待过 24h/90d。 |
+| 发布与 Claim | 两家真实凭证档案均在 UI 添加，Issue 下拉导入并发布；同一已配对 Linux 设备成功 Claim 后才把本任务凭证送入 Linux git。clone 四键存在；GitLab 使用已知 Basic oauth2 兼容头，Gitea 使用信封头。token 不入 remote URL / `.git/config`。 |
+| Claim 恢复与 fencing | 两家各执行 release → 新进程恢复终态 receipt → 新 Claim；active replay 返回相同 Claim ID/凭证。另一个通过真实 pair 批准、同 owner 的设备持正确 Claim ID仍为 403；原设备错误 Claim ID 为 409，正确 Claim 为 200。后两项为严格 HTTPS 签名 REST 诊断。 |
+| 标准交付 | 真实 Linux clone/提交/push → Draft MR/PR → `submit_pr` → 阻塞意见/开轮 → Claim/read feedback/修订 → 同 PR `submit_revision`。GitLab 第一、第二轮意见由网页提交；Gitea开轮用真实管理员 REST，最终通过仍点网页。未把 REST 记成对应按钮测试。 |
+| 未申报头 | 两家推新头但不交回，待 forge 已报告新 SHA 后尝试通过；GitLab 网页出现中文拒绝和「forge 头已变化」，Gitea真实 REST为 `409 head_sha_stale`；任务仍待验收。再次开轮、Claim、以新头交回后通过。 |
+| 多轮/十工具 | 十个生产 MCP 工具均实际调用成功（不只是 `tools/list`）。`post_discussion_message` 首次漏传必填 `claim_id` 被 SDK 拒绝，这是驱动参数错误；后续携带当前 Claim ID 的 resolution 成功，不把首次失败写成成功。 |
+| 父子依赖与 restack | GitLab子任务 Claim 的 base 指向父分支；从子 Claim `open_review_round` 使父任务待修改。父未完成时子通过被 `409 parent_not_completed` 拒绝。父合并后子自动待修改、Review Brief `kind=restack` / `base_branch=main`；真实 rebase、同 MR回交、通过、合并。另建未就绪父子任务，子 Claim 为 `parent_not_ready`。 |
+| restack 推送安全 | 用户明确交由主控按正确性判断后，核对远端仍是本轮子提交；只对 `kaola/kt-2026-0003-restack` 使用带确切旧 SHA 的 `--force-with-lease`。不改主分支、不覆盖别人的提交。 |
+| SSE / 八状态 | 浏览器不刷新可见 Claim、评审、合并后的换列；独立真实 session SSE 接收 `task_updated`、`progress`，不带 note、body_md、PAT。事件记录覆盖八个规范状态。 |
+| 终止/重开/关 PR | 对本轮 Gitea PR58 在网页点「终止本次交付」，后续真实状态及事件证实 `已退回`；再实际点「重新开放」→待认领、「取消」→已取消，forge API关闭 PR且未合并。终止点击曾超时，原生确认框未被可靠捕获，**不把确认框的单独交互细节记为已验证**；没有用 REST terminate 顶替。 |
+| 终态和敏感信息 | 七个测试任务均完成/取消，活动 lease 为 0。`verify-containment.mjs` 检查 35 个暴露面：列表/详情/review/凭证档案、133条事件、服务stdout/stderr、四个 `.git/config`/末次diff、源Issue评论/SSE、三份v2；未发现仓库 PAT 或私钥 PEM。v2无literal origin，已消费receipt不存在。检查不覆盖本来就持有秘密的隔离环境/设备文件和受保护CLI密语日志。 |
+
+### 本轮真实 forge 资源
+
+| 本地任务 | 真实资源 | 最后状态 |
+| --- | --- | --- |
+| `kt-2026-0001` | [GitLab Issue34](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/issues/34) → [MR31](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/merge_requests/31) | 合并，已完成，第4轮；最终提交 `05dec66bda25` |
+| `kt-2026-0002` | [Gitea Issue56](https://gitea.com/KaolaBrother/kaola-tasks-smoke/issues/56) → [PR57](https://gitea.com/KaolaBrother/kaola-tasks-smoke/pulls/57) | 合并，已完成，第3轮；最终提交 `edd0dbdaaf22` |
+| `kt-2026-0003` | [GitLab 子 MR32](https://gitlab.com/KaolaBrother/kaola-tasks-smoke/-/merge_requests/32) | restack后合并，已完成，第2轮；提交 `e3e660e457a2` |
+| `kt-2026-0004` | [Gitea PR58](https://gitea.com/KaolaBrother/kaola-tasks-smoke/pulls/58) | UI终止/重开/取消；PR关闭未合并 |
+| `kt-2026-0005`–`0007` | fencing、SSE、未就绪依赖的本轮临时任务 | 均已取消，无活动Claim |
+
+### 阻塞、发现与未执行边界
+
+1. **GitLab OAuth：BLOCKED_CONFIG。** Safari真实点击「使用GitLab登录」，provider返回 `The redirect URI included is not valid.`。本轮 `PUBLIC_URL` 回调为 `https://localhost:34463/login/gitlab/callback`，不是此前HTTP回调。未修改外部OAuth应用，未伪造回调/用户，没有把既有本地管理员会话算OAuth成功。
+2. **Gitea OAuth：BLOCKED_CONFIG。** 实际导航至Gitea登录，但主仓 `.env` 与本轮服务环境的 `OAUTH_GITEA_CLIENT_ID` / `OAUTH_GITEA_CLIENT_SECRET` 都为 `unused`。两家forge PAT真实可用，不代表两家OAuth客户端均已配置。没有索取或输出秘密，也没有创建新OAuth凭证。全量OAuth继续前需要有效注册及正确回调；本轮未静默安装系统/浏览器根。
+3. **配对轮询监听器：OPEN_FINDING。** 同一冻结候选在多个真实pair等待进程输出 `MaxListenersExceededWarning`：TLSSocket累积11个`secureConnect` listener；最终配对仍成功。源码 `apps/mcp/src/pair.ts` 的每请求 `socket.on('secureConnect', …)` 与复用socket相符，但未测24小时内存曲线，不宣称已发生OOM。未通过提高listener上限掩盖，未在UAT中自行改产品。
+4. **回写额外重复：OPEN_FINDING。** 两家任务各只有两次真实 `待认领→进行中`（release/reclaim），源Issue却各有3条「认领」评论，以及1条提交、1条完成，共5条；各有2条成功「翻ready」事件。故不能填「恰好三条回写」或去重通过。当前源码中即时后台回写与poller重试缺少共同in-flight互斥，属于原因假设；未做受控A/B隔离。成功合并及状态到达不因此变成失败，但回写唯一性另列未通过。
+5. **浏览器工具边界。** 初次终止点击发生浏览器命令超时；随后状态/审计已确认终止。Computer Use不能控制Codex宿主，Chrome连接不可用；Safari本地HTTP登录后不保留本次Secure cookie，故没有用它宣称管理端HTTPS通过。原生确认框独立证据仍缺失。后续内置浏览器恢复并完成重开/取消、重启后的密语批准。
+6. **自动测试而非本轮活网故障注入。** 批准后、trust落地前中断；root/instance/origin/nonce替换和重放；真实到期边界；legacy v1；overlap/missed-overlap；公开CA迁移；强制rename失败等维持归档候选的自动测试证据，本轮未全部在运行环境重新制造。不把Windows/macOS物理认领客户端、公开CA干净机器或已卸载VPS标为PASS。
+
+本轮没有修产品代码，也没有把这些UAT发现发给Runner。后续代码修复须先有明确Issue范围；OAuth配置属于外部接入前置，不通过降低TLS或伪造身份解决。#63保留开放，不以本节局部通过关闭整体验收。
+
+收尾：确认活动lease为0后，仅停止本轮 `kaolatasks-issue63-claimant` / `kaolatasks-issue63-uat`，保留隔离数据库、镜像和受保护证据以便续验；未删除旧证据或无关容器。现有20分钟心跳只读检查剩余配置/用户方向变化，不重复创建任务、PR、环境或启动Runner。
