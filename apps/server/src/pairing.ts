@@ -1,3 +1,5 @@
+import { execFileSync } from 'node:child_process'
+import { X509Certificate } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { eq } from 'drizzle-orm'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
@@ -75,6 +77,7 @@ export function loadPairingConfig(db: AppDb): PairingConfig {
   const inspected = inspectPublicRootPem(pemText)
   if (!inspected.ok) throw new Error(`public root CA rejected: ${inspected.code}`)
   const origin = normalizePairingOrigin(getPublicUrl())
+  assertConfiguredRootMatchesOrigin({ rootPem: inspected.pem, rootPath: path, origin })
   let nextRootPem: string | undefined
   let nextRootSha256: string | undefined
   const nextPath = process.env.KAOLA_NEXT_PUBLIC_ROOT_CA_PATH
@@ -94,6 +97,107 @@ export function loadPairingConfig(db: AppDb): PairingConfig {
     nextRootPem,
     nextRootSha256,
   }
+}
+
+function splitCertificatePems(pemText: string): string[] {
+  const blocks: string[] = []
+  const begin = '-----BEGIN CERTIFICATE-----'
+  const end = '-----END CERTIFICATE-----'
+  let cursor = 0
+  while (true) {
+    const start = pemText.indexOf(begin, cursor)
+    if (start === -1) break
+    const stop = pemText.indexOf(end, start)
+    if (stop === -1) throw new Error('KAOLA_PUBLIC_LEAF_CHAIN_PATH is truncated')
+    blocks.push(`${pemText.slice(start, stop + end.length)}\n`)
+    cursor = stop + end.length
+  }
+  return blocks
+}
+
+function certFingerprint(cert: X509Certificate): string {
+  return cert.fingerprint256.replace(/:/g, '').toLowerCase()
+}
+
+function verifyLeafChainToRoot(leafPemText: string, rootPem: string, hostname: string): void {
+  if (/BEGIN [A-Z0-9 ]*PRIVATE KEY/.test(leafPemText)) {
+    throw new Error('KAOLA_PUBLIC_LEAF_CHAIN_PATH must not contain a private key')
+  }
+  const blocks = splitCertificatePems(leafPemText)
+  if (blocks.length === 0) throw new Error('KAOLA_PUBLIC_LEAF_CHAIN_PATH has no certificates')
+  const certs = blocks.map((block) => new X509Certificate(block))
+  const root = new X509Certificate(rootPem)
+  const rootFp = certFingerprint(root)
+  const leaf = certs.find((cert) => cert.checkHost(hostname) != null)
+  if (leaf == null) {
+    throw new Error('configured leaf SAN does not cover PUBLIC_URL hostname')
+  }
+  let current = leaf
+  const seen = new Set<string>([certFingerprint(current)])
+  for (let i = 0; i < 8; i++) {
+    if (certFingerprint(current) === rootFp || current.checkIssued(root)) return
+    const issuer = certs.find(
+      (candidate) =>
+        certFingerprint(candidate) !== certFingerprint(current) && current.checkIssued(candidate),
+    )
+    if (issuer == null) {
+      throw new Error('configured leaf chain does not verify to KAOLA_PUBLIC_ROOT_CA_PATH')
+    }
+    const nextFp = certFingerprint(issuer)
+    if (seen.has(nextFp)) {
+      throw new Error('configured leaf chain does not verify to KAOLA_PUBLIC_ROOT_CA_PATH')
+    }
+    seen.add(nextFp)
+    current = issuer
+  }
+  throw new Error('configured leaf chain does not verify to KAOLA_PUBLIC_ROOT_CA_PATH')
+}
+
+function probeOriginWithOnlyRoot(origin: string, rootPath: string): void {
+  const parsed = new URL(origin)
+  const port = parsed.port === '' ? '443' : parsed.port
+  try {
+    execFileSync(
+      'openssl',
+      [
+        's_client',
+        '-connect',
+        `${parsed.hostname}:${port}`,
+        '-servername',
+        parsed.hostname,
+        '-CAfile',
+        rootPath,
+        '-verify_return_error',
+        '-brief',
+      ],
+      { input: '', timeout: 8000, stdio: ['pipe', 'pipe', 'pipe'] },
+    )
+  } catch {
+    throw new Error('configured public root does not root PUBLIC_URL')
+  }
+}
+
+export function assertConfiguredRootMatchesOrigin(input: {
+  rootPem: string
+  rootPath: string
+  origin: string
+}): void {
+  const hostname = new URL(input.origin).hostname
+  const leafPath = process.env.KAOLA_PUBLIC_LEAF_CHAIN_PATH
+  if (leafPath != null && leafPath !== '') {
+    let leafText: string
+    try {
+      leafText = readFileSync(leafPath, 'utf8')
+    } catch {
+      throw new Error('KAOLA_PUBLIC_LEAF_CHAIN_PATH is unreadable')
+    }
+    verifyLeafChainToRoot(leafText, input.rootPem, hostname)
+    return
+  }
+  if (!input.origin.startsWith('https:')) {
+    throw new Error('KAOLA_PUBLIC_LEAF_CHAIN_PATH is required when PUBLIC_URL cannot be probed over TLS')
+  }
+  probeOriginWithOnlyRoot(input.origin, input.rootPath)
 }
 
 function hex32(raw: unknown): Buffer | undefined {
@@ -151,6 +255,17 @@ function livePairingForDevice(
       row.consumedAt == null &&
       pairingIsLive(now, row.expiresAt),
   )
+}
+
+export function livePairingAwaitingSecret(
+  db: AppDb,
+  deviceId: number,
+  now: number,
+): DevicePairing | undefined {
+  const live = livePairingForDevice(db, deviceId, now)
+  if (live == null) return undefined
+  if (live.status === 'created' || live.status === 'committed') return live
+  return undefined
 }
 
 function pairingByPublicId(db: AppDb, pairingId: string): DevicePairing | undefined {
@@ -322,12 +437,6 @@ export function registerPairing(app: FastifyInstance, db: AppDb): void {
       }
       const device = requirePairingDevice(request, reply)
       if (device == null) return
-      if (device.status === 'active') {
-        return reply.code(409).send({
-          error: 'conflict',
-          message: '电脑已授权，请走根轮换而不是重新配对。',
-        })
-      }
       const body = request.body as { client_nonce?: unknown }
       const clientNonce = hex32(body?.client_nonce)
       if (clientNonce == null) {
@@ -336,14 +445,23 @@ export function registerPairing(app: FastifyInstance, db: AppDb): void {
       const now = unixNow()
       const createdAt = now
       const expiresAt = pairingExpiresAt(createdAt, cfg.ttlSeconds)
-      const pendingExpiresAt = alignPendingExpiresAt(device.pendingExpiresAt, expiresAt)
       const result = db.transaction((tx) => {
         expireStalePairings(tx, device.id, now)
         const existing = livePairingForDevice(tx, device.id, now)
         if (existing != null) {
+          if (existing.clientNonceHex !== clientNonce.toString('hex')) {
+            return { kind: 'conflict' as const }
+          }
           return { kind: 'existing' as const, row: existing, pendingExpiresAt: device.pendingExpiresAt }
         }
-        tx.update(devices).set({ pendingExpiresAt }).where(eq(devices.id, device.id)).run()
+        if (device.status !== 'pending' && device.status !== 'active') {
+          return { kind: 'conflict' as const }
+        }
+        let pendingExpiresAt = device.pendingExpiresAt
+        if (device.status === 'pending') {
+          pendingExpiresAt = alignPendingExpiresAt(device.pendingExpiresAt, expiresAt)
+          tx.update(devices).set({ pendingExpiresAt }).where(eq(devices.id, device.id)).run()
+        }
         const inserted = tx
           .insert(devicePairings)
           .values({
@@ -365,6 +483,12 @@ export function registerPairing(app: FastifyInstance, db: AppDb): void {
         if (inserted == null) throw new Error('failed to insert device pairing')
         return { kind: 'created' as const, row: inserted, pendingExpiresAt }
       })
+      if (result.kind === 'conflict') {
+        return reply.code(409).send({
+          error: 'conflict',
+          message: '电脑已授权，请走根轮换而不是重新配对。',
+        })
+      }
       const descriptorDevice = { ...device, pendingExpiresAt: result.pendingExpiresAt ?? device.pendingExpiresAt }
       if (result.kind === 'existing') {
         return reply.code(200).send(descriptor(cfg, result.row, descriptorDevice, effectiveStatus(result.row, now)))

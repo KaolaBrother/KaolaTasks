@@ -628,11 +628,11 @@ openssl x509 -in <dev-root-ca.pem> -noout -fingerprint -sha256
 
 | 路由 | 行为 |
 |------|------|
-| `POST /api/v1/device-pairings` | `{ client_nonce }`；创建或幂等恢复该设备未过期 attempt；返回公开 descriptor（含 `root_pem` / `root_sha256` / `instance_id` / `origin` / `server_nonce` / `expires_at`）。已 active → `409 conflict` |
+| `POST /api/v1/device-pairings` | `{ client_nonce }`；创建或幂等恢复该设备未过期 attempt；返回公开 descriptor（含 `root_pem` / `root_sha256` / `instance_id` / `origin` / `server_nonce` / `expires_at`）。已 active 且 live attempt 的 `client_nonce` 匹配 → `200` 恢复（批准后、本机 trust 落地前重启）。已 active 且无 live attempt → 允许新 attempt 供错过 overlap 的再批准，不改 owner。已 active 且另有不同 nonce 的 live attempt → `409 conflict` |
 | `POST /api/v1/device-pairings/:id/commit` | `{ commitment }`；首次写入；相同 commitment 幂等；不同 commitment → `409 pairing_commitment_mismatch` |
 | `POST /api/v1/device-pairings/:id/status` | `{}`；`created`/`committed` 无 proof；`approved` 返回同一 proof 直至 consumed 或过期；`consumed` 不再重放 proof |
 | `POST /api/v1/device-pairings/:id/complete` | 仅严格 TLS；标记 consumed；幂等。不是信任门闩 |
-| `POST /api/v1/devices/:id/bind` | 有 pairing 行的设备额外要求 `pairing_id` + `pairing_secret`；仍 exactly-one owner；错密语 `403 pairing_secret_invalid`（8 次后拒绝该 attempt）；无 pairing 行的遗留 pending 保持原 bind body |
+| `POST /api/v1/devices/:id/bind` | 有 pairing 行的设备额外要求 `pairing_id` + `pairing_secret`；仍 exactly-one owner；错密语 `403 pairing_secret_invalid`（8 次后拒绝该 attempt）；无 pairing 行的遗留 pending 保持原 bind body。已 active 且存在 live `created`/`committed` pairing 时为 repair：校验密语后只写 approval，不改 owner / `expires_at`；未批准不得装新根 |
 | `POST /api/v1/device-trust/next-root` | 严格 TLS + **active** 设备；overlap 期间返回下一公开根 |
 
 `KAOLA_PAIRING_MODE` 非 `private_ca` 时 pairing REST 为 `404 pairing_mode_disabled`。Bootstrap 设备仍是 pending，不能 list/claim。bind 成功不自动 claim，不揭示 forge token。`GET /api/v1/devices/pending` 可带 `pairing_id` / `pairing_expires_at` / `requires_pairing_secret`，不含密语/commitment/proof/PEM。
@@ -640,12 +640,12 @@ openssl x509 -in <dev-root-ca.pem> -noout -fingerprint -sha256
 **本机状态**
 
 - 完成前：`$KAOLA_HOME/pairings/<origin-digest>/receipt.json`（`0600`），可含恢复所需材料（含密语与 PEM）；成功/取消/过期后删除。不含 device 私钥、forge token、Task。
-- 就绪后：`$KAOLA_HOME/trust/v2/<origin-digest>/`（`root-ca.pem` + `{ v: 2, originDigest, instanceId, deviceFingerprint, fingerprintSha256, trustEpoch, pairedAt }`）。不含字面 origin、pairing secret、私钥、forge token 或 Task。
+- 就绪后：`$KAOLA_HOME/trust/v2/<origin-digest>/`（`root-ca.pem` + `{ v: 2, originDigest, instanceId, deviceFingerprint, fingerprintSha256, trustEpoch, pairedAt }`）。不含字面 origin、pairing secret、私钥、forge token 或 Task。替换时先把完整旧目录 rename 为同级 `.previous`，再把 staging rename 为最终目录；中断后恢复旧或新的完整状态，禁止先 `rm` 再 rename。
 - v1 `$KAOLA_HOME/trust/state.json` `v: 1` 不得改写成 v2。
 
 **工作台**
 
-电脑页待授权行：配对密语输入（中文，不显示期望值）+ 现有 owner 选择。发布者仍不能绑定。
+电脑页待授权行：配对密语输入（中文，不显示期望值）+ 现有 owner 选择。`GET /devices/pending` 也包括已 active 但有 live `created`/`committed` pairing 的 repair 行（`pairing_repair`）。发布者仍不能绑定。
 
 **不变量**
 

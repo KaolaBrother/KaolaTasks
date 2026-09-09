@@ -28,7 +28,8 @@ browser / kaola-mcp
                 POST /api/v1/users/:id/approve   retired 404
                 /api/v1/agent-keys               leftover session mint/list/revoke (not MCP identity)
                 /api/v1/agent/whoami             device proof (`addDeviceProofHook` in device-proof.ts)
-                /api/v1/devices/pending|devices  session admin: 待授权电脑 / all devices (#23)
+                /api/v1/devices/pending|devices  session admin: 待授权电脑 / all devices (#23);
+                                                 pending also includes active missed-overlap repair rows
                 /api/v1/me/devices               session admin: bound to self
                 POST /api/v1/devices/:id/bind    { bind_to_self | claimant_id | claimant_display_name }
                                                  (#63 pairing rows also require pairing_id + pairing_secret)

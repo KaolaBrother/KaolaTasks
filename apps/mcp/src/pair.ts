@@ -221,6 +221,29 @@ export function v2TrustDir(kaolaHome: string, origin: string): string {
   return join(kaolaHome, 'trust', 'v2', pairingOriginDigest(origin))
 }
 
+export function v2PreviousTrustDir(kaolaHome: string, origin: string): string {
+  return `${v2TrustDir(kaolaHome, origin)}.previous`
+}
+
+function v2DirLooksComplete(dir: string): boolean {
+  return existsSync(join(dir, 'root-ca.pem')) && existsSync(join(dir, 'state.json'))
+}
+
+export function recoverInterruptedV2Trust(kaolaHome: string, origin: string): void {
+  const finalDir = v2TrustDir(kaolaHome, origin)
+  const previous = v2PreviousTrustDir(kaolaHome, origin)
+  const finalComplete = v2DirLooksComplete(finalDir)
+  const previousComplete = v2DirLooksComplete(previous)
+  if (finalComplete) {
+    if (existsSync(previous)) rmSync(previous, { recursive: true, force: true })
+    return
+  }
+  if (previousComplete) {
+    if (existsSync(finalDir)) rmSync(finalDir, { recursive: true, force: true })
+    renameSync(previous, finalDir)
+  }
+}
+
 function isSecureUnixMode(path: string, expected: number): boolean {
   if (process.platform === 'win32') return true
   try {
@@ -333,6 +356,7 @@ function fingerprintFromDeviceJson(kaolaHome: string): string | undefined {
 }
 
 export function inspectV2Trust(kaolaHome: string, origin: string): InspectedV2Trust {
+  recoverInterruptedV2Trust(kaolaHome, origin)
   const dir = v2TrustDir(kaolaHome, origin)
   const pemPath = join(dir, 'root-ca.pem')
   const statePath = join(dir, 'state.json')
@@ -542,8 +566,10 @@ function httpsOnce(input: PairingHttpRequest): Promise<PairingHttpResponse> {
         headers,
         rejectUnauthorized: input.mode === 'strict',
         ca:
-          input.mode === 'strict' && input.extraCaPem != null && input.extraCaPem.length > 0
-            ? [...defaultRuntimeCaCerts(), input.extraCaPem]
+          input.mode === 'strict'
+            ? input.extraCaPem != null && input.extraCaPem.length > 0
+              ? [...defaultRuntimeCaCerts(), input.extraCaPem]
+              : defaultRuntimeCaCerts()
             : undefined,
       },
       (res) => {
@@ -869,7 +895,7 @@ export function verifyPairingApproval(input: {
   return { ok: true }
 }
 
-function writeV2Staging(input: {
+export function writeV2Staging(input: {
   kaolaHome: string
   origin: string
   pem: string
@@ -884,13 +910,29 @@ function writeV2Staging(input: {
   return staging
 }
 
-function commitV2Staging(staging: string, origin: string, kaolaHome: string): string {
+export function commitV2Staging(staging: string, origin: string, kaolaHome: string): string {
+  recoverInterruptedV2Trust(kaolaHome, origin)
   const finalDir = v2TrustDir(kaolaHome, origin)
+  const previous = v2PreviousTrustDir(kaolaHome, origin)
   if (existsSync(finalDir)) {
-    rmSync(finalDir, { recursive: true, force: true })
+    if (existsSync(previous)) rmSync(previous, { recursive: true, force: true })
+    renameSync(finalDir, previous)
   }
-  renameSync(staging, finalDir)
+  try {
+    renameSync(staging, finalDir)
+  } catch (err) {
+    if (existsSync(previous) && !v2DirLooksComplete(finalDir)) {
+      if (existsSync(finalDir)) rmSync(finalDir, { recursive: true, force: true })
+      try {
+        renameSync(previous, finalDir)
+      } catch {
+        // leave previous in place for recoverInterruptedV2Trust
+      }
+    }
+    throw err
+  }
   chmodSync(finalDir, 0o700)
+  if (existsSync(previous)) rmSync(previous, { recursive: true, force: true })
   return finalDir
 }
 
@@ -1032,8 +1074,7 @@ export async function runPairCli(
       return 1
     }
     if (extraCa != null) {
-      writeLine(stderr, 'strict TLS unknown-issuer after local extra CA; not a second bootstrap')
-      return 1
+      writeLine(stdout, '本机 extra CA 无法校验当前 origin，需要管理员再次批准配对。')
     }
   }
 

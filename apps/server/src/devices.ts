@@ -8,6 +8,7 @@ import {
   checkPairingSecret,
   deviceHasPairingHistory,
   instanceIdOf,
+  livePairingAwaitingSecret,
   pendingPairingFields,
   persistPairingApproval,
 } from './pairing.ts'
@@ -54,13 +55,18 @@ function ownerJson(device: Device, claimant: Claimant | undefined): Record<strin
 }
 
 function pendingJson(db: AppDb, device: Device, now: number) {
+  const pairing = pendingPairingFields(db, device.id, now)
   return {
     id: device.id,
     hostname: device.hostname,
     fingerprint: device.fingerprint,
     created_at: isoUnix(device.createdAt),
-    expires_at: isoUnix(device.pendingExpiresAt),
-    ...pendingPairingFields(db, device.id, now),
+    expires_at:
+      typeof pairing.pairing_expires_at === 'string'
+        ? pairing.pairing_expires_at
+        : isoUnix(device.pendingExpiresAt),
+    ...pairing,
+    ...(device.status === 'active' ? { pairing_repair: true } : {}),
   }
 }
 
@@ -148,11 +154,12 @@ export function registerDevices(app: FastifyInstance, db: AppDb): void {
     if (admin == null) return
     const now = unixNow()
     const rows = db.select().from(devices).orderBy(desc(devices.id)).all()
-    const pending = rows.filter(
-      (row) =>
-        row.status === 'pending' &&
-        (row.pendingExpiresAt == null || row.pendingExpiresAt > now),
-    )
+    const pending = rows.filter((row) => {
+      if (row.status === 'pending' && (row.pendingExpiresAt == null || row.pendingExpiresAt > now)) {
+        return true
+      }
+      return row.status === 'active' && livePairingAwaitingSecret(db, row.id, now) != null
+    })
     return reply.send({ devices: pending.map((row) => pendingJson(db, row, now)) })
   })
 
@@ -189,14 +196,63 @@ export function registerDevices(app: FastifyInstance, db: AppDb): void {
 
     const device = db.select().from(devices).where(eq(devices.id, id)).get()
     const now = unixNow()
-    if (device == null || device.status !== 'pending') {
+    if (device == null) {
+      return reply.code(404).send({ error: 'not_found' })
+    }
+
+    const rec = request.body as Record<string, unknown>
+    const repairLive = livePairingAwaitingSecret(db, device.id, now)
+    if (device.status === 'active' && repairLive != null) {
+      const pairingId = rec.pairing_id
+      const pairingSecret = rec.pairing_secret
+      if (typeof pairingId !== 'string' || pairingId === '' || typeof pairingSecret !== 'string') {
+        return reply.code(400).send({ error: 'invalid_body' })
+      }
+      const checked = checkPairingSecret(db, { device, pairingId, pairingSecret, now })
+      if (!checked.ok) return reply.code(checked.httpStatus).send(checked.body)
+      const pairingOwner: { kind: 'claimant'; claimant_id: number } | { kind: 'user'; user_id: number } | undefined =
+        device.claimantId != null
+          ? { kind: 'claimant', claimant_id: device.claimantId }
+          : device.userId != null
+            ? { kind: 'user', user_id: device.userId }
+            : undefined
+      if (pairingOwner == null) {
+        return reply.code(409).send({
+          error: 'conflict',
+          message: '电脑申请已过期或不在待授权状态。',
+        })
+      }
+      persistPairingApproval(db, {
+        device,
+        row: checked.row,
+        owner: pairingOwner,
+        secret: checked.secret,
+        now,
+      })
+      insertAuditEvent(db, {
+        type: '电脑授权',
+        actorUserId: admin.id,
+        details: {
+          device_id: device.id,
+          fingerprint: device.fingerprint,
+          pairing_id: checked.row.pairingId,
+          pairing_repair: true,
+          ...(pairingOwner.kind === 'claimant' ? { claimant_id: pairingOwner.claimant_id } : { user_id: pairingOwner.user_id }),
+        },
+      })
+      const claimant =
+        pairingOwner.kind === 'claimant'
+          ? db.select().from(claimants).where(eq(claimants.id, pairingOwner.claimant_id)).get()
+          : undefined
+      return reply.send({ ok: true, device_id: device.id, owner: ownerJson(device, claimant) })
+    }
+
+    if (device.status !== 'pending') {
       return reply.code(409).send({
         error: 'conflict',
         message: '电脑申请已过期或不在待授权状态。',
       })
     }
-
-    const rec = request.body as Record<string, unknown>
     let pairingCheck: { row: DevicePairing; secret: Buffer } | undefined
     if (deviceHasPairingHistory(db, device.id)) {
       const pairingId = rec.pairing_id

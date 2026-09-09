@@ -8,6 +8,7 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from 'node:fs'
@@ -29,10 +30,15 @@ import {
   inspectV2Trust,
   isBootstrapPathAllowed,
   pairingReceiptPath,
+  pairingOriginDigest,
   prepareHttpsLauncher,
+  recoverInterruptedV2Trust,
   runPairCli,
   verifyPairingApproval,
+  v2PreviousTrustDir,
   v2TrustDir,
+  writeV2Staging,
+  commitV2Staging,
   type PairingHttpRequest,
   type PairingTransport,
 } from './pair.ts'
@@ -773,6 +779,105 @@ describe('kaola-mcp pair (#63)', { concurrency: false }, () => {
     assert.equal(inspectV2Trust(home, origin).present, false)
     assert.equal(existsSync(devicePath), true)
   })
+
+  test('missed overlap extra CA unknown-issuer continues pair instead of refusing a second bootstrap', async (t) => {
+    const home = tmpHome(t)
+    const origin = 'https://kaola.example.test'
+    const oldRoot = mintRoot(t)
+    const nextRoot = mintRoot(t)
+    const first = captureIo()
+    assert.equal(
+      await runPairCli(['--url', origin], { KAOLA_HOME: home }, first.io, {
+        transport: pairingTransport({ home, origin, root: oldRoot }),
+        sleep: async () => {},
+        pollIntervalMs: 0,
+      }),
+      0,
+      first.stderr(),
+    )
+    assert.equal(inspectV2Trust(home, origin).ready, true)
+    const base = pairingTransport({ home, origin, root: nextRoot })
+    const transport: PairingTransport = {
+      async request(input) {
+        const url = new URL(input.url)
+        const oldPem = inspectPublicRootPem(oldRoot.pem)
+        if (
+          input.mode === 'strict' &&
+          input.extraCaPem != null &&
+          oldPem.ok &&
+          input.extraCaPem.includes(oldPem.pem.trim()) &&
+          !input.extraCaPem.includes(nextRoot.pem.trim())
+        ) {
+          unknownIssuer()
+        }
+        return base.request(input)
+      },
+    }
+    const streams = captureIo()
+    const code = await runPairCli(['--url', origin], { KAOLA_HOME: home }, streams.io, {
+      transport,
+      sleep: async () => {},
+      pollIntervalMs: 0,
+    })
+    assert.equal(code, 0, streams.stderr())
+    assert.match(streams.stdout(), /再次批准/)
+    const after = inspectV2Trust(home, origin)
+    assert.equal(after.ready, true)
+    if (!after.ready) return
+    assert.equal(after.state.fingerprintSha256, nextRoot.sha256)
+  })
+
+  test('interrupted v2 replace restores the previous complete directory', async (t) => {
+    const home = tmpHome(t)
+    const origin = 'https://kaola.example.test'
+    const root = mintRoot(t)
+    const streams = captureIo()
+    assert.equal(
+      await runPairCli(['--url', origin], { KAOLA_HOME: home }, streams.io, {
+        transport: pairingTransport({ home, origin, root }),
+        sleep: async () => {},
+        pollIntervalMs: 0,
+      }),
+      0,
+      streams.stderr(),
+    )
+    const finalDir = v2TrustDir(home, origin)
+    const previous = v2PreviousTrustDir(home, origin)
+    const pemBefore = readFileSync(join(finalDir, 'root-ca.pem'), 'utf8')
+    renameSync(finalDir, previous)
+    const recovered = inspectV2Trust(home, origin)
+    assert.equal(recovered.ready, true)
+    assert.equal(existsSync(previous), false)
+    assert.equal(readFileSync(join(finalDir, 'root-ca.pem'), 'utf8'), pemBefore)
+    const next = mintRoot(t)
+    const { ensureDeviceIdentity } = await import('./main.ts')
+    const device = await ensureDeviceIdentity(home)
+    const { deviceFingerprint } = await import('@kaola/shared')
+    const fp = deviceFingerprint(Buffer.from(device.publicKeySpki, 'base64'))
+    const staging = writeV2Staging({
+      kaolaHome: home,
+      origin,
+      pem: next.pem,
+      state: {
+        v: 2,
+        alg: 'sha256',
+        originDigest: pairingOriginDigest(origin),
+        instanceId: INSTANCE_ID,
+        deviceFingerprint: fp,
+        fingerprintSha256: next.sha256,
+        trustEpoch: 2,
+        pairedAt: 1,
+      },
+    })
+    commitV2Staging(staging, origin, home)
+    const replaced = inspectV2Trust(home, origin)
+    assert.equal(replaced.ready, true)
+    if (!replaced.ready) return
+    assert.equal(replaced.state.fingerprintSha256, next.sha256)
+    assert.equal(existsSync(previous), false)
+    recoverInterruptedV2Trust(home, origin)
+    assert.equal(inspectV2Trust(home, origin).ready, true)
+  })
 })
 
 describe('pairing_required exit contract', () => {
@@ -906,5 +1011,193 @@ describe('pairing_required exit contract', () => {
     assert.match(result.stderr, /pairing_required/)
     assert.match(result.stderr, /kaola-mcp pair --url/)
     assert.equal(existsSync(v2TrustDir(home, origin)), false)
+  })
+
+  test('default-store public-CA probe ignores process-start NODE_EXTRA_CA_CERTS (real TLS child)', async (t) => {
+    const dir = mkdtempSync(join(tmpdir(), 'kaola-pair-r4-pki-'))
+    t.after(() => rmSync(dir, { recursive: true, force: true }))
+    const caPem = join(dir, 'ca.pem')
+    const caKey = join(dir, 'ca.key')
+    execFileSync('openssl', [
+      'req',
+      '-x509',
+      '-newkey',
+      'ec',
+      '-pkeyopt',
+      'ec_paramgen_curve:P-256',
+      '-days',
+      '1',
+      '-nodes',
+      '-keyout',
+      caKey,
+      '-out',
+      caPem,
+      '-subj',
+      '/CN=Kaola Pair R4 Root',
+      '-addext',
+      'basicConstraints=critical,CA:TRUE,pathlen:0',
+      '-addext',
+      'keyUsage=critical,keyCertSign,cRLSign',
+    ])
+    const leafKey = join(dir, 'leaf.key')
+    const leafCsr = join(dir, 'leaf.csr')
+    const leafPem = join(dir, 'leaf.pem')
+    const cnf = join(dir, 'leaf.cnf')
+    writeFileSync(
+      cnf,
+      [
+        '[req]',
+        'distinguished_name = dn',
+        'req_extensions = ext',
+        'prompt = no',
+        '[dn]',
+        'CN = 127.0.0.1',
+        '[ext]',
+        'basicConstraints = CA:FALSE',
+        'keyUsage = digitalSignature,keyEncipherment',
+        'extendedKeyUsage = serverAuth',
+        'subjectAltName = IP:127.0.0.1',
+        '',
+      ].join('\n'),
+    )
+    execFileSync('openssl', [
+      'req',
+      '-newkey',
+      'ec',
+      '-pkeyopt',
+      'ec_paramgen_curve:P-256',
+      '-nodes',
+      '-keyout',
+      leafKey,
+      '-out',
+      leafCsr,
+      '-config',
+      cnf,
+    ])
+    execFileSync('openssl', [
+      'x509',
+      '-req',
+      '-in',
+      leafCsr,
+      '-CA',
+      caPem,
+      '-CAkey',
+      caKey,
+      '-CAcreateserial',
+      '-out',
+      leafPem,
+      '-days',
+      '1',
+      '-sha256',
+      '-extfile',
+      cnf,
+      '-extensions',
+      'ext',
+    ])
+    const caText = readFileSync(caPem, 'utf8')
+    const inspected = inspectPublicRootPem(caText)
+    assert.equal(inspected.ok, true)
+    const home = tmpHome(t)
+    const { ensureDeviceIdentity } = await import('./main.ts')
+    const { deviceFingerprint } = await import('@kaola/shared')
+    const device = await ensureDeviceIdentity(home)
+    const fp = deviceFingerprint(Buffer.from(device.publicKeySpki, 'base64'))
+    const origin = await new Promise((resolve) => {
+      const server = createHttpsServer(
+        { cert: readFileSync(leafPem), key: readFileSync(leafKey), minVersion: 'TLSv1.2' },
+        (req, res) => {
+          res.setHeader('content-type', 'application/json')
+          if (req.url === '/api/v1/setup') {
+            res.statusCode = 200
+            res.end('{"setup_complete":true}')
+            return
+          }
+          if (req.url === '/api/v1/agent/whoami') {
+            res.statusCode = 200
+            res.end(
+              JSON.stringify({
+                device_id: 1,
+                fingerprint: fp,
+                hostname: 'test',
+                status: 'active',
+                instance_id: INSTANCE_ID,
+              }),
+            )
+            return
+          }
+          res.statusCode = 404
+          res.end('{"error":"not_found"}')
+        },
+      )
+      t.after(() => server.close())
+      server.listen(0, '127.0.0.1', () => {
+        const addr = server.address()
+        if (addr == null || typeof addr === 'string') throw new Error('expected TCP address')
+        resolve(`https://127.0.0.1:${addr.port}`)
+      })
+    })
+    if (!inspected.ok) return
+    const staging = writeV2Staging({
+      kaolaHome: home,
+      origin,
+      pem: inspected.pem,
+      state: {
+        v: 2,
+        alg: 'sha256',
+        originDigest: pairingOriginDigest(origin),
+        instanceId: INSTANCE_ID,
+        deviceFingerprint: fp,
+        fingerprintSha256: inspected.fingerprintSha256,
+        trustEpoch: 1,
+        pairedAt: 1,
+      },
+    })
+    commitV2Staging(staging, origin, home)
+    assert.equal(inspectV2Trust(home, origin).ready, true)
+    const childScript = join(dir, 'r4-child.mjs')
+    writeFileSync(
+      childScript,
+      [
+        'import { inspectV2Trust, prepareHttpsLauncher } from ' + JSON.stringify(join(HERE, 'pair.ts')) + ';',
+        'const origin = process.env.ORIGIN;',
+        'const home = process.env.KAOLA_HOME;',
+        'const r = await prepareHttpsLauncher({ url: origin, env: process.env });',
+        'const v2 = inspectV2Trust(home, origin);',
+        'process.stdout.write(JSON.stringify({ ok: r.ok, present: v2.present, extra: r.ok ? r.extraCaPemPath : null }) + "\\n");',
+        '',
+      ].join('\n'),
+    )
+    const result = await new Promise((resolve) => {
+      const child = spawn(process.execPath, ['--experimental-strip-types', childScript], {
+        env: {
+          ...process.env,
+          KAOLA_HOME: home,
+          ORIGIN: origin,
+          NODE_EXTRA_CA_CERTS: caPem,
+        },
+        stdio: ['pipe', 'pipe', 'pipe'],
+      })
+      let stdout = ''
+      let stderr = ''
+      child.stdout.setEncoding('utf8')
+      child.stderr.setEncoding('utf8')
+      child.stdout.on('data', (chunk) => {
+        stdout += chunk
+      })
+      child.stderr.on('data', (chunk) => {
+        stderr += chunk
+      })
+      child.stdin.end()
+      const timer = setTimeout(() => child.kill('SIGKILL'), 15000)
+      child.on('close', (code) => {
+        clearTimeout(timer)
+        resolve({ code, stdout, stderr })
+      })
+    })
+    assert.equal(result.code, 0, result.stderr)
+    const payload = JSON.parse(result.stdout)
+    assert.equal(payload.present, true, result.stdout)
+    assert.equal(inspectV2Trust(home, origin).present, true)
+    assert.equal(inspectV2Trust(home, origin).ready, true)
   })
 })

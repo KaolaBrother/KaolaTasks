@@ -653,6 +653,7 @@
                         <n-text v-if="device.requires_pairing_secret" data-testid="device-bind-pairing-id">
                           配对申请 {{ device.pairing_id }}
                         </n-text>
+                        <n-text v-if="device.pairing_repair">根轮换窗口已过，请再次输入配对密语。</n-text>
                       </n-space>
                       <template v-if="pendingDevices.length > 0">
                         <n-space class="keys-inline" align="center">
@@ -948,6 +949,7 @@ type DeviceRow = {
   pairing_id?: string
   pairing_expires_at?: string
   requires_pairing_secret?: boolean
+  pairing_repair?: boolean
 }
 
 type ClaimantRow = {

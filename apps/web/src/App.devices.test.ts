@@ -67,6 +67,11 @@ const PENDING_PAIRING_DEVICE = {
   requires_pairing_secret: true,
 }
 
+const PENDING_REPAIR_DEVICE = {
+  ...PENDING_PAIRING_DEVICE,
+  pairing_repair: true,
+}
+
 const PAIRING_SECRET = 'a0a1-a2a3-a4a5-a6a7-a8a9-aaab-acad-aeaf'
 
 const EXISTING_CLAIMANT = {
@@ -528,6 +533,13 @@ describe('电脑页 — full+active 列表与绑定', () => {
     })
     expectMutationHeaders(posts[0])
     expect(wrapper.text()).not.toContain(BIND_TRAP_TOKEN)
+    expect(wrapper.text()).not.toContain(PAIRING_SECRET)
+  })
+
+  it('pairing_repair 行提示再次输入配对密语，不把密语写进页面', async () => {
+    const { wrapper } = await mountApp(ME_ADMIN, { pending: [PENDING_REPAIR_DEVICE] })
+    expect(wrapper.text()).toContain('根轮换窗口已过，请再次输入配对密语。')
+    expect(node(wrapper, 'device-bind-pairing-secret').exists()).toBe(true)
     expect(wrapper.text()).not.toContain(PAIRING_SECRET)
   })
 

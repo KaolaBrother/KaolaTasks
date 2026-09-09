@@ -259,7 +259,9 @@ Errors:
 
 - pairing mode off → `404 { "error": "pairing_mode_disabled" }`
 - invalid body / nonce length → `400 { "error": "invalid_body" }`
-- device already `active` (use rotation preflight, not this) → `409 { "error": "conflict", "message": "电脑已授权，请走根轮换而不是重新配对。" }`
+- live attempt exists with a **different** `client_nonce` → `409 { "error": "conflict", "message": "电脑已授权，请走根轮换而不是重新配对。" }`
+- live attempt exists with the **same** `client_nonce` (including `approved` before local trust commit) → `200` recover, even if the device is already `active`
+- device `active` and **no** live attempt (previous attempt consumed / expired; missed overlap) → create a new attempt `201`; owner/device rows stay put; admin must approve again before the client may replace ready trust
 - revoked / expired-idle device → same `403` family as MCP (`forbidden` / `device_expired`)
 
 ### `POST /api/v1/device-pairings/:id/commit`
@@ -481,6 +483,9 @@ $KAOLA_HOME/trust/v2/<origin-digest>/
 
 v2 state contains **no** literal origin, pairing secret, private key, forge token, or Task
 data. `originDigest` is `sha256(origin utf8)` using the same origin string as the transcript.
+Directory replace is rename-based: a complete current directory is renamed to sibling
+`<digest>.previous`, then staging is renamed into place. On interruption, recover the complete
+old or new tree; never `rm -rf` the live directory before the new one is committed.
 
 Launcher `kaola-mcp --url` resolution order:
 
@@ -525,9 +530,10 @@ Missed overlap (unknown issuer again): `pairing_required`. No insecure resume. A
 pairing runs again.
 
 Public-CA migration: prove a strict connection to the **same** origin with the **default store
-only** (no extra CA), `whoami` active + matching device fingerprint + `instance_id`, then delete
-the v2 extra root for that origin digest. Do not silently remove OS/browser roots. Claimant-only
-machines never need elevation.
+only** (bundled + system CAs; never process-start or caller `NODE_EXTRA_CA_CERTS`), `whoami`
+active + matching device fingerprint + `instance_id`, then delete the v2 extra root for that
+origin digest. Do not silently remove OS/browser roots. Claimant-only machines never need
+elevation.
 
 `--url` may complete this migration automatically when default-store proof succeeds; it must not
 install anything. `kaola-mcp trust uninstall` remains the operator hammer and still must not
@@ -573,9 +579,11 @@ These are frozen now so implementation cannot weaken them to get green:
 1. Fresh generic client: `pair` → admin secret on 电脑 → strict whoami → MCP
    `initialize` / `list_tasks`. Claimant never supplied PEM, fingerprint, env, or an MCP restart.
    Pending before bind still cannot `list_tasks` / `claim_task`.
-2. Client restart and server restart recover the same unexpired attempt. Repeated create /
-   commit / status / bind are idempotent and **do not slide** `expires_at`. One active binding.
-   Bind/recover succeed for the whole `[created_at, expires_at)` interval (at least 24 hours).
+2. Client restart and server restart recover the same unexpired attempt, including after admin
+   approval while local trust is not yet committed (active device + matching receipt nonce).
+   Repeated create / commit / status / bind are idempotent and **do not slide** `expires_at`.
+   One live attempt at a time. Bind/recover succeed for the whole `[created_at, expires_at)`
+   interval (at least 24 hours).
    An already-pending device that starts pair keeps a ≥24h pairing window from that request;
    pending is extended if it would otherwise expire first. After bind, device authorization
    is still `device_max_age_days` (default 90), not the pairing TTL.

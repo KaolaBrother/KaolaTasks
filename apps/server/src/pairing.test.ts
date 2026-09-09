@@ -1,7 +1,7 @@
 import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import Database from 'better-sqlite3'
@@ -66,6 +66,7 @@ function restoreEnv(t) {
     path: process.env.KAOLA_PUBLIC_ROOT_CA_PATH,
     ttl: process.env.KAOLA_PAIRING_TTL_SECONDS,
     next: process.env.KAOLA_NEXT_PUBLIC_ROOT_CA_PATH,
+    leaf: process.env.KAOLA_PUBLIC_LEAF_CHAIN_PATH,
   }
   t.after(() => {
     if (saved.mode == null) delete process.env.KAOLA_PAIRING_MODE
@@ -76,10 +77,12 @@ function restoreEnv(t) {
     else process.env.KAOLA_PAIRING_TTL_SECONDS = saved.ttl
     if (saved.next == null) delete process.env.KAOLA_NEXT_PUBLIC_ROOT_CA_PATH
     else process.env.KAOLA_NEXT_PUBLIC_ROOT_CA_PATH = saved.next
+    if (saved.leaf == null) delete process.env.KAOLA_PUBLIC_LEAF_CHAIN_PATH
+    else process.env.KAOLA_PUBLIC_LEAF_CHAIN_PATH = saved.leaf
   })
 }
 
-function mintTestRoot(t) {
+function mintTestRoot(t, hostname = 'localhost') {
   const dir = mkdtempSync(join(tmpdir(), 'kaola-pairing-ca-'))
   t.after(() => {
     rmSync(dir, { recursive: true, force: true })
@@ -107,17 +110,73 @@ function mintTestRoot(t) {
     '-addext',
     'keyUsage=critical,keyCertSign,cRLSign',
   ])
-  return pem
+  const leafKey = join(dir, 'leaf.key')
+  const leafCsr = join(dir, 'leaf.csr')
+  const leafPem = join(dir, 'leaf.pem')
+  const cnf = join(dir, 'leaf.cnf')
+  writeFileSync(
+    cnf,
+    [
+      '[req]',
+      'distinguished_name = dn',
+      'req_extensions = ext',
+      'prompt = no',
+      '[dn]',
+      `CN = ${hostname}`,
+      '[ext]',
+      'basicConstraints = CA:FALSE',
+      'keyUsage = digitalSignature,keyEncipherment',
+      'extendedKeyUsage = serverAuth',
+      `subjectAltName = DNS:${hostname}`,
+      '',
+    ].join('\n'),
+  )
+  execFileSync('openssl', [
+    'req',
+    '-newkey',
+    'ec',
+    '-pkeyopt',
+    'ec_paramgen_curve:P-256',
+    '-nodes',
+    '-keyout',
+    leafKey,
+    '-out',
+    leafCsr,
+    '-config',
+    cnf,
+  ])
+  execFileSync('openssl', [
+    'x509',
+    '-req',
+    '-in',
+    leafCsr,
+    '-CA',
+    pem,
+    '-CAkey',
+    key,
+    '-CAcreateserial',
+    '-out',
+    leafPem,
+    '-days',
+    '1',
+    '-sha256',
+    '-extfile',
+    cnf,
+    '-extensions',
+    'ext',
+  ])
+  return { pem, leaf: leafPem, dir }
 }
 
 function enablePairing(t) {
   restoreEnv(t)
-  const pem = mintTestRoot(t)
+  const pki = mintTestRoot(t)
   process.env.KAOLA_PAIRING_MODE = 'private_ca'
-  process.env.KAOLA_PUBLIC_ROOT_CA_PATH = pem
+  process.env.KAOLA_PUBLIC_ROOT_CA_PATH = pki.pem
+  process.env.KAOLA_PUBLIC_LEAF_CHAIN_PATH = pki.leaf
   delete process.env.KAOLA_PAIRING_TTL_SECONDS
   delete process.env.KAOLA_NEXT_PUBLIC_ROOT_CA_PATH
-  return pem
+  return pki
 }
 
 async function createApp(t, sqlitePath) {
@@ -168,14 +227,14 @@ async function signedMcp(app, identity, payload) {
   })
 }
 
-function commitmentOf(created, secretHex) {
+function commitmentOf(created, secretHex, nonceHex = clientNonce()) {
   const expiresAt = Math.floor(Date.parse(created.expires_at) / 1000)
   const transcript = encodePairingTranscript({
     pairingId: created.pairing_id,
     instanceId: created.instance_id,
     origin: created.origin,
     deviceFingerprint: created.device_fingerprint,
-    clientNonce: Buffer.from(clientNonce(), 'hex'),
+    clientNonce: Buffer.from(nonceHex, 'hex'),
     serverNonce: Buffer.from(created.server_nonce, 'hex'),
     rootCaSha256: Buffer.from(created.root_sha256, 'hex'),
     expiresAt,
@@ -624,7 +683,7 @@ describe('issue #63 approval-bound private-CA pairing', { concurrency: false }, 
     assert.equal(jsonBody(mismatch).error, 'pairing_commitment_mismatch')
   })
 
-  test('already-active device cannot start a new pairing; must rotate instead', async (t) => {
+  test('approved pairing recovers on create after bind so a receipt restart can finish whoami', async (t) => {
     freezeNow(t)
     enablePairing(t)
     const app = await createApp(t)
@@ -650,13 +709,122 @@ describe('issue #63 approval-bound private-CA pairing', { concurrency: false }, 
       },
     })
     assert.equal(bound.statusCode, 200, bound.body)
-    const again = await signedJson(app, identity, {
+    const recovered = await signedJson(app, identity, {
       url: '/api/v1/device-pairings',
       payload: { client_nonce: clientNonce() },
     })
-    assert.equal(again.statusCode, 409, again.body)
-    assert.equal(jsonBody(again).error, 'conflict')
-    assert.match(String(jsonBody(again).message), /根轮换/)
+    assert.equal(recovered.statusCode, 200, recovered.body)
+    assert.equal(jsonBody(recovered).pairing_id, created.pairing_id)
+    assert.equal(jsonBody(recovered).server_nonce, created.server_nonce)
+    assert.equal(jsonBody(recovered).status, 'approved')
+    const otherNonce = await signedJson(app, identity, {
+      url: '/api/v1/device-pairings',
+      payload: { client_nonce: '22'.repeat(32) },
+    })
+    assert.equal(otherNonce.statusCode, 409, otherNonce.body)
+    assert.equal(jsonBody(otherNonce).error, 'conflict')
+    const status = await signedJson(app, identity, {
+      url: `/api/v1/device-pairings/${created.pairing_id}/status`,
+      payload: {},
+    })
+    assert.equal(status.statusCode, 200, status.body)
+    assert.equal(jsonBody(status).status, 'approved')
+    assert.equal(typeof jsonBody(status).approval?.proof, 'string')
+  })
+
+  test('consumed pairing allows a new exact-device repair that keeps owner until admin approves', async (t) => {
+    freezeNow(t)
+    enablePairing(t)
+    const sqlitePath = sqliteFile(t, 'kaola-pairing-repair-')
+    const app = await createApp(t, sqlitePath)
+    const admin = await ensureSetup(app)
+    const identity = generateDeviceIdentity()
+    const created = await createAndCommit(app, identity)
+    const pending = await app.inject({
+      method: 'GET',
+      url: '/api/v1/devices/pending',
+      cookies: admin.cookies,
+      headers: { accept: 'application/json' },
+    })
+    const row = jsonBody(pending).devices[0]
+    const bound = await app.inject({
+      method: 'POST',
+      url: `/api/v1/devices/${row.id}/bind`,
+      cookies: admin.cookies,
+      headers: JSON_HEADERS,
+      payload: {
+        bind_to_self: true,
+        pairing_id: created.pairing_id,
+        pairing_secret: SECRET_HEX,
+      },
+    })
+    assert.equal(bound.statusCode, 200, bound.body)
+    const completed = await signedJson(app, identity, {
+      url: `/api/v1/device-pairings/${created.pairing_id}/complete`,
+      payload: {},
+    })
+    assert.equal(completed.statusCode, 200, completed.body)
+    const repair = await signedJson(app, identity, {
+      url: '/api/v1/device-pairings',
+      payload: { client_nonce: '33'.repeat(32) },
+    })
+    assert.equal(repair.statusCode, 201, repair.body)
+    const repairBody = jsonBody(repair)
+    assert.notEqual(repairBody.pairing_id, created.pairing_id)
+    const listed = await app.inject({
+      method: 'GET',
+      url: '/api/v1/devices/pending',
+      cookies: admin.cookies,
+      headers: { accept: 'application/json' },
+    })
+    assert.equal(listed.statusCode, 200, listed.body)
+    const repairRow = jsonBody(listed).devices.find((d) => d.pairing_repair === true)
+    assert.equal(repairRow?.pairing_id, repairBody.pairing_id)
+    assert.equal(repairRow?.requires_pairing_secret, true)
+    const commit = await signedJson(app, identity, {
+      url: `/api/v1/device-pairings/${repairBody.pairing_id}/commit`,
+      payload: { commitment: commitmentOf(repairBody, SECRET_HEX, '33'.repeat(32)) },
+    })
+    assert.equal(commit.statusCode, 200, commit.body)
+    const ownerBefore = sqliteRows(sqlitePath).device
+    const repaired = await app.inject({
+      method: 'POST',
+      url: `/api/v1/devices/${row.id}/bind`,
+      cookies: admin.cookies,
+      headers: JSON_HEADERS,
+      payload: {
+        bind_to_self: true,
+        pairing_id: repairBody.pairing_id,
+        pairing_secret: SECRET_HEX,
+      },
+    })
+    assert.equal(repaired.statusCode, 200, repaired.body)
+    const ownerAfter = sqliteRows(sqlitePath).device
+    assert.equal(ownerAfter.user_id, ownerBefore.user_id)
+    assert.equal(ownerAfter.expires_at, ownerBefore.expires_at)
+    assert.equal(ownerAfter.status, 'active')
+    const status = await signedJson(app, identity, {
+      url: `/api/v1/device-pairings/${repairBody.pairing_id}/status`,
+      payload: {},
+    })
+    assert.equal(jsonBody(status).status, 'approved')
+  })
+
+  test('unrelated public root fails closed at boot', (t) => {
+    enablePairing(t)
+    const other = mintTestRoot(t)
+    process.env.KAOLA_PUBLIC_ROOT_CA_PATH = other.pem
+    const db = createDb()
+    t.after(() => db.$client.close())
+    assert.throws(() => loadPairingConfig(db), /does not verify|SAN|root/)
+  })
+
+  test('http PUBLIC_URL without leaf chain fails closed', (t) => {
+    enablePairing(t)
+    delete process.env.KAOLA_PUBLIC_LEAF_CHAIN_PATH
+    const db = createDb()
+    t.after(() => db.$client.close())
+    assert.throws(() => loadPairingConfig(db), /KAOLA_PUBLIC_LEAF_CHAIN_PATH/)
   })
 
   test('replaying the same device-proof nonce is 401 and does not create a second pairing', async (t) => {
