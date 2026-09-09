@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import Database from 'better-sqlite3'
 import {
   DEFAULT_PAIRING_TTL_SECONDS,
+  displayPairingSecret,
   encodePairingTranscript,
   pairingCommitment,
   pairingIsLive,
@@ -329,7 +330,7 @@ describe('issue #63 approval-bound private-CA pairing', { concurrency: false }, 
       payload: {
         bind_to_self: true,
         pairing_id: created.pairing_id,
-        pairing_secret: SECRET_HEX,
+        pairing_secret: displayPairingSecret(Buffer.from(SECRET_HEX, 'hex')),
       },
     })
     assert.equal(bound.statusCode, 200, bound.body)
@@ -366,6 +367,27 @@ describe('issue #63 approval-bound private-CA pairing', { concurrency: false }, 
     assert.equal(jsonBody(status).status, 'approved')
     assert.equal(typeof jsonBody(status).approval?.proof, 'string')
     assert.equal(String(status.body).includes(SECRET_HEX), false)
+
+    const other = generateDeviceIdentity()
+    const foreignStatus = await signedJson(app, other, {
+      url: `/api/v1/device-pairings/${created.pairing_id}/status`,
+      payload: {},
+    })
+    assert.equal(foreignStatus.statusCode, 404, foreignStatus.body)
+    assert.equal(Object.hasOwn(jsonBody(foreignStatus), 'approval'), false)
+
+    const complete = await signedJson(app, identity, {
+      url: `/api/v1/device-pairings/${created.pairing_id}/complete`,
+      payload: {},
+    })
+    assert.equal(complete.statusCode, 200, complete.body)
+    const consumed = await signedJson(app, identity, {
+      url: `/api/v1/device-pairings/${created.pairing_id}/status`,
+      payload: {},
+    })
+    assert.equal(consumed.statusCode, 200, consumed.body)
+    assert.equal(jsonBody(consumed).status, 'consumed')
+    assert.equal(Object.hasOwn(jsonBody(consumed), 'approval'), false)
   })
 
   test('wrong secret does not activate; the 9th failure is 409 pairing_secret_invalid', async (t) => {
@@ -668,6 +690,44 @@ describe('issue #63 approval-bound private-CA pairing', { concurrency: false }, 
     assert.equal(jsonBody(replay).error, 'unauthorized')
     const rows = sqliteRows(sqlitePath)
     assert.equal(rows.pairing != null, true)
+  })
+
+  test('one live pairing per device is unique; a second live row cannot be inserted', async (t) => {
+    freezeNow(t)
+    enablePairing(t)
+    const sqlitePath = sqliteFile(t, 'kaola-pairing-one-live-')
+    const app = await createApp(t, sqlitePath)
+    const identity = generateDeviceIdentity()
+    const created = await signedJson(app, identity, {
+      url: '/api/v1/device-pairings',
+      payload: { client_nonce: clientNonce() },
+    })
+    assert.equal(created.statusCode, 201, created.body)
+    const raw = new Database(sqlitePath)
+    t.after(() => raw.close())
+    const row = raw.prepare('SELECT * FROM device_pairings').get()
+    assert.equal(row != null, true)
+    assert.throws(() => {
+      raw
+        .prepare(
+          `INSERT INTO device_pairings (
+            pairing_id, device_id, protocol_version, client_nonce_hex, server_nonce_hex,
+            origin, instance_id, root_sha256, status, failed_attempts, created_at, expires_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'created', 0, ?, ?)`,
+        )
+        .run(
+          'kpr_ffffffffffffffffffffffffffffffff',
+          row.device_id,
+          row.protocol_version,
+          row.client_nonce_hex,
+          '22'.repeat(32),
+          row.origin,
+          row.instance_id,
+          row.root_sha256,
+          row.created_at,
+          row.expires_at,
+        )
+    }, /UNIQUE|unique/)
   })
 
   test('next-root and complete stay 202 for pending devices', async (t) => {

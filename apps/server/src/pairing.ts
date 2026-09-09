@@ -126,7 +126,7 @@ function requireActiveDevice(request: FastifyRequest, reply: FastifyReply) {
   return undefined
 }
 
-function expireStalePairings(db: AppDb, deviceId: number, now: number): void {
+function expireStalePairings(db: AppDb | { select: AppDb['select']; update: AppDb['update'] }, deviceId: number, now: number): void {
   const rows = db.select().from(devicePairings).where(eq(devicePairings.deviceId, deviceId)).all()
   for (const row of rows) {
     if (
@@ -139,7 +139,11 @@ function expireStalePairings(db: AppDb, deviceId: number, now: number): void {
   }
 }
 
-function livePairingForDevice(db: AppDb, deviceId: number, now: number): DevicePairing | undefined {
+function livePairingForDevice(
+  db: AppDb | { select: AppDb['select'] },
+  deviceId: number,
+  now: number,
+): DevicePairing | undefined {
   const rows = db.select().from(devicePairings).where(eq(devicePairings.deviceId, deviceId)).all()
   return rows.find(
     (row) =>
@@ -330,17 +334,17 @@ export function registerPairing(app: FastifyInstance, db: AppDb): void {
         return reply.code(400).send({ error: 'invalid_body' })
       }
       const now = unixNow()
-      expireStalePairings(db, device.id, now)
-      const existing = livePairingForDevice(db, device.id, now)
-      if (existing != null) {
-        return reply.code(200).send(descriptor(cfg, existing, device, effectiveStatus(existing, now)))
-      }
       const createdAt = now
       const expiresAt = pairingExpiresAt(createdAt, cfg.ttlSeconds)
       const pendingExpiresAt = alignPendingExpiresAt(device.pendingExpiresAt, expiresAt)
-      const inserted = db.transaction((tx) => {
+      const result = db.transaction((tx) => {
+        expireStalePairings(tx, device.id, now)
+        const existing = livePairingForDevice(tx, device.id, now)
+        if (existing != null) {
+          return { kind: 'existing' as const, row: existing, pendingExpiresAt: device.pendingExpiresAt }
+        }
         tx.update(devices).set({ pendingExpiresAt }).where(eq(devices.id, device.id)).run()
-        return tx
+        const inserted = tx
           .insert(devicePairings)
           .values({
             pairingId: newPairingId(),
@@ -358,9 +362,14 @@ export function registerPairing(app: FastifyInstance, db: AppDb): void {
           })
           .returning()
           .get()
+        if (inserted == null) throw new Error('failed to insert device pairing')
+        return { kind: 'created' as const, row: inserted, pendingExpiresAt }
       })
-      if (inserted == null) throw new Error('failed to insert device pairing')
-      return reply.code(201).send(descriptor(cfg, inserted, { ...device, pendingExpiresAt }, 'created'))
+      const descriptorDevice = { ...device, pendingExpiresAt: result.pendingExpiresAt ?? device.pendingExpiresAt }
+      if (result.kind === 'existing') {
+        return reply.code(200).send(descriptor(cfg, result.row, descriptorDevice, effectiveStatus(result.row, now)))
+      }
+      return reply.code(201).send(descriptor(cfg, result.row, descriptorDevice, 'created'))
     })
 
     child.post('/api/v1/device-pairings/:id/commit', async (request, reply) => {
