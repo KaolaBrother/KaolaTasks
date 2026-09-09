@@ -602,9 +602,9 @@ GitHub 发布冒烟已停（此前仓 [Issue #1](https://github.com/KaolaBrother
 
 收尾：确认活动lease为0后，仅停止本轮 `kaolatasks-issue63-claimant` / `kaolatasks-issue63-uat`，保留隔离数据库、镜像和受保护证据以便续验；未删除旧证据或无关容器。现有20分钟心跳只读检查剩余配置/用户方向变化，不重复创建任务、PR、环境或启动Runner。
 
-### 2026-09-09 修复后全链路复验（进行中，不是上一轮证据）
+### 2026-09-09 修复后全链路复验（完成，不是上一轮证据）
 
-用户明确要求主控按 Workflow 自己修复、然后从头完整 UAT；不使用 Runner。生产候选 `a76674f`：配对请求使用单次 HTTPS agent 与一次性握手监听；即时回写和 poller 共享数据库实例内的 in-flight promise，同任务/动作/PR 的并发请求合并，翻 ready 另按评审轮隔离。不改变顺序重新认领语义，不宣称跨进程 exactly-once。设计先行；两个独立复核均无阻塞问题。修复前定向测试真实失败，修复后 focused 88、macOS Node 1113 + Web 170、lint/typecheck/build 通过；Linux 测试同步问题单列于下，不用 macOS PASS 替代。
+用户明确要求主控按 Workflow 自己修复、然后从头完整 UAT；不使用 Runner。生产候选 `a76674f`：配对请求使用单次 HTTPS agent 与一次性握手监听；即时回写和 poller 共享数据库实例内的 in-flight promise，同任务/动作/PR 的并发请求合并，翻 ready 另按评审轮隔离。不改变顺序重新认领语义，不宣称跨进程 exactly-once。#63 的产品增量仍只有 Private CA 自动配对；监听器修复属于这条新增链路，回写并发互斥是全链路 UAT 暴露且经用户另行授权修复的既有缺陷，不把其他既有流程问题归因于 Private CA。设计先行；两个独立复核均无阻塞问题。修复前定向测试真实失败，修复后 focused 88、macOS Node 1113 + Web 170、lint/typecheck/build 通过；Linux 测试同步问题单列于下，不用 macOS PASS 替代。
 
 **全新隔离现场。** 镜像 `kaolatasks-issue63-uat:repair-a76674f`，新容器 `kaolatasks-issue63-repair-uat` 与 `kaolatasks-issue63-repair-claimant`，独立数据目录 `.kw/local-receipts/uat-repair-20260909/`。Linux Node 22.23.2 / OpenSSL 3.0.20；主机签发 OpenSSL 3.6.3。旧容器、旧库和旧证据未复用。本轮认领端从空 KAOLA_HOME 与默认信任开始，无预装根、receipt、设备授权或 PAT；CA 私钥未进入认领端。
 
@@ -619,15 +619,15 @@ GitHub 发布冒烟已停（此前仓 [Issue #1](https://github.com/KaolaBrother
 | 回写去重 | 两个真实源 Issue 各只有认领、提交 PR、完成各一条；每个最终通过只有一条翻 ready 成功事件。快速 release/reclaim 落在同一个未完成写回窗口，合并为一个在途写回；未把此结果解释为禁止顺序重新认领。 |
 | 第二设备 fencing | 独立空 home 第二设备经真实密语网页批准并严格 TLS 就绪；同账号另一设备持相同 claim ID 返回 403，主设备正确 claim 200、错误 claim 409。任务 5 已 release/cancel。 |
 | SSE / 未就绪依赖 | 真实登录 session SSE 收到 task_updated、progress=67，不含 note/body_md/PAT；子任务对未就绪父任务 claim 返回 parent_not_ready。任务 6/7 均已取消。 |
-| 重启恢复 | 第三空 home 在 pending 时同时重启本轮 server/claimant，重启前后 receipt SHA-256、服务端 pending 记录完全相同；恢复 CLI 继续原申请，主设备重启后严格 TLS 生产 MCP 仍可用。第三设备最终网页批准仍待完成。 |
-| 终止 / 重开 | 一次性 Gitea PR61 已通过生产 MCP 交付为待验收。点击网页“终止本次交付”后原生确认阻塞浏览器控制；getJsDialog 未返回 dialog，点击/取消/关闭页均无法完成。当前任务 4 仍待验收，**未宣称终止、重开或八状态全通过**。未用 REST 终止冒充网页确认。 |
+| 重启恢复 | 第三空 home 在 pending 时同时重启本轮 server/claimant，重启前后 receipt SHA-256、服务端 pending 记录完全相同；恢复 CLI 继续同一申请，主设备重启后严格 TLS 生产 MCP 仍可用。随后真实工作台用原密语批准，CLI 自动完成 strict whoami、落地 v2 并删除一次性 receipt；第三设备于 10:40:40Z active，授权至 2026-12-08T10:40:40Z。 |
+| 终止 / 重开 | 一次性 Gitea PR61 先通过生产 MCP 交付为待验收。最初内置浏览器通道未暴露原生 confirm，属于控制方法不对，不是产品或 Private CA 故障；改用真实 Playwright Chromium 后，第一次 dismiss 保持待验收，第二次 accept 转已退回，网页重新开放转待认领，再由网页取消转已取消。PR61 随后通过 Gitea API 正常关闭并核实未合并；未用 REST 状态迁移冒充网页 PASS。 |
 
 **Linux 测试时钟归因更正。** 全量 Node 1113 已通过；Web 重复运行曾出现不同文件/用例的偶发失败（169/170 或 168/170），原候选也可复现。增加响应等待、等档案选项、自动卸载 wrapper 后仍失败，故未将这些推测写成根因，试探性改动已全部撤回。进一步捕获到 `task-title` input 的 `_vts=1788946496774`，Vue listener `attached=1788946496909`，事件比挂载时间早 135ms，模型 title 仍为空；Vue 的 `e._vts <= invoker.attached` 直接丢弃该事件。证据在 `data/repair-form-event-2.log`。这是本轮 Linux VM 的非单调墙钟在测试事件分发中造成的失败，不是输入表单生产代码回归。
 
 仅新增 Web test setup（`720e239`）：每个测试用 `performance.now()` 推进以当前 epoch 为基点的 `Date.now()` mock，保留真实 timers，不调整系统时钟，不改原有 170 个测试的断言或交互。该最小改动后 Linux Web 连续三轮 170/170 PASS（`repair-linux-web-monotonic-{1,2,3}.log`）；最终 Linux 与 macOS 全量均 Node 1113 + Web 170 PASS，lint/typecheck/build PASS，独立 test-clock 复核无阻塞问题。最初 Linux test 误继承 Private CA 启动环境造成 7 个 auth-cookie fixture 失败，清理环境变量后消失；一次 macOS 重跑在工作树解析到 `/usr/bin/openssl` LibreSSL，已纠正为实际核对后的 OpenSSL 3.6.3 重跑。两者均保留为执行错误，不冒称产品缺陷或修复。所有未通过尝试日志保留，不只保留重跑成功值。
 
-**当前安全核验。** 已扫描 33 个可用输出面：任务列表/详情/评审/事件、凭证档案、服务器日志、4 个 Linux git config 与最后提交、两端源 Issue 评论、SSE、两个已完成设备的 v2 文件，均无 PAT 或 CA 私钥；v2 不含明文 origin，已消费配对 receipt 已删除。只读 SQL 证实 14 条 lease 均 released、无 active；两个 active 设备授权期均 7776000 秒，三个配对 pending TTL 均 86400 秒，主设备错误密语计数为 1。第三设备仍 committed/pending，未把它的 v2 或终止态纳入本次局部 PASS；七个已到达状态不能冒称八状态全覆盖。
+**最终安全核验。** `verify-containment.mjs` 已扫描 35 个暴露面：任务列表/详情/评审/事件、凭证档案、服务器日志、4 个 Linux git config 与最后提交、两端源 Issue 评论、SSE、三台设备的 v2 文件，均无 PAT 或 CA 私钥；v2 不含明文 origin，三份已消费配对 receipt 均不存在。只读 SQL 证实 14 条 lease 均 released、无 active；三次 pairing 均 consumed、TTL 均 86400 秒，三台 active 设备授权期均 7776000 秒，主设备错误密语计数为 1。最终 7 个任务、128 条事件覆盖待认领、进行中、待验收、待修改、待合并、已完成、已退回、已取消八个规范状态；任务 1/2/3 已完成，任务 4/5/6/7 已取消。
 
-管理端使用本机回环 HTTP 入口，MCP 使用 Private CA HTTPS 严格校验；未绕过浏览器证书警告、未安装 macOS 系统根。实际 24 小时/90 天等待、Windows/macOS 物理认领客户端、公开 CA 干净机器、已卸载 VPS 不在本轮 PASS 内。未完成终止/重开和第三设备最终批准，因此最终全范围泄露扫描与 Workflow lifecycle 仍未完成，#63 保持开放。
+管理端使用本机回环 HTTP 入口，MCP 使用 Private CA HTTPS 严格校验；未绕过浏览器证书警告、未安装 macOS 系统根。本轮本机隔离 Linux 全 Agent 路径完成 PASS；实际 24 小时/90 天等待、Windows/macOS 物理认领客户端、公开 CA 干净机器、HTTPS 浏览器 OAuth 回调和已卸载 VPS 不在本轮 PASS 内，也不由本轮结果推断。#63 在本轮 Workflow lifecycle 完成前保持开放。
 
-**本次暂停现场。** 确认活动 lease 为 0 后，仅停止 `kaolatasks-issue63-repair-claimant`、`kaolatasks-issue63-repair-uat`，inspect 均 exited；旧容器与所有库、镜像、日志、clone、pending receipt 均保留，没有删除材料。4 个配对进程日志均无 MaxListenersExceededWarning；第三设备最终批准未发生。一次性 PR61 保持未合并、任务 4 待验收，待浏览器原生确认恢复后从此处接续，不重跑已完成的三个合并交付。修复候选及报告保存在 `workflow/bundle-63`；不会把暂停写成全部通过或完成归档。
+**本次收尾现场。** 确认活动 lease 为 0 并完成最终扫描后，关闭专用 Playwright 会话，仅停止 `kaolatasks-issue63-repair-claimant`、`kaolatasks-issue63-repair-uat`，inspect 均为 exited；旧容器与所有库、镜像、日志、clone、已消费 receipt 的审计材料均保留，没有删除材料。5 份配对进程日志均无 MaxListenersExceededWarning；一次性 PR61 已关闭且未合并。修复候选、自动测试和本轮 UAT 均已有完整证据，后续只进入 Workflow lifecycle 收尾。
