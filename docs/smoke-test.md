@@ -4,24 +4,112 @@
 
 **发布面只有 GitLab 和 Gitea。** 产品代码里 GitHub 适配器仍在（见 `docs/DESIGN.md`），但这条手册不发 GitHub 任务、不要 `GITHUB_TOKEN`、不跑 `scripts/forge-smoke.ts github`。认领者不需要自己的 forge 账号或 PAT；认领身份是设备证明（`~/.kaola/device.json` Ed25519）加管理员远程配对。
 
+## 2026-09-09 更正：本机隔离 Linux 全 Agent（路径 L，优先）
+
+正式评论 [5596896971](https://github.com/KaolaBrother/KaolaTasks/issues/63#issuecomment-5596896971) **优先于** [5596887868](https://github.com/KaolaBrother/KaolaTasks/issues/63#issuecomment-5596887868) 以及下文历史「配合 / 停下来和人一起做 / 等人批准」的句子。本例外**只**覆盖本机隔离 Linux UAT，不修改生产管理员授权规则。
+
+- 全程由 Agent 完成：配置、管理端真实登录与工作台配对批准、发布、认领 Agent 生产 MCP、GitLab/Gitea 完整交付与评审合并。必要时 Computer Use / 浏览器自动化。不设等待人工门。
+- 所需 token/key 已在主仓 gitignored `.env`。Agent 读取但不输出、不再索取、不写入仓库/聊天/remote URL，不把整份 `.env` 或 PAT 预装认领端。
+- 发布/管理端与认领端权限隔离。认领端只从成功 `claim_task` 获得该任务 forge 凭证。
+- 不得 `inject`、直改 SQLite、或旧 `pairDeviceToSelf` 冒充新配对。不得把路径 B 再加一次孤立 `pair` 拼成新机制全闭环 PASS。
+- 真实 Linux 认领端必须独立干净 `KAOLA_HOME` 和默认信任；服务器 Linux 容器不等于认领端。
+- 真实 HTTPS 私有 CA → 自动 `pair` → 工作台批准 → 严格 `whoami` → v2 → 生产 MCP 认领至 `已完成` 必须是**同一闭环**。
+- 浏览器自动化实际跑过工作台才记 UI 通过。真实 REST 可作协议诊断。外部 OAuth 人机挑战阻断则如实记阻塞，不伪造。
+- 旧路径 A 的人工规则保留给历史记录；本路径按上述用户授权执行。
+- 本节是**可执行设计**。写入时 UAT **尚未启动**。执行顺序：产品候选复核通过 → finalize keep-open merge/push/archive → 再启动路径 L。结果仍只追加本文件。
+
+项目根 `AGENTS.md` 同步了同一作用域。
+
 每家走同一条形状：导入 Issue → 凭证档案 → 发布 → 电脑配对 → `claim_task` → 按 `clone` 四键改仓开 PR → `submit_pr` → 合并 → 轮询 `已完成` → 源 Issue 三条回写（认领 / 提交PR / 完成）。
 
-标了 **配合** 的步骤：自动化跑不了（OAuth 授权页、浏览器会话、只显示一次的令牌、页面点选）。到这些步必须**停下来和人一起做**，不要自己猜、不要让人把 Secret 贴到聊天里。
-
-认领侧契约以 GitHub [#23](https://github.com/KaolaBrother/KaolaTasks/issues/23) **最新评论**为准（不要重开 #22）。
+认领侧契约以 GitHub [#23](https://github.com/KaolaBrother/KaolaTasks/issues/23) **最新评论**为准（不要重开 #22）。#63 认领端默认 `kaola-mcp pair --url`，不是 #48 `trust install`。
 
 ## 怎么分工
 
 | 标记 | 谁做 | 规则 |
 |------|------|------|
 | **自动** | Agent 可单独做 | 测命令、起服务、查 SQLite、调不需要浏览器 cookie 的 API、用已写入 `.env` 且 gitignore 的令牌调 forge API、已配对后走 MCP |
-| **配合** | 人和 Agent **当场一起做** | 浏览器登录、在页面里贴仓库令牌、点导入/发布、Authorize、**管理员在网页把待授权电脑绑到人并批准**。人操作页面；Agent 报下一步填什么、事后核 SQLite / 网络响应。令牌只进 `.env` 或页面输入框 |
+| **配合** | 历史路径 A：人和 Agent **当场一起做** | 仅路径 A / 未授权的物理机。浏览器登录、页面贴仓库令牌、Authorize、管理员网页绑定。人操作页面；Agent 报下一步、事后核 SQLite / 网络。令牌只进 `.env` 或页面输入框 |
+| **路径 L（全 Agent）** | Agent，含 Computer Use | 本机隔离 Linux UAT。管理端真实工作台登录与密语批准由 Agent 自动化；认领端独立 Linux 真实 Agent 会话。不等人。凭证规则见顶部更正 |
 
-`.env` 已 gitignore。需要 PAT 时，人把值写进本地 `.env`，聊天里只说「写好了」。
+`.env` 已 gitignore。路径 L **不再**为 PAT 向人索取；主仓 `.env` 已有则读取。聊天里不出现令牌值。
 
-## 两种跑法
+## 四种跑法
 
-路径 A 是真人浏览器 + 真 OAuth。路径 B 是无人值守脚本（`inject` + 生产 MCP，不打开 Vue）。路径 C 把 B 的假考拉进程 **listen** 出来，用真实工作台代替真人点评审面板，仍不走 GitLab Authorize。
+路径 A 是真人浏览器 + 真 OAuth。路径 B 是无人值守脚本（`inject` + 生产 MCP，不打开 Vue）。路径 C 把 B 的假考拉进程 **listen** 出来，用真实工作台代替真人点评审面板，仍不走 GitLab Authorize。**路径 L** 是本机隔离 Linux 上的生产服务 + 真实私有 CA + 独立认领端 + 真实工作台批准，用来验收 #63 新配对机制；**不能**用 B 或 C 代替。
+
+### L. 本机隔离 Linux 全 Agent 私有 CA 闭环（#63）
+
+#### 拓扑（固定后再执行）
+
+| 角色 | 是什么 | 不是什么 |
+|------|--------|----------|
+| 隔离根 | 仅 `/private/tmp/kaolatasks-63-uat.<id>/`（已准备目录可复用，执行前按冻结 SHA 刷新 `source/` 并重建镜像） | 旧生产库、无关容器、已卸载 VPS |
+| 服务端 | Linux 容器跑生产 Fastify + `apps/web/dist`；独立 SQLite 卷；`KAOLA_PAIRING_MODE=private_ca` | 认领端 |
+| TLS 入口 | 本机 loopback HTTPS（设计：`PUBLIC_URL=https://localhost:34463`，leaf SAN `DNS:localhost` + `IP:127.0.0.1`）反代到容器 HTTP | 公网部署 |
+| 管理端入口 | 本机 HTTP 工作台（设计：`http://localhost:31415`，cookie host 必须是 `localhost`） | 把 PAT 贴进认领端 |
+| 签发端 | 隔离目录内 root/leaf；私钥不进认领端、不进 git | 认领端预挂 PEM |
+| 认领端 | **第二个** Linux 容器/VM：空 `KAOLA_HOME`、默认 CA 库、无 `NODE_EXTRA_CA_CERTS`、无 PAT、无 receipt | 只把服务器容器叫「Linux 认领」 |
+| 管理端 Agent | 本机 Cursor CLI Runner + Computer Use 操作真实工作台 | 路径 B 的 stub 登录冒充 UI 通过 |
+| 认领端 Agent | 该 Linux 内真实 Agent 会话（优先 Cursor Agent CLI / 已安装 Linux 承载）+ 生产 `apps/mcp/bin/kaola-mcp.mjs` | `scripts/forge-smoke.ts`、`pairDeviceToSelf`、仅 REST 的「假 Agent」 |
+
+镜像 tag 设计为 `kaolatasks-issue63-uat:final`，构建上下文 = 冻结候选 SHA 的 source，不是审查 FAIL 的旧 SHA。`start-linux.mjs` 的 `server.env` 为 `wx`，重建前勿残留。回收：停路径 L 容器与 proxy、删该隔离 `data/` 与认领端 `KAOLA_HOME`；不动其它 Docker。
+
+#### 凭证与信任
+
+- 管理/发布侧从主仓 `.env` 读 `GITLAB_TOKEN` / `GITEA_TOKEN`（及既有 OAuth 客户端配置若要用真 OAuth）。
+- 认领端 MCP 配置只有 `command` + `--url ${PUBLIC_URL}`，无密钥。`pair` 密语只经受保护本地通道（认领 tty → 管理端自动化输入），不进聊天、bootstrap 响应、日志、Issue。
+- 管理端本机若要打开 HTTPS 工作台，系统/浏览器信任与 MCP v2 分开；不得把同一预挂根当作认领端自动配对成功条件。
+- 禁止 `NODE_TLS_REJECT_UNAUTHORIZED=0`、`--insecure`、`curl -k`、证书例外当 PASS。
+
+#### 闭环步骤（GitLab 与 Gitea 各一遍）
+
+每步：前置 / 操作 / 期望 / 证据 / 失败恢复。全部为路径 L 的 Agent 执行，不是配合门。
+
+| # | 前置 | 操作 | 期望 | 证据 | 失败恢复 |
+|---|------|------|------|------|----------|
+| L1 | 冻结 SHA 已 merge 或经授权在隔离目录刷新 source | 重建 `:final`，启动 server + TLS proxy + 空 SQLite | 服务健康；`private_ca` 启动成功（配置根+leaf 与 `PUBLIC_URL` 一致） | 容器日志无 token；`openssl s_client -verify_hostname localhost` 对入口成功 | 错根/错 SAN 应启动失败；修配置后重建，不改旧库 |
+| L2 | 空库 | Computer Use：初始向导建本地管理员；**不要**空库 OAuth | `active`+`admin` | 工作台已登录；SQLite 有本地管理员，无密码入日志 | 向导失败则停，不 inject 用户 |
+| L3 | 管理员会话 | 工作台或**该会话**下 REST 建 GitLab/Gitea 凭证档案（PAT 只从 `.env` 进页面或带 cookie 的请求） | 档案列表无 token 字段 | UI 实际走过才记 UI；仅 REST 则记「协议诊断」 | 缺 PAT 记阻塞，不编 token |
+| L4 | 档案 | 工作台导入并发布 smoke Issue（`KaolaBrother/kaola-tasks-smoke`） | 任务 `待认领` | publicId、源 Issue URL | 导入失败不改库顶替 |
+| L5 | 干净认领端 | 生产 `kaola-mcp --url ${PUBLIC_URL}` | HTTPS unknown-issuer → 打印 `pairing_required`，退出码 `2`；不能 `list_tasks` / `claim_task` | 认领端无 v2 目录；服务端无 active 设备 | 若已有 v2 则拓扑不干净，换新 `KAOLA_HOME` |
+| L6 | L5 | 同一认领端 `kaola-mcp pair --url ${PUBLIC_URL}` | 终端展示密语；receipt `0600`；pending 设备 | 密语不在服务响应/聊天 | `--cancel` 只删本机 receipt 后重来 |
+| L7 | L6 密语 | 管理端 Computer Use：电脑页 `配对密语` 绑到管理员（`data-testid=device-bind-pairing-secret`） | 设备 `active`；pair 完成严格 TLS + active `whoami`；v2 落地 | 认领端 `$KAOLA_HOME/trust/v2/<origin-digest>/`；whoami 有 `instance_id` 无 forge token | 错密语显示「配对密语不正确」；不得 SQL 改 status |
+| L8 | L7 | 同一设备生产 MCP `tools/list`、`list_tasks`、`claim_task` | 认领成功才揭示该任务凭证 | claim `201`；日志无 PAT 前缀 | pending 仍 `202` 则配对未完成 |
+| L9 | L8 | 真实 clone 四键、改 README、Draft PR、`submit_pr`、评审一轮、`submit_revision`、通过、forge API 合并、`pollPendingReviews` | 任务 `已完成`；源 Issue 认领/提交PR/完成回写 | forge URL、SQLite 状态、回写条数；`events.details` 无令牌 | 按手册既有评审循环恢复，不跳过 PR |
+| L10 | 第一家完成 | 对另一家 forge 重复 L3–L9（仍同一隔离服务，认领端可新 `KAOLA_HOME` 或证明同设备多任务） | 两家都 `已完成` | 各一家 Issue/PR | 一家失败不把另一家外推 |
+
+`pair` 不是 MCP tool。MCP 协议驱动器（stdio bridge）≠ coding Agent；L8–L9 必须是认领端 Agent 会话调生产工具，不能只跑 Node 测试或 forge-smoke。
+
+#### 恢复 / 负例矩阵
+
+| 项 | 真实路径 L | 自动测试（可控时钟/进程） | 不得 |
+|----|------------|---------------------------|------|
+| 批准前客户端中断、同 receipt 再 `pair` | 杀 pair 进程后重跑，密语不变，管理端仍可批准 | pairing/pair 套件 | 把单元当已做物理等待 |
+| 批准后、v2 落地前重启 | 同 receipt 恢复 approved attempt 并 whoami | `approved pairing recovers on create after bind` | 新 nonce 当同一 attempt |
+| 错密语 | 工作台错误文案；8 次后 attempt 拒绝 | pairing 错密语用例 | SQL 清计数充 PASS |
+| 86400 不滑动 / 到期 | **不**把墙钟调一天；记「未做物理 24h」 | pairing 冻结时间用例 | 改系统时间充 24h |
+| 90 天默认 / 存量 30 | 新绑定 `expires_at`；不改旧行 | db-migration | 猜迁存量 |
+| 换 root/origin / nonce replay | 换入口或重放证明应失败 | pairing replay | 关 TLS 验证 |
+| pending 无 list/claim | L5 | pairing pending `202` | 先 pairDeviceToSelf 再测 pending |
+| overlap / 错过 overlap 再 pair | 有条件时做；否则记未执行 | pair overlap / repair 套件 | launcher 提示 pair 但未跑 pair 当 PASS |
+| 证书配置错误 | 错根启动失败 | unrelated CA / 错名 s_client | 默认库里的别的根冒充配置根 |
+| caller extra CA 污染 | 认领端不设 extra CA | R4 真实 TLS 子进程 | 给认领端预挂根再测公开迁移 |
+| trust 替换中断 / rename 失败 | 可选破坏 staging；否则记未执行物理中断 | R5 previous + forced rename | 先 rm 再 rename 的旧实现 |
+| 公开 CA 迁移 | 本路径是私有 CA；公开迁移边界保持自动测试 | public-CA migration 用例 | 本路径 Linux 通过 ⇒ 公开 CA 干净机器 PASS |
+
+#### 结果模板（执行后追加，不预填 PASS）
+
+```
+日期 / 候选 SHA / 镜像 tag / Node / OpenSSL
+隔离目录 / 服务端容器 / 认领端 KAOLA_HOME（路径可记，不含 secret）
+GitLab Issue/MR 与任务状态
+Gitea Issue/PR 与任务状态
+配对：pair 出口、v2 digest 是否存在、whoami 无 token
+未执行 / 外部阻塞（OAuth 人机、缺 Linux Agent 承载、forge 故障）
+```
+
+未启动前本段保持「设计已写、执行未做」。
 
 ### A. 本机浏览器（人在场）
 
@@ -346,7 +434,7 @@ GitHub 发布冒烟已停（此前仓 [Issue #1](https://github.com/KaolaBrother
 
 ## 2026-09-09 #63 私有 CA 自动配对：UAT 前置清单（未做活网）
 
-本轮 `workflow/bundle-63` 把 #63 做到**可进入真实 UAT 的候选**，不部署、不写活网 PASS。需求以 [Issue #63](https://github.com/KaolaBrother/KaolaTasks/issues/63) 正文与正式评论 [5595041812](https://github.com/KaolaBrother/KaolaTasks/issues/63#issuecomment-5595041812) 为准。此前 #48/#60 的 macOS/Linux `trust install`、OAuth、旧绑定路径**不能**替代 `kaola-mcp pair --url`。
+本轮 `workflow/bundle-63` 曾把 #63 做到**可进入真实 UAT 的候选**。其后用户授权本机隔离 Linux 测试（不授权外部部署）。**可执行设计见文件顶部路径 L**；写入路径 L 当时 **尚未启动** UAT。此前 #48/#60 的 macOS/Linux `trust install`、OAuth、旧绑定路径**不能**替代 `kaola-mcp pair --url`。路径 B **不能**替代路径 L。
 
 ### 本机自动门（已执行）
 
@@ -378,10 +466,12 @@ GitHub 发布冒烟已停（此前仓 [Issue #1](https://github.com/KaolaBrother
 | 三 forge adapter / Claim / token containment 回归 | 全量 Node 1091 含既有 adapter/claim/vault 套件 | 自动回归 PASS；**不是**活网三 forge UAT |
 | 通用客户端 `pair → 管理员批准 → strict whoami → MCP list_tasks`，认领者不碰 PEM | 进程内 harness | **未**在真实 package-bin / 真实私有 CA / 真人工作台执行 |
 | macOS / Windows / Linux package-bin Claim 客户端 | — | **未执行**；不得写 PASS |
-| 浏览器「电脑」页粘贴配对密语并授权 | — | **未执行**（配合） |
-| 真实 OAuth、活网私有 CA、部署、系统/浏览器装根 | — | **未执行**；本轮禁止部署 |
+| 浏览器「电脑」页粘贴配对密语并授权 | — | 路径 L 设计要求 Agent Computer Use 真实执行；**本节写入时未执行** |
+| 真实 OAuth、活网私有 CA、部署、系统/浏览器装根 | — | 外部部署仍未授权；路径 L 覆盖本机隔离私有 CA，**执行前不得预填 PASS** |
 
 ### 真实 UAT 建议顺序（配合，本轮不做）
+
+> 已被文件顶部 **路径 L** 取代为「全 Agent、本机隔离、执行前不写 PASS」。下列编号保留作历史。Windows 客户端、公开 CA 干净机器、以及未制造的故障场景仍按上文既有边界，不由路径 L 的 Linux 通过改写为通过。
 
 1. 独立 `DEBUG_PRIVATE_CA` 入口（SAN 含 `<public-host>`），`KAOLA_PAIRING_MODE=private_ca`，公开根路径无私钥块。
 2. 干净认领端：`kaola-mcp pair --url ${PUBLIC_URL}`，确认密语只出现在本机终端，不进 bootstrap 响应。
@@ -403,4 +493,4 @@ Windows 客户端、公开 CA 干净机器、以及未制造的故障场景仍�
 
 ## 2026-09-09 #63 范围恢复：保留公开 CA 迁移
 
-正式评论 [5595967717](https://github.com/KaolaBrother/KaolaTasks/issues/63#issuecomment-5595967717) 取代 5595770991 的移除要求。产品行为恢复为 `8be16f6` / `09a01f5` 已验证的 launcher 迁移：默认库严格 TLS + 匹配 active `whoami` 后只删该 origin 的 v2 extra root。历史 `5a4f1e1` 与上一节不改写。UAT 仍未执行，sink 后按本手册记录。
+正式评论 [5595967717](https://github.com/KaolaBrother/KaolaTasks/issues/63#issuecomment-5595967717) 取代 5595770991 的移除要求。产品行为恢复为 `8be16f6` / `09a01f5` 已验证的 launcher 迁移：默认库严格 TLS + 匹配 active `whoami` 后只删该 origin 的 v2 extra root。历史 `5a4f1e1` 与上一节不改写。其后 UAT 设计见顶部路径 L；**设计写入时仍未执行**。
