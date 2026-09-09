@@ -51,7 +51,19 @@
     "device_fingerprint": "SHA-256 of Ed25519 SPKI DER as 64 lowercase hex, UTF-8 in the transcript",
     "origin": "WHATWG URL origin: protocol + '//' + host, trailing slash stripped; same string hashed by apps/mcp originDigest",
     "unix_seconds": "decimal ASCII with no sign and no leading zeros; zero is the single character 0",
-    "pairing_secret_wire": "16+ bytes; admin bind accepts lowercase hex with optional dashes/spaces/colons"
+    "pairing_secret_wire": "16+ bytes; admin bind accepts lowercase hex with optional dashes/spaces/colons",
+    "attempt_lifetime": {
+      "default_ttl_seconds": 86400,
+      "minimum_ttl_seconds": 86400,
+      "maximum_ttl_seconds": 604800,
+      "live_while": "now < expires_at",
+      "expired_when": "now >= expires_at",
+      "window_starts_at": "this pairing create, not leftover pending first-seen",
+      "idempotent_recover_slides_expires_at": false,
+      "pending_extended_never_shortened": true,
+      "post_bind_device_max_age_days_default": 30,
+      "vector_expires_at_note": "vectors[].expires_at is a synthetic absolute unix time for transcript bytes; it is not a 900-second TTL"
+    }
   },
   "vectors": [
     {
@@ -134,7 +146,19 @@
     },
     {
       "id": "expired_attempt",
-      "expect": "status expired; bind 409 pairing_expired; no ready trust"
+      "expect": "status expired; bind 409 pairing_expired; no ready trust. now >= pairing.expires_at only; created_at+1 and expires_at-1 still succeed"
+    },
+    {
+      "id": "lifetime_not_900s",
+      "expect": "no 900/300-3600 pairing wait; receipt and proof usable for the full >=86400s window from this create"
+    },
+    {
+      "id": "existing_pending_alignment",
+      "expect": "device already pending with remaining < 24h: new pair expires_at = now+ttl (>=86400); pending_expires_at = max(old, pairing.expires_at); recover does not slide"
+    },
+    {
+      "id": "post_bind_device_max_age_independent",
+      "expect": "after approve, devices.expires_at uses owner device_max_age_days default 30, not pairing TTL"
     },
     {
       "id": "replay_approval",

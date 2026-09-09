@@ -35,7 +35,7 @@
 | D15 | Agent 感知（#53） | 保持 pull 模型。Agent 自行轮询 `list_tasks(status=待修改)`；`report_progress` 心跳携带 `percent` / `phase`。考拉不向已下线的 Agent 推送 |
 | D16 | 人的感知（#53） | 服务端提供 SSE 流，Web 看板与评审面板实时刷新，不用手工刷新 |
 | D17 | 合并（#53） | 保留给 forge 上的真人。考拉不用任务 token approve 或 merge（token 身份是发布者/bot，会让 forge 审计失真） |
-| D18 | 私有 CA 认领端配对（#63） | 通用认领端不走手工 `trust install`。私有 CA 第一次用 `kaola-mcp pair --url`：客户端高熵一次性密语不经未受信 bootstrap 传输；管理员在受信工作台录入密语并选择 owner；客户端核验批准证明后才原子安装公开根，并以全新严格 TLS + active `whoami` 就绪。`kaola-mcp --url` 不在 MCP host 内等待批准。#48 的 v1 手工 trust 仍是显式兼容/恢复路径，不伪装成 approval-bound state。公开 CA 不安装额外根。不新增 MCP 工具，不改变 Claim/Lease 或 token 揭示通道 |
+| D18 | 私有 CA 认领端配对（#63） | 通用认领端不走手工 `trust install`。私有 CA 第一次用 `kaola-mcp pair --url`：客户端高熵一次性密语不经未受信 bootstrap 传输；管理员在受信工作台录入密语并选择 owner；客户端核验批准证明后才原子安装公开根，并以全新严格 TLS + active `whoami` 就绪。`kaola-mcp --url` 不在 MCP host 内等待批准。配对 attempt 从该次申请起至少 24 小时（TTL 默认/下限 86400，到 `expires_at` 才过期）；批准后设备授权默认仍 30 天。#48 的 v1 手工 trust 仍是显式兼容/恢复路径，不伪装成 approval-bound state。公开 CA 不安装额外根。不新增 MCP 工具，不改变 Claim/Lease 或 token 揭示通道 |
 
 ## 3. 角色与核心概念
 
@@ -225,7 +225,7 @@ Web「发布」页的收集规则（HTTP 仍是现有 `POST /api/v1/tasks` / `PO
   ```
 
   **forge token 不得出现在任何 mcp.json**。人手不必按任务改 mcp.json。MCP 身份不再是 Agent Key Bearer。`--url` 为 `https://…` 时，`kaola-mcp` 保持严格 TLS 校验（Node/undici 运行时默认信任库，见 §16）。禁止 `NODE_TLS_REJECT_UNAUTHORIZED=0`、`--insecure`、`curl -k`、在源码里跳过证书验证、或把浏览器证书例外当作成功路径。`STABLE_PUBLIC_CA` 入口不设置 `NODE_EXTRA_CA_CERTS`、不安装额外 CA，也不得把额外 CA 当作干净机器的默认方案。`DEBUG_PRIVATE_CA` 认领端默认走 §16.8 管理员批准绑定自动配对（`kaola-mcp pair --url`），正常路径不手工处理 PEM、指纹、`NODE_EXTRA_CA_CERTS` 或重启；`kaola-mcp --url` 在尚未配对时返回 typed `pairing_required` 并退出，不在 MCP host 内等待。操作者仍可用 #48 的 `kaola-mcp trust install` 作为显式 v1 兼容/恢复路径。配对 bootstrap 只允许 `pair` 使用范围受限的未建立 PKI 信任连接（只打 pairing REST，不设进程全局 `NODE_TLS_REJECT_UNAUTHORIZED=0`，不提供可复用 `--insecure`），根仍须在批准证明与全新严格重连通过之后才落地。环境值和本机路径不得进入仓库共享配置。不得分发根私钥。仓库里提交的 MCP 示例仍只有 `command` + `--url`，不含 `NODE_EXTRA_CA_CERTS`、PEM、指纹或任何私钥。
-- **未配对设备**：签名合法但尚未绑定 → HTTP `202` `{ error: 'authorization_required', pending: true, expires_at }`（待授权窗口 1 天），**不**下发 forge token、不建立租约。与 Issue #16 的 `202` `{ error: 'confirmation_required' }` 字符串不同：前者在身份钩子、电脑尚未授权；后者是已授权设备上自主认领等人确认。待授权设备不能 `list_tasks` / `claim_task`。绑定不自动认领、不推送 forge token。
+- **未配对设备**：签名合法但尚未绑定 → HTTP `202` `{ error: 'authorization_required', pending: true, expires_at }`（待授权窗口 1 天），**不**下发 forge token、不建立租约。与 Issue #16 的 `202` `{ error: 'confirmation_required' }` 字符串不同：前者在身份钩子、电脑尚未授权；后者是已授权设备上自主认领等人确认。待授权设备不能 `list_tasks` / `claim_task`。绑定不自动认领、不推送 forge token。§16.8 新 pairing attempt 从该次申请起另计至少 24 小时；若剩余 pending 更短，把 `pending_expires_at` 延长到 pairing `expires_at`，幂等恢复不滑动。批准后电脑授权默认 30 天，与该 pairing 窗口独立。
 - **解除立即生效**：解除认领者或解除电脑、将 `users.status` 置为 `revoked`，均在**下一次**请求生效。重新登录不得复活 `revoked`。
 - **认领即授权（MVP）**：已绑定的设备即该认领身份（或绑到管理员自己时的 `full` 用户）的授权——人明确指示 Agent 认领时无需二次确认；"人确认认领"开关只针对绑到 Web 用户、且开启自主轮询的 Agent（M3，Issue #16）。待授权设备不能认领（见上）。
 - **Agent 侧 token 卫生**：REST 认领 `201` 与 MCP `claim_task` 成功共用同一信封；揭示通道仍只有这两处的顶层 `token`。`clone` 恰四键：`suggested_dir`（同 `task.repo.suggested_dir`，相对目录名，不是绝对路径，也不是「在此打开 Cursor」）、`token_usage`（原文：`token 请通过环境变量或 git -c http.extraHeader 按次传递，不要写入 remote URL（会落盘到 .git/config）。`）、`remote_url`（HTTPS git remote，**不含**用户名/密码/token：去掉 `repo.base_url` 末尾斜杠 + `/` + `repo.full_name` + `.git`；GitLab 子组 `full_name` 保留斜杠，如 `https://host/group/subgroup/app.git`；不要用 GitLab API 的 `%2F` 项目路径，也不要用 `api.github.com`）、`extra_header`（`{ "name": string, "value_pattern": string }`；`value_pattern` 含字面量 `${token}`，**不得**嵌入已揭示的 forge token）。Agent 把顶层 `token` 代入 `value_pattern`，等价于 `git -c http.extraHeader="<name>: <value>" clone <remote_url> <suggested_dir>`。token 仍走环境变量或 `git -c http.extraHeader` 按次传递，**不要**拼进 remote URL（会落盘到 `.git/config` 并在任务结束后残留）。不新增 MCP 工具；服务端不执行 git；§6 `repo` 仍五字段；`list_tasks` / `get_task_brief` / 会话 GET 永不带 `clone` 附加键或 token；`202` `confirmation_required` 仍无 `clone`/token。三家 `extra_header`：
@@ -350,7 +350,7 @@ REST 认领/进度/释放与 MCP 同一套设备证明。另加 Web 端专用的
 |----|----------|
 | `users` | 身份：`provider`（`local` / `gitlab` / `gitea` / leftover `github`）、`remote_id`（本地账号固定 `'local'`）、`username`（`local` 下唯一、非空、trim）、显示名、可空 `password_hash`（仅 `local`；Argon2id 或 `node:crypto` scrypt；明文永不进响应/日志/`events.details`）、状态（`active` / 遗留 `待批准` / `revoked`）、权限级（`admin` / `full` / 遗留 `claim_only`）；策略列 `device_max_age_days`（默认 30，范围 1–365，无永久）、`max_devices`（默认 5）、`device_idle_days`（默认 0）。UNIQUE `(provider, remote_id)`。新 GitLab / Gitea OAuth 插入 `active`+`full`（已有可登录管理员之后）；不再插入 `待批准`/`claim_only`。重新登录不得把 `revoked` 改回 `active`。开库迁移：若无可登录管理员（`active`+`admin` 且 provider 为 `local`/`gitlab`/`gitea`；**GitHub 行不算**），取最早一条 `active`+`full` 且 provider 属 gitlab/gitea/local 改为 `admin`；若没有这样的行（只有 GitHub `full` 或空库）仍走向导 |
 | `claimants` | 无 Web 登录的认领身份：display_name、status（`active` / `revoked`）、同上三列策略默认值 |
-| `devices` | fingerprint、公钥、hostname（不可信）、status（`pending` / `active` / `expired` / `revoked`）。**活跃**设备的所有者恰好是 `claimant_id` 或 `user_id` 之一；**待授权**两者皆空。待授权窗口 `pending_expires_at`（首次见到起 1 天）；绑定后 `expires_at` 由所有者 `device_max_age_days` 自 `paired_at` 计算。仍是唯一设备授权权威 |
+| `devices` | fingerprint、公钥、hostname（不可信）、status（`pending` / `active` / `expired` / `revoked`）。**活跃**设备的所有者恰好是 `claimant_id` 或 `user_id` 之一；**待授权**两者皆空。待授权窗口 `pending_expires_at`（首次见到起 1 天；#63 新 pairing 可延长到该 attempt 的 `expires_at`，不得缩短）。绑定后 `expires_at` 由所有者 `device_max_age_days`（默认 30 天）自 `paired_at` 计算。仍是唯一设备授权权威 |
 | `device_pairings` | **#63**：配对 attempt 的幂等/过期/一次性消费状态，不是第二套授权。`pairing_id`、`device_id`、`protocol_version`、双方 nonce、normalized origin、`instance_id`、root SHA-256、commitment、status（`created` / `committed` / `approved` / `consumed` / `rejected` / `expired`）、approval payload/proof、`failed_attempts`、created/expires/approved/consumed。不存 pairing secret、私钥或 forge token。同一设备最多一个未过期 live attempt |
 | `app_settings` | **#63**：随应用数据持久化的键值；至少 `instance_id`（UUID，首次启动生成，不随 `PUBLIC_URL` 轮换） |
 | `agent_keys` | 遗留：user_id、key_hash、label、last_used_at。MCP / 认领 / whoami 不再用 Agent Key Bearer |
@@ -618,7 +618,9 @@ openssl x509 -in <dev-root-ca.pem> -noout -fingerprint -sha256
 
 **协议**
 
-客户端生成现有 Ed25519 设备身份、32-byte client nonce、≥16-byte pairing secret。服务端生成 `kpr_` + 32 hex 的 pairing id、32-byte server nonce、持久 `instance_id`，并给出规范化 origin（与 `originDigest` 所用字符串相同）、公开根 PEM、根 SHA-256（证书 DER）和 expiry。默认 attempt TTL 900s（`KAOLA_PAIRING_TTL_SECONDS`，300–3600）。
+客户端生成现有 Ed25519 设备身份、32-byte client nonce、≥16-byte pairing secret。服务端生成 `kpr_` + 32 hex 的 pairing id、32-byte server nonce、持久 `instance_id`，并给出规范化 origin（与 `originDigest` 所用字符串相同）、公开根 PEM、根 SHA-256（证书 DER）和 expiry。
+
+**配对窗口（用户纠正，取代 900s 草案）：** 新 attempt 的有效窗口从**该次申请**起算，至少 24 小时。`KAOLA_PAIRING_TTL_SECONDS` 默认与下限均为 `86400`，上限 `604800`。`pairing.expires_at = created_at + ttl`。`now < expires_at` 时可批准、可幂等恢复 create/commit/status；`now >= expires_at` 才 `pairing_expired`。不得另设更短的 secret / proof / receipt / 客户端等待超时，以免一天内的正常批准或重启恢复失效。若该设备已有未过期 pending：`devices.pending_expires_at = max(既有 pending_expires_at, pairing.expires_at)`，只延长、不缩短；pairing 自身仍从本次申请起至少 24 小时，不改写成剩余 pending。同一 attempt 的幂等恢复**不**滑动 `pairing.expires_at` 或因此再延 pending。批准后设备授权仍按 owner `device_max_age_days`（默认 **30** 天）从 `paired_at` 计算，与 pairing TTL 独立；本条不改 30 天默认。
 
 客户端只发送 `HMAC-SHA256(pairing_secret, SHA256(transcript))`。管理员提交 secret 后，服务端 constant-time 验证 commitment，在同一事务中激活 exact device，并以 HKDF-SHA256（salt = SHA-256(transcript)，info `kaola-pairing-approval-v1`，L=32）派生 pairing key，对 approval transcript 做 HMAC proof。密语不入库、不进日志/事件/工作台回显。
 

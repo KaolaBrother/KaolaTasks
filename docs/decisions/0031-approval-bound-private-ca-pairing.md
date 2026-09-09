@@ -175,11 +175,27 @@ secrets.
 | `KAOLA_PUBLIC_ROOT_CA_PATH` | Path to the **public** root CA PEM (one `CERTIFICATE`, no private-key block) |
 | `KAOLA_NEXT_PUBLIC_ROOT_CA_PATH` | Optional next root during overlap rotation |
 | `KAOLA_PUBLIC_LEAF_CHAIN_PATH` | Optional leaf+intermediates PEM used at boot when the process cannot hairpin `PUBLIC_URL` |
-| `KAOLA_PAIRING_TTL_SECONDS` | Attempt TTL, default `900`, allowed `300`–`3600` |
+| `KAOLA_PAIRING_TTL_SECONDS` | Attempt TTL. Default **`86400`**, minimum **`86400`**, maximum `604800`. Values below 86400 are invalid (fail closed at boot / request). The withdrawn 900 / 300–3600 draft is void. |
 
 `instance_id` is a UUID created once and stored in SQLite `app_settings` (`k='instance_id'`),
 alongside application data. Changing `PUBLIC_URL` does not rotate `instance_id`; it does
 invalidate origin-bound v2 trust and requires re-pair.
+
+### Pairing attempt lifetime
+
+This is the clock for **one pairing application**, not the bound-device lifetime.
+
+| Clock | Rule |
+| --- | --- |
+| New attempt | `created_at = now`; `expires_at = created_at + ttl` with `ttl >= 86400`. Window starts at **this** `POST /api/v1/device-pairings`, not at first-seen of an older pending row. |
+| Live | `now < expires_at`: admin may bind; client may recover create/commit/status; receipt/secret/proof remain usable. No extra wait-until-24h gate. |
+| Expired | `now >= expires_at`: `409 pairing_expired`; do not write ready trust. |
+| Idempotent recover | Same unexpired row is returned unchanged. **Do not** add ttl, **do not** restamp `created_at` / `expires_at`, **do not** extend `pending_expires_at` again. |
+| Already-pending device | DESIGN §7 / §10 pending window remains first-seen + 1 day. A **new** pair must still last ≥24h from this application. Set `devices.pending_expires_at = max(existing pending_expires_at, pairing.expires_at)` so a leftover 1-hour pending cannot expire before the pairing and block bind. Never shorten either deadline. |
+| Receipt / secret / proof | Receipt `expires_at` equals the server pairing `expires_at`. Polling, HMAC verification, and restart recovery must not use a shorter timeout (900s, 15m, etc.). |
+| After bind | `devices.expires_at = paired_at + owner.device_max_age_days * 86400`. Default `device_max_age_days` stays **30**. Pairing TTL does not become the bound-device TTL. |
+
+Acceptance: bind and recover at `created_at + 1` and at `expires_at - 1` succeed; at `expires_at` they fail closed. A device that has already been pending for 20 hours and then starts pair remains approvable for a full 24 hours from that pair request.
 
 When `KAOLA_PAIRING_MODE=private_ca`, boot fails closed unless:
 
@@ -432,11 +448,13 @@ on the strict connection is a hard failure, not a second bootstrap.
 `$KAOLA_HOME/pairings/<origin-digest>/receipt.json` (dir `0700`, file `0600`, atomic write).
 
 May contain normalized origin, pairing id, instance id, device fingerprint, both nonces, secret,
-commitment, root PEM, root SHA-256, expiry. Must not contain the device private key (it stays in
-`device.json`), forge tokens, Task data, cookies, or MCP session ids.
+commitment, root PEM, root SHA-256, expiry. Receipt `expires_at` **is** the server pairing
+`expires_at` (≥24h from that create). A local 15-minute or 900-second wait is not a valid expiry.
+Must not contain the device private key (it stays in `device.json`), forge tokens, Task data,
+cookies, or MCP session ids.
 
-Delete on success, cancel, or expiry. POSIX modes are not enforced on win32; contents still must
-not leak into logs.
+Delete on success, cancel, or **server** expiry (`now >= expires_at`). POSIX modes are not
+enforced on win32; contents still must not leak into logs.
 
 ### v2 trust (durable)
 
@@ -555,7 +573,11 @@ These are frozen now so implementation cannot weaken them to get green:
    `initialize` / `list_tasks`. Claimant never supplied PEM, fingerprint, env, or an MCP restart.
    Pending before bind still cannot `list_tasks` / `claim_task`.
 2. Client restart and server restart recover the same unexpired attempt. Repeated create /
-   commit / status / bind are idempotent. One active binding.
+   commit / status / bind are idempotent and **do not slide** `expires_at`. One active binding.
+   Bind/recover succeed for the whole `[created_at, expires_at)` interval (at least 24 hours).
+   An already-pending device that starts pair keeps a ≥24h pairing window from that request;
+   pending is extended if it would otherwise expire first. After bind, device authorization
+   is still `device_max_age_days` (default 30), not the pairing TTL.
 3. Wrong secret, root/instance/origin/device/nonce substitution, expiry, replay, non-admin
    approval, and fake bootstrap all fail closed; trust bytes unchanged.
 4. Pairing routes cannot read or claim tasks or touch credential plaintext. Responses, logs,
@@ -589,6 +611,11 @@ Physical, browser, service, and user UAT are **not** claimed by design freeze.
 prohibition still holds as **install-time** TOFU. Bootstrap may **carry** the advertised public
 root as untrusted data. Installation happens only after admin-bound proof verification and the
 new strict chain check. The operator v1 fingerprint path is unchanged for recovery.
+
+The first freeze of this ADR used pairing TTL default `900` (range 300–3600). The owner
+corrected that on 2026-09-09: keep the attempt at least one day, matching DESIGN §7 / §10
+pending (1 day). The 900s draft is void. Bound-device default remains 30 days and is not that
+clock.
 
 ## Implementation order
 
