@@ -202,9 +202,12 @@ When `KAOLA_PAIRING_MODE=private_ca`, boot fails closed unless:
 1. The public root PEM is readable, exactly one CA certificate, and contains no `PRIVATE KEY`
    block.
 2. SHA-256(DER) is computable.
-3. That CA actually roots the current origin chain: either a successful TLS probe of
-   `PUBLIC_URL` using **only** that extra root, or `KAOLA_PUBLIC_LEAF_CHAIN_PATH` verifies to
-   that root with SAN covering the `PUBLIC_URL` hostname.
+3. That CA actually roots the current origin chain with the same checks strict TLS would
+   apply: cryptographic signatures, validity time, chain constraints, and `sslserver`
+   purpose; plus DNS `verify_hostname` or IP `verify_ip` matching `PUBLIC_URL` (bracketed
+   IPv6 is normalized). SNI (`-servername`) is not identity verification. Either a TLS probe
+   of `PUBLIC_URL` using **only** that extra root, or `KAOLA_PUBLIC_LEAF_CHAIN_PATH` verifies
+   to that root with a SAN covering the `PUBLIC_URL` DNS name or IP.
 
 Root private keys stay on the issuing host. The app never loads them.
 

@@ -1,7 +1,8 @@
 import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { execFileSync, spawn } from 'node:child_process'
+import { X509Certificate } from 'node:crypto'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import Database from 'better-sqlite3'
@@ -67,6 +68,7 @@ function restoreEnv(t) {
     ttl: process.env.KAOLA_PAIRING_TTL_SECONDS,
     next: process.env.KAOLA_NEXT_PUBLIC_ROOT_CA_PATH,
     leaf: process.env.KAOLA_PUBLIC_LEAF_CHAIN_PATH,
+    publicUrl: process.env.PUBLIC_URL,
   }
   t.after(() => {
     if (saved.mode == null) delete process.env.KAOLA_PAIRING_MODE
@@ -79,10 +81,20 @@ function restoreEnv(t) {
     else process.env.KAOLA_NEXT_PUBLIC_ROOT_CA_PATH = saved.next
     if (saved.leaf == null) delete process.env.KAOLA_PUBLIC_LEAF_CHAIN_PATH
     else process.env.KAOLA_PUBLIC_LEAF_CHAIN_PATH = saved.leaf
+    if (saved.publicUrl == null) delete process.env.PUBLIC_URL
+    else process.env.PUBLIC_URL = saved.publicUrl
   })
 }
 
-function mintTestRoot(t, hostname = 'localhost') {
+function mintTestRoot(t, hostnameOrOpts = 'localhost') {
+  const opts =
+    typeof hostnameOrOpts === 'string'
+      ? { cn: hostnameOrOpts, san: `DNS:${hostnameOrOpts}` }
+      : hostnameOrOpts
+  const cn = opts.cn ?? 'localhost'
+  const san = opts.san ?? `DNS:${cn}`
+  const eku = opts.eku ?? 'serverAuth'
+  const keyUsage = opts.keyUsage ?? 'digitalSignature,keyEncipherment'
   const dir = mkdtempSync(join(tmpdir(), 'kaola-pairing-ca-'))
   t.after(() => {
     rmSync(dir, { recursive: true, force: true })
@@ -122,12 +134,12 @@ function mintTestRoot(t, hostname = 'localhost') {
       'req_extensions = ext',
       'prompt = no',
       '[dn]',
-      `CN = ${hostname}`,
+      `CN = ${cn}`,
       '[ext]',
       'basicConstraints = CA:FALSE',
-      'keyUsage = digitalSignature,keyEncipherment',
-      'extendedKeyUsage = serverAuth',
-      `subjectAltName = DNS:${hostname}`,
+      `keyUsage = ${keyUsage}`,
+      `extendedKeyUsage = ${eku}`,
+      `subjectAltName = ${san}`,
       '',
     ].join('\n'),
   )
@@ -145,7 +157,7 @@ function mintTestRoot(t, hostname = 'localhost') {
     '-config',
     cnf,
   ])
-  execFileSync('openssl', [
+  const signArgs = [
     'x509',
     '-req',
     '-in',
@@ -157,15 +169,68 @@ function mintTestRoot(t, hostname = 'localhost') {
     '-CAcreateserial',
     '-out',
     leafPem,
-    '-days',
-    '1',
     '-sha256',
     '-extfile',
     cnf,
     '-extensions',
     'ext',
-  ])
-  return { pem, leaf: leafPem, dir }
+  ]
+  if (opts.notBefore != null && opts.notAfter != null) {
+    signArgs.push('-not_before', opts.notBefore, '-not_after', opts.notAfter)
+  } else {
+    signArgs.push('-days', String(opts.days ?? 1))
+  }
+  execFileSync('openssl', signArgs)
+  return { pem, leaf: leafPem, key: leafKey, dir }
+}
+
+function writeCorruptedSignatureLeaf(src, dest) {
+  const raw = Buffer.from(new X509Certificate(readFileSync(src)).raw)
+  raw[raw.length - 5] ^= 0xff
+  const b64 = raw.toString('base64').match(/.{1,64}/g).join('\n')
+  writeFileSync(dest, `-----BEGIN CERTIFICATE-----\n${b64}\n-----END CERTIFICATE-----\n`)
+}
+
+function spawnTlsOrigin(t, input) {
+  const listen =
+    input.host == null ? { port: 0, host: '::', ipv6Only: false } : { port: 0, host: input.host }
+  const source = `
+import { createServer } from 'node:https'
+import { readFileSync } from 'node:fs'
+const server = createServer({
+  key: readFileSync(${JSON.stringify(input.keyPath)}),
+  cert: readFileSync(${JSON.stringify(input.certPath)}),
+}, (_req, res) => {
+  res.writeHead(200)
+  res.end('ok')
+})
+server.listen(${JSON.stringify(listen)}, () => {
+  process.stdout.write(String(server.address().port))
+})
+`
+  const child = spawn(process.execPath, ['--input-type=module', '-e', source], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  t.after(() => {
+    child.kill('SIGTERM')
+  })
+  return new Promise((resolve, reject) => {
+    let out = ''
+    let err = ''
+    const fail = (error) => reject(error)
+    child.stdout.on('data', (chunk) => {
+      out += chunk
+      const port = Number(out)
+      if (Number.isInteger(port) && port > 0) resolve({ port, child })
+    })
+    child.stderr.on('data', (chunk) => {
+      err += chunk
+    })
+    child.once('error', fail)
+    child.once('exit', (code) => {
+      if (!out) fail(new Error(`tls origin exited ${code}: ${err}`))
+    })
+  })
 }
 
 function enablePairing(t) {
@@ -825,6 +890,124 @@ describe('issue #63 approval-bound private-CA pairing', { concurrency: false }, 
     const db = createDb()
     t.after(() => db.$client.close())
     assert.throws(() => loadPairingConfig(db), /KAOLA_PUBLIC_LEAF_CHAIN_PATH/)
+  })
+
+  test('leaf with matching issuer but corrupted signature fails closed at boot', (t) => {
+    const pki = enablePairing(t)
+    const bad = join(pki.dir, 'bad.pem')
+    writeCorruptedSignatureLeaf(pki.leaf, bad)
+    process.env.KAOLA_PUBLIC_LEAF_CHAIN_PATH = bad
+    const db = createDb()
+    t.after(() => db.$client.close())
+    assert.throws(() => loadPairingConfig(db), /does not verify/)
+  })
+
+  test('expired leaf fails closed at boot', (t) => {
+    restoreEnv(t)
+    const pki = mintTestRoot(t, {
+      cn: 'localhost',
+      san: 'DNS:localhost',
+      notBefore: '20200101000000Z',
+      notAfter: '20200102000000Z',
+    })
+    process.env.KAOLA_PAIRING_MODE = 'private_ca'
+    process.env.KAOLA_PUBLIC_ROOT_CA_PATH = pki.pem
+    process.env.KAOLA_PUBLIC_LEAF_CHAIN_PATH = pki.leaf
+    const db = createDb()
+    t.after(() => db.$client.close())
+    assert.throws(() => loadPairingConfig(db), /does not verify/)
+  })
+
+  test('clientAuth-only leaf fails closed at boot', (t) => {
+    restoreEnv(t)
+    const pki = mintTestRoot(t, {
+      cn: 'localhost',
+      san: 'DNS:localhost',
+      eku: 'clientAuth',
+      keyUsage: 'digitalSignature',
+    })
+    process.env.KAOLA_PAIRING_MODE = 'private_ca'
+    process.env.KAOLA_PUBLIC_ROOT_CA_PATH = pki.pem
+    process.env.KAOLA_PUBLIC_LEAF_CHAIN_PATH = pki.leaf
+    const db = createDb()
+    t.after(() => db.$client.close())
+    assert.throws(() => loadPairingConfig(db), /does not verify/)
+  })
+
+  test('leaf IP SAN for 127.0.0.1 is accepted when PUBLIC_URL is that address', (t) => {
+    restoreEnv(t)
+    const pki = mintTestRoot(t, { cn: 'unrelated.example', san: 'IP:127.0.0.1' })
+    process.env.KAOLA_PAIRING_MODE = 'private_ca'
+    process.env.KAOLA_PUBLIC_ROOT_CA_PATH = pki.pem
+    process.env.KAOLA_PUBLIC_LEAF_CHAIN_PATH = pki.leaf
+    process.env.PUBLIC_URL = 'https://127.0.0.1:31415'
+    const db = createDb()
+    t.after(() => db.$client.close())
+    assert.equal(loadPairingConfig(db).mode, 'private_ca')
+  })
+
+  test('leaf IP SAN for ::1 is accepted when PUBLIC_URL is that address', (t) => {
+    restoreEnv(t)
+    const pki = mintTestRoot(t, { cn: 'unrelated.example', san: 'IP:0:0:0:0:0:0:0:1' })
+    process.env.KAOLA_PAIRING_MODE = 'private_ca'
+    process.env.KAOLA_PUBLIC_ROOT_CA_PATH = pki.pem
+    process.env.KAOLA_PUBLIC_LEAF_CHAIN_PATH = pki.leaf
+    process.env.PUBLIC_URL = 'https://[::1]:31415'
+    const db = createDb()
+    t.after(() => db.$client.close())
+    assert.equal(loadPairingConfig(db).mode, 'private_ca')
+  })
+
+  test('https origin presenting a valid chain for a different name fails at boot', async (t) => {
+    restoreEnv(t)
+    const pki = mintTestRoot(t, { cn: 'wrong.example.test', san: 'DNS:wrong.example.test' })
+    const { port } = await spawnTlsOrigin(t, { keyPath: pki.key, certPath: pki.leaf })
+    process.env.KAOLA_PAIRING_MODE = 'private_ca'
+    process.env.KAOLA_PUBLIC_ROOT_CA_PATH = pki.pem
+    delete process.env.KAOLA_PUBLIC_LEAF_CHAIN_PATH
+    process.env.PUBLIC_URL = `https://localhost:${port}`
+    const db = createDb()
+    t.after(() => db.$client.close())
+    assert.throws(() => loadPairingConfig(db), /does not root PUBLIC_URL/)
+  })
+
+  test('https origin probe accepts a matching DNS leaf without a configured leaf path', async (t) => {
+    restoreEnv(t)
+    const pki = mintTestRoot(t)
+    const { port } = await spawnTlsOrigin(t, { keyPath: pki.key, certPath: pki.leaf })
+    process.env.KAOLA_PAIRING_MODE = 'private_ca'
+    process.env.KAOLA_PUBLIC_ROOT_CA_PATH = pki.pem
+    delete process.env.KAOLA_PUBLIC_LEAF_CHAIN_PATH
+    process.env.PUBLIC_URL = `https://localhost:${port}`
+    const db = createDb()
+    t.after(() => db.$client.close())
+    assert.equal(loadPairingConfig(db).mode, 'private_ca')
+  })
+
+  test('https origin probe accepts a matching IP leaf without a configured leaf path', async (t) => {
+    restoreEnv(t)
+    const pki = mintTestRoot(t, { cn: 'unrelated.example', san: 'IP:127.0.0.1' })
+    const { port } = await spawnTlsOrigin(t, { keyPath: pki.key, certPath: pki.leaf, host: '127.0.0.1' })
+    process.env.KAOLA_PAIRING_MODE = 'private_ca'
+    process.env.KAOLA_PUBLIC_ROOT_CA_PATH = pki.pem
+    delete process.env.KAOLA_PUBLIC_LEAF_CHAIN_PATH
+    process.env.PUBLIC_URL = `https://127.0.0.1:${port}`
+    const db = createDb()
+    t.after(() => db.$client.close())
+    assert.equal(loadPairingConfig(db).mode, 'private_ca')
+  })
+
+  test('https origin probe accepts a matching IPv6 leaf without a configured leaf path', async (t) => {
+    restoreEnv(t)
+    const pki = mintTestRoot(t, { cn: 'unrelated.example', san: 'IP:0:0:0:0:0:0:0:1' })
+    const { port } = await spawnTlsOrigin(t, { keyPath: pki.key, certPath: pki.leaf, host: '::1' })
+    process.env.KAOLA_PAIRING_MODE = 'private_ca'
+    process.env.KAOLA_PUBLIC_ROOT_CA_PATH = pki.pem
+    delete process.env.KAOLA_PUBLIC_LEAF_CHAIN_PATH
+    process.env.PUBLIC_URL = `https://[::1]:${port}`
+    const db = createDb()
+    t.after(() => db.$client.close())
+    assert.equal(loadPairingConfig(db).mode, 'private_ca')
   })
 
   test('replaying the same device-proof nonce is 401 and does not create a second pairing', async (t) => {

@@ -878,6 +878,51 @@ describe('kaola-mcp pair (#63)', { concurrency: false }, () => {
     recoverInterruptedV2Trust(home, origin)
     assert.equal(inspectV2Trust(home, origin).ready, true)
   })
+
+  test('forced rename failure after moving final to previous restores the previous directory', async (t) => {
+    const home = tmpHome(t)
+    const origin = 'https://kaola.example.test'
+    const root = mintRoot(t)
+    const streams = captureIo()
+    assert.equal(
+      await runPairCli(['--url', origin], { KAOLA_HOME: home }, streams.io, {
+        transport: pairingTransport({ home, origin, root }),
+        sleep: async () => {},
+        pollIntervalMs: 0,
+      }),
+      0,
+      streams.stderr(),
+    )
+    const finalDir = v2TrustDir(home, origin)
+    const previous = v2PreviousTrustDir(home, origin)
+    const pemBefore = readFileSync(join(finalDir, 'root-ca.pem'), 'utf8')
+    const next = mintRoot(t)
+    const { ensureDeviceIdentity } = await import('./main.ts')
+    const device = await ensureDeviceIdentity(home)
+    const { deviceFingerprint } = await import('@kaola/shared')
+    const fp = deviceFingerprint(Buffer.from(device.publicKeySpki, 'base64'))
+    const staging = writeV2Staging({
+      kaolaHome: home,
+      origin,
+      pem: next.pem,
+      state: {
+        v: 2,
+        alg: 'sha256',
+        originDigest: pairingOriginDigest(origin),
+        instanceId: INSTANCE_ID,
+        deviceFingerprint: fp,
+        fingerprintSha256: next.sha256,
+        trustEpoch: 2,
+        pairedAt: 1,
+      },
+    })
+    rmSync(staging, { recursive: true, force: true })
+    assert.throws(() => commitV2Staging(staging, origin, home))
+    const restored = inspectV2Trust(home, origin)
+    assert.equal(restored.ready, true)
+    assert.equal(readFileSync(join(finalDir, 'root-ca.pem'), 'utf8'), pemBefore)
+    assert.equal(existsSync(previous), false)
+  })
 })
 
 describe('pairing_required exit contract', () => {

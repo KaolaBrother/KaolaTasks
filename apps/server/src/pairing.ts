@@ -1,6 +1,9 @@
 import { execFileSync } from 'node:child_process'
 import { X509Certificate } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { isIP } from 'node:net'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { eq } from 'drizzle-orm'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import {
@@ -119,59 +122,87 @@ function certFingerprint(cert: X509Certificate): string {
   return cert.fingerprint256.replace(/:/g, '').toLowerCase()
 }
 
-function verifyLeafChainToRoot(leafPemText: string, rootPem: string, hostname: string): void {
+function originHostname(origin: string): string {
+  const hostname = new URL(origin).hostname
+  if (hostname.startsWith('[') && hostname.endsWith(']')) return hostname.slice(1, -1)
+  return hostname
+}
+
+function originPeerIdentity(origin: string): { kind: 'dns' | 'ip'; value: string } {
+  const hostname = originHostname(origin)
+  if (isIP(hostname)) return { kind: 'ip', value: hostname }
+  return { kind: 'dns', value: hostname }
+}
+
+function certMatchesPeer(
+  cert: X509Certificate,
+  identity: { kind: 'dns' | 'ip'; value: string },
+): boolean {
+  if (identity.kind === 'ip') return cert.checkIP(identity.value) != null
+  return cert.checkHost(identity.value) != null
+}
+
+function opensslConnectTarget(hostname: string, port: string): string {
+  return isIP(hostname) === 6 ? `[${hostname}]:${port}` : `${hostname}:${port}`
+}
+
+function verifyLeafChainToRoot(leafPemText: string, rootPath: string, origin: string): void {
   if (/BEGIN [A-Z0-9 ]*PRIVATE KEY/.test(leafPemText)) {
     throw new Error('KAOLA_PUBLIC_LEAF_CHAIN_PATH must not contain a private key')
   }
   const blocks = splitCertificatePems(leafPemText)
   if (blocks.length === 0) throw new Error('KAOLA_PUBLIC_LEAF_CHAIN_PATH has no certificates')
+  const identity = originPeerIdentity(origin)
   const certs = blocks.map((block) => new X509Certificate(block))
-  const root = new X509Certificate(rootPem)
-  const rootFp = certFingerprint(root)
-  const leaf = certs.find((cert) => cert.checkHost(hostname) != null)
+  const leaf = certs.find((cert) => certMatchesPeer(cert, identity))
   if (leaf == null) {
-    throw new Error('configured leaf SAN does not cover PUBLIC_URL hostname')
-  }
-  let current = leaf
-  const seen = new Set<string>([certFingerprint(current)])
-  for (let i = 0; i < 8; i++) {
-    if (certFingerprint(current) === rootFp || current.checkIssued(root)) return
-    const issuer = certs.find(
-      (candidate) =>
-        certFingerprint(candidate) !== certFingerprint(current) && current.checkIssued(candidate),
+    throw new Error(
+      identity.kind === 'ip'
+        ? 'configured leaf SAN does not cover PUBLIC_URL address'
+        : 'configured leaf SAN does not cover PUBLIC_URL hostname',
     )
-    if (issuer == null) {
-      throw new Error('configured leaf chain does not verify to KAOLA_PUBLIC_ROOT_CA_PATH')
-    }
-    const nextFp = certFingerprint(issuer)
-    if (seen.has(nextFp)) {
-      throw new Error('configured leaf chain does not verify to KAOLA_PUBLIC_ROOT_CA_PATH')
-    }
-    seen.add(nextFp)
-    current = issuer
   }
-  throw new Error('configured leaf chain does not verify to KAOLA_PUBLIC_ROOT_CA_PATH')
+  const leafFp = certFingerprint(leaf)
+  const intermediates = certs.filter((cert) => certFingerprint(cert) !== leafFp)
+  const dir = mkdtempSync(join(tmpdir(), 'kaola-pairing-verify-'))
+  try {
+    const leafFile = join(dir, 'leaf.pem')
+    writeFileSync(leafFile, `${leaf.toString()}\n`)
+    const args = ['verify', '-CAfile', rootPath, '-purpose', 'sslserver']
+    if (intermediates.length > 0) {
+      const untrusted = join(dir, 'untrusted.pem')
+      writeFileSync(untrusted, `${intermediates.map((cert) => cert.toString()).join('\n')}\n`)
+      args.push('-untrusted', untrusted)
+    }
+    args.push(leafFile)
+    execFileSync('openssl', args, { stdio: ['ignore', 'pipe', 'pipe'] })
+  } catch {
+    throw new Error('configured leaf chain does not verify to KAOLA_PUBLIC_ROOT_CA_PATH')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 }
 
 function probeOriginWithOnlyRoot(origin: string, rootPath: string): void {
   const parsed = new URL(origin)
+  const hostname = originHostname(origin)
   const port = parsed.port === '' ? '443' : parsed.port
+  const args = [
+    's_client',
+    '-connect',
+    opensslConnectTarget(hostname, port),
+    '-CAfile',
+    rootPath,
+    '-verify_return_error',
+    '-no_ign_eof',
+  ]
+  if (isIP(hostname)) {
+    args.push('-noservername', '-verify_ip', hostname)
+  } else {
+    args.push('-servername', hostname, '-verify_hostname', hostname)
+  }
   try {
-    execFileSync(
-      'openssl',
-      [
-        's_client',
-        '-connect',
-        `${parsed.hostname}:${port}`,
-        '-servername',
-        parsed.hostname,
-        '-CAfile',
-        rootPath,
-        '-verify_return_error',
-        '-brief',
-      ],
-      { input: '', timeout: 8000, stdio: ['pipe', 'pipe', 'pipe'] },
-    )
+    execFileSync('openssl', args, { input: 'Q\n', timeout: 8000, stdio: ['pipe', 'pipe', 'pipe'] })
   } catch {
     throw new Error('configured public root does not root PUBLIC_URL')
   }
@@ -182,7 +213,6 @@ export function assertConfiguredRootMatchesOrigin(input: {
   rootPath: string
   origin: string
 }): void {
-  const hostname = new URL(input.origin).hostname
   const leafPath = process.env.KAOLA_PUBLIC_LEAF_CHAIN_PATH
   if (leafPath != null && leafPath !== '') {
     let leafText: string
@@ -191,7 +221,7 @@ export function assertConfiguredRootMatchesOrigin(input: {
     } catch {
       throw new Error('KAOLA_PUBLIC_LEAF_CHAIN_PATH is unreadable')
     }
-    verifyLeafChainToRoot(leafText, input.rootPem, hostname)
+    verifyLeafChainToRoot(leafText, input.rootPath, input.origin)
     return
   }
   if (!input.origin.startsWith('https:')) {

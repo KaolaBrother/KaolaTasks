@@ -421,7 +421,7 @@ KaolaTasks/
 **公网 HTTPS 证书（#46），两种模式（二选一，由操作者在本地配置声明；仓库只描述合同）：**
 
 1. **`DEBUG_PRIVATE_CA`（已登记测试机，不是干净机器的公网信任）**
-   使用受控的**开发根 CA**（不是当前这种仅 CN、无 SAN 的自签名 leaf）。由该根签发的 leaf，其 SAN 必须包含 `<public-host>`。`PUBLIC_URL` 仍是 `https://<public-host>:<https-port>`。认领端默认走 §16.8：`KAOLA_PAIRING_MODE=private_ca` 加上非秘密的 `KAOLA_PUBLIC_ROOT_CA_PATH`（恰好一块公开根 CA，无私钥块；启动时须能作为当前 origin 严格链的根）。`NODE_EXTRA_CA_CERTS` 只给本机 `kaola-mcp` 桥进程，且只从本机已核验的 v2（或遗留 v1）state 注入。根私钥永不进入 git、mcp.json、Task Brief、或分发给认领电脑。禁止把 `NODE_TLS_REJECT_UNAUTHORIZED=0` 或 `curl -k` 当作验收。本模式只证明**已登记测试机**上的浏览器 / OAuth / MCP / 设备绑定功能，**不**证明干净机器的默认公网信任。客户端如何安装与（或不）信任见 §16 / §16.8。需要浏览器、OAuth 或管理员工作台的电脑仍须另做 §16.3 系统信任。
+   使用受控的**开发根 CA**（不是当前这种仅 CN、无 SAN 的自签名 leaf）。由该根签发的 leaf，其 SAN 必须包含 `<public-host>`（DNS 或 IP）。`PUBLIC_URL` 仍是 `https://<public-host>:<https-port>`。认领端默认走 §16.8：`KAOLA_PAIRING_MODE=private_ca` 加上非秘密的 `KAOLA_PUBLIC_ROOT_CA_PATH`（恰好一块公开根 CA，无私钥块；启动时须能作为当前 origin 严格链的根，含签名、有效期、用途与 DNS/IP 身份；SNI 不能替代 hostname/IP 核验）。`NODE_EXTRA_CA_CERTS` 只给本机 `kaola-mcp` 桥进程，且只从本机已核验的 v2（或遗留 v1）state 注入。根私钥永不进入 git、mcp.json、Task Brief、或分发给认领电脑。禁止把 `NODE_TLS_REJECT_UNAUTHORIZED=0` 或 `curl -k` 当作验收。本模式只证明**已登记测试机**上的浏览器 / OAuth / MCP / 设备绑定功能，**不**证明干净机器的默认公网信任。客户端如何安装与（或不）信任见 §16 / §16.8。需要浏览器、OAuth 或管理员工作台的电脑仍须另做 §16.3 系统信任。
 
 2. **`STABLE_PUBLIC_CA`（干净机器默认信任）**
    优先使用专用名 `<production-subdomain>`（不要沿用动态 `<public-host>` 当稳定生产名）。用公开 ACME CA 经 **DNS-01** 签发（DNS API 自动化，占位 `<acme-dns-provider>`），不依赖入站 80。反代在 `<https-port>` 上发送 **fullchain**（leaf + intermediates）。自动续期，续期后先做反代配置测试再 reload，不中断 Fastify。若 DNS 提供商没有 API，手工 DNS-01 只可作临时；可选把 `_acme-challenge.<production-subdomain>` CNAME 委派到由自动化管理的 zone。干净 macOS / Windows / Linux 的系统 TLS 必须能链到内置根。客户端不装额外 CA、不设 `NODE_EXTRA_CA_CERTS`（见 §16）。
@@ -635,7 +635,7 @@ openssl x509 -in <dev-root-ca.pem> -noout -fingerprint -sha256
 | `POST /api/v1/devices/:id/bind` | 有 pairing 行的设备额外要求 `pairing_id` + `pairing_secret`；仍 exactly-one owner；错密语 `403 pairing_secret_invalid`（8 次后拒绝该 attempt）；无 pairing 行的遗留 pending 保持原 bind body。已 active 且存在 live `created`/`committed` pairing 时为 repair：校验密语后只写 approval，不改 owner / `expires_at`；未批准不得装新根 |
 | `POST /api/v1/device-trust/next-root` | 严格 TLS + **active** 设备；overlap 期间返回下一公开根 |
 
-`KAOLA_PAIRING_MODE` 非 `private_ca` 时 pairing REST 为 `404 pairing_mode_disabled`。Bootstrap 设备仍是 pending，不能 list/claim。bind 成功不自动 claim，不揭示 forge token。`GET /api/v1/devices/pending` 可带 `pairing_id` / `pairing_expires_at` / `requires_pairing_secret`，不含密语/commitment/proof/PEM。
+`KAOLA_PAIRING_MODE` 非 `private_ca` 时 pairing REST 为 `404 pairing_mode_disabled`。`private_ca` 启动时配置根须以完整链核验（签名、有效期、用途、路径约束）加上 DNS 或 IP 身份对准 `PUBLIC_URL`；线上探测用 `verify_hostname` / `verify_ip`，SNI 不能替代。Bootstrap 设备仍是 pending，不能 list/claim。bind 成功不自动 claim，不揭示 forge token。`GET /api/v1/devices/pending` 可带 `pairing_id` / `pairing_expires_at` / `requires_pairing_secret`，不含密语/commitment/proof/PEM。
 
 **本机状态**
 
