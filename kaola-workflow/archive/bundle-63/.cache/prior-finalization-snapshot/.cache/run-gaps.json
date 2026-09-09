@@ -1,0 +1,10 @@
+{
+  "project": "bundle-63",
+  "sweptClasses": [
+    {
+      "reasonClass": "manual:unexecuted-live-private-ca-uat",
+      "sample": "Live private-CA package-bin, browser pairing-secret bind, macOS/Windows/Linux Claim clients, OAuth, and deploy were not executed (user forbade live UAT and deploy). Recorded in docs/smoke-test.md 2026-09-09; not a product defect.",
+      "count": 1
+    }
+  ]
+}

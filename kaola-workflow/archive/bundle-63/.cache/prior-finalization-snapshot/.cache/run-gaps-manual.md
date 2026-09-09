@@ -1,0 +1,1 @@
+gap: unexecuted-live-private-ca-uat — Live private-CA package-bin, browser pairing-secret bind, macOS/Windows/Linux Claim clients, OAuth, and deploy were not executed (user forbade live UAT and deploy). Recorded in docs/smoke-test.md 2026-09-09; not a product defect.

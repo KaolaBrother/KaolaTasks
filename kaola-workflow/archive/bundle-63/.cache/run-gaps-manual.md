@@ -1,0 +1,1 @@
+gap: unexecuted-live-private-ca-uat — Private CA local UAT is not yet executed; user authorized finalize keep-open before controller-run local UAT. Tracked in docs/smoke-test.md and Issue63; no product defect or UAT PASS implied.

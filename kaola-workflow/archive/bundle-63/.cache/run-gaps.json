@@ -1,0 +1,10 @@
+{
+  "project": "bundle-63",
+  "sweptClasses": [
+    {
+      "reasonClass": "manual:unexecuted-live-private-ca-uat",
+      "sample": "Private CA local UAT is not yet executed; user authorized finalize keep-open before controller-run local UAT. Tracked in docs/smoke-test.md and Issue63; no product defect or UAT PASS implied.",
+      "count": 1
+    }
+  ]
+}
