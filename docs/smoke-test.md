@@ -47,14 +47,20 @@
 |------|--------|----------|
 | 隔离根 | 仅 `/private/tmp/kaolatasks-63-uat.<id>/`（已准备目录可复用，执行前按冻结 SHA 刷新 `source/` 并重建镜像） | 旧生产库、无关容器、已卸载 VPS |
 | 服务端 | Linux 容器跑生产 Fastify + `apps/web/dist`；独立 SQLite 卷；`KAOLA_PAIRING_MODE=private_ca` | 认领端 |
-| TLS 入口 | 本机 loopback HTTPS（设计：`PUBLIC_URL=https://localhost:34463`，leaf SAN `DNS:localhost` + `IP:127.0.0.1`）反代到容器 HTTP | 公网部署 |
-| 管理端入口 | 本机 HTTP 工作台（设计：`http://localhost:31415`，cookie host 必须是 `localhost`） | 把 PAT 贴进认领端 |
+| TLS 入口 | 服务端 Linux 容器内 Node proxy：`:34463` HTTPS → `127.0.0.1:31463`；仅发布 `127.0.0.1:34463:34463` 到宿主。`PUBLIC_URL=https://localhost:34463`，leaf SAN `DNS:localhost` + `IP:127.0.0.1` | 公网部署 |
+| 管理端入口 | 同一容器 proxy `:31415` HTTP，仅发布 `127.0.0.1:31415:31415` 到宿主（cookie host 必须是 `localhost`） | 把 PAT 贴进认领端 |
 | 签发端 | 隔离目录内 root/leaf；私钥不进认领端、不进 git | 认领端预挂 PEM |
-| 认领端 | **第二个** Linux 容器/VM：空 `KAOLA_HOME`、默认 CA 库、无 `NODE_EXTRA_CA_CERTS`、无 PAT、无 receipt | 只把服务器容器叫「Linux 认领」 |
-| 管理端 Agent | 本机 Cursor CLI Runner + Computer Use 操作真实工作台 | 路径 B 的 stub 登录冒充 UI 通过 |
+| 认领端 | **第二个** Linux 容器：`--network container:kaolatasks-issue63-uat` 共享服务端网络命名空间，但文件系统与空 `KAOLA_HOME` 独立；默认 CA 库、无 `NODE_EXTRA_CA_CERTS`、无 PAT、无 receipt，不挂服务端配置、证书或数据库 | 只把服务器容器叫「Linux 认领」 |
+| 管理端 Agent | 主控 Codex + Computer Use / 浏览器自动化操作真实工作台；Runner 只用于明确 Issue 的代码修改，不承包 UAT | 路径 B 的 stub 登录冒充 UI 通过 |
 | 认领端 Agent | 该 Linux 内真实 Agent 会话（优先 Cursor Agent CLI / 已安装 Linux 承载）+ 生产 `apps/mcp/bin/kaola-mcp.mjs` | `scripts/forge-smoke.ts`、`pairDeviceToSelf`、仅 REST 的「假 Agent」 |
 
 镜像 tag 设计为 `kaolatasks-issue63-uat:final`，构建上下文 = 冻结候选 SHA 的 source，不是审查 FAIL 的旧 SHA。`start-linux.mjs` 的 `server.env` 为 `wx`，重建前勿残留。回收：停路径 L 容器与 proxy、删该隔离 `data/` 与认领端 `KAOLA_HOME`；不动其它 Docker。2026-09-07 VPS 与 2026-09-08 `kaola-tasks-local-uat` 已停/清理，**不要**默认复用；执行前 `docker ps -a` 核实现场。旧证据与受保护库只保留，不挂进本轮隔离根当 PASS。
+
+#### 网络与 origin
+
+本机使用 Colima 的 Linux Docker。认领容器显式采用 `--network container:kaolatasks-issue63-uat`，其 `localhost:34463` 到达服务端容器里的 HTTPS proxy；宿主浏览器通过仅 loopback 发布的端口到达同一 proxy。两边保持 `https://localhost:34463` 和同一 SAN，无需改 origin、另加 host-gateway 或关闭 TLS。共享网络不共享文件系统：认领端不挂签发目录、服务端 `.env`、SQLite、根证书或密钥。
+
+L5 前分别核验宿主和认领容器的 TCP 可达性。认领端默认信任的严格 HTTPS 应报 unknown issuer，而不是连接失败；这只证明传输前置条件，不是受信成功。管理侧另用显式公开测试 CA、hostname 校验及失败退出核验完整 TLS。不得用 `NODE_TLS_REJECT_UNAUTHORIZED=0`、`--insecure`、`curl -k` 把端口连通记为 TLS 通过。
 
 #### 沿用 vs 增补（不重造无关流程）
 
@@ -84,9 +90,10 @@
 | L2b | 已有管理员；`.env` 已有 OAuth 客户端 | Computer Use：真实 GitLab / Gitea Authorize（与 2026-09-08 本机接续相同）。空库之后才允许 OAuth 建发布者 | 工作台显示发布者；无权限提升成第二个密码管理员 | 实际走过回调才记 OAuth UI；人机挑战阻断则记阻塞 | 勿用 stub userinfo 充真实 OAuth |
 | L3 | 管理员或发布者会话 | 工作台或**该会话**下 REST 建 GitLab/Gitea 凭证档案（PAT 只从 `.env` 进页面或带 cookie 的请求） | 档案列表无 token 字段 | UI 实际走过才记 UI；仅 REST 则记「协议诊断」 | 缺 PAT 记阻塞，不编 token |
 | L4 | 档案 | 工作台导入并发布 smoke Issue（`KaolaBrother/kaola-tasks-smoke`） | 任务 `待认领` | publicId、源 Issue URL | 导入失败不改库顶替 |
-| L5 | 干净认领端 | 生产 `kaola-mcp --url ${PUBLIC_URL}` | HTTPS unknown-issuer → 打印 `pairing_required`，退出码 `2`；不能 `list_tasks` / `claim_task` | 认领端无 v2 目录；服务端无 active 设备 | 若已有 v2 则拓扑不干净，换新 `KAOLA_HOME` |
-| L6 | L5 | 同一认领端 `kaola-mcp pair --url ${PUBLIC_URL}` | 终端展示密语；receipt `0600`；pending 设备 | 密语不在服务响应/聊天 | `--cancel` 只删本机 receipt 后重来 |
-| L7 | L6 密语 | 管理端 Computer Use：电脑页 `配对密语` 绑到管理员（`data-testid=device-bind-pairing-secret`） | 设备 `active`；pair 完成严格 TLS + active `whoami`；v2 落地 | 认领端 `$KAOLA_HOME/trust/v2/<origin-digest>/`；whoami 有 `instance_id` 无 forge token | 错密语显示「配对密语不正确」；不得 SQL 改 status |
+| L5 | 干净认领端；L1 可达性已过 | 生产 `kaola-mcp --url ${PUBLIC_URL}`（认领端无 extra CA） | **仅传输层**：HTTPS unknown-issuer → 打印 `pairing_required`，退出码 `2`。此时还没有设备证明、也打不到 MCP，**不能**当作 pending `202` | 认领端无 v2；stderr 为 unknown-issuer / `pairing_required` | 若已有 v2 则拓扑不干净，换新 `KAOLA_HOME`。勿 `--insecure` 硬闯 MCP |
+| L6 | L5 | 同一认领端 `kaola-mcp pair --url ${PUBLIC_URL}` | 终端展示密语；receipt `0600`；服务端出现 **pending 设备** | 密语不在服务响应/聊天；SQLite pending 行 | `--cancel` 只删本机 receipt 后重来 |
+| L6b | L6 已有 pending；**尚未** L7 批准 | **生产授权诊断**（单独标记，不是 L5）：在**宿主机**用一次性诊断 `KAOLA_HOME`（复制认领端 `device.json` 身份，**不**写入认领端 `trust/`）。该进程用隔离目录 `root.pem` 作 **仅此进程** 的 `-CAfile`/`NODE_EXTRA_CA_CERTS`，严格 TLS 打 `https://localhost:34463`，以该 pending 设备的 device proof 调生产 `list_tasks` / `claim_task` | HTTP `202` `{ error: 'authorization_required', pending: true }`；无 forge token | 诊断 home 用后删除；认领端 `KAOLA_HOME/trust` 仍不存在；无 `--insecure` | 禁止：往干净认领端装根、`pairDeviceToSelf`、inject、直改 status。诊断失败不得用 L5 顶替 |
+| L7 | L6 密语；L6b 已记 | 管理端 Computer Use：电脑页 `配对密语` 绑到管理员（`data-testid=device-bind-pairing-secret`） | 设备 `active`；pair 完成严格 TLS + active `whoami`；v2 落地 | 认领端 `$KAOLA_HOME/trust/v2/<origin-digest>/`；whoami 有 `instance_id` 无 forge token | 错密语显示「配对密语不正确」；不得 SQL 改 status |
 | L8 | L7 | 同一设备生产 MCP `tools/list`、`list_tasks`、`claim_task` | 认领成功才揭示该任务凭证 | claim `201`；日志无 PAT 前缀 | pending 仍 `202` 则配对未完成 |
 | L9 | L8；沿用标准闭环，不另造剧本 | 认领端 Agent：真实 clone 四键、Draft PR、`submit_pr`、多轮评审、`submit_revision`、12b 未申报头 `409`、通过、forge API 合并、`pollPendingReviews`；另做 Claim 恢复/fencing、十工具、依赖 restack、SSE、终止确认/重开（形状同 2026-09-08 本机接续，详见下表） | 任务终态与回写符合标准闭环；不是 README-only | forge URL、SQLite 状态、回写条数、`events.details` 无令牌 | 按手册既有评审循环恢复，不跳过 PR、不拿历史节 PASS 顶替 |
 | L10 | 第一家完成 | 对另一家 forge 重复 L3–L9（仍同一隔离服务，认领端可新 `KAOLA_HOME` 或证明同设备多任务） | 两家都走完沿用闭环 | 各一家 Issue/PR | 一家失败不把另一家外推 |
@@ -100,7 +107,7 @@
 | 标准闭环 #8–14 + 12b | 配对完成后的生产 MCP / 工作台 | 2026-09-07 VPS / 路径 B 行 **不是** 本轮 |
 | Claim 恢复与异设备 fencing | 同设备 replay、release、跨进程 receipt；另一设备 `403` | 历史 PASS 不顶替 |
 | 八状态 / 十工具 | `tools/list` 见 10 个工具；状态按 DESIGN 中文规范走完 | 旧 launcher 10 工具不是新配对证明 |
-| 依赖 / restack | 有父子任务时按 §17；无则记未造该场景，不编 PASS | 旧 `kt-2026-0005` 不复用 |
+| 依赖 / restack | 创建本轮父子任务，按 §17 跑父完成、子 restack、rebase 与交付；未完成不得宣称完整 UAT 通过 | 旧 `kt-2026-0005` 不复用 |
 | SSE | 工作台不手动刷新可见换列；独立 SSE 无 token | 旧 SSE 行不是本轮 |
 | 终止 UI / 重开 / 关 PR | Computer Use 点确认框；REST 只作协议诊断 | 2026-09-08 终止 UI 已完成 ≠ 本轮已做 |
 | 真实 OAuth | L2b | 2026-09-08 Safari OAuth 行不是本轮 |
@@ -115,7 +122,7 @@
 | 86400 不滑动 / 到期 | **不**把墙钟调一天；记「未做物理 24h」 | pairing 冻结时间用例 | 改系统时间充 24h |
 | 90 天默认 / 存量 30 | 新绑定 `expires_at`；不改旧行 | db-migration | 猜迁存量 |
 | 换 root/origin / nonce replay | 换入口或重放证明应失败 | pairing replay | 关 TLS 验证 |
-| pending 无 list/claim | L5 | pairing pending `202` | 先 pairDeviceToSelf 再测 pending |
+| pending 无 list/claim | L6b 的真实 pending 设备生产授权诊断返回 `202`；L5 仅为 TLS 证据 | pairing pending `202` | 用 TLS 失败代替授权证据；先 pairDeviceToSelf 再测 pending |
 | overlap / 错过 overlap 再 pair | 有条件时做；否则记未执行 | pair overlap / repair 套件 | launcher 提示 pair 但未跑 pair 当 PASS |
 | 证书配置错误 | 错根启动失败 | unrelated CA / 错名 s_client | 默认库里的别的根冒充配置根 |
 | caller extra CA 污染 | 认领端不设 extra CA | R4 真实 TLS 子进程 | 给认领端预挂根再测公开迁移 |

@@ -42,6 +42,8 @@
 6. **同一闭环。** 真实 HTTPS **Private CA** → 未配对 `pairing_required` → `pair` → 工作台真实输入密语批准 → 严格 TLS + active `whoami` → v2 → 再接续与 2026-09-08 本机 Linux 接续相同的生产 MCP 交付（不是只改 README）。GitLab 与 Gitea 各跑一遍。
 7. **诚实记录。** 真实运行、可控时钟的自动测试、未执行项分清。不为了 24h/90d 改真实时钟。外部 OAuth 人机挑战若阻断则记阻塞，不伪造。Windows / macOS 物理客户端 / 公开 CA 干净机器 / 已卸载 VPS 不因本路径 Linux 通过而自动 PASS。2026-09-07–08 历史行保持原判定，不改写成路径 L PASS。
 
+8. **分工。** 主控自己完成收尾、环境搭建、浏览器/Computer Use 和 smoke/UAT 执行；Runner 用于明确 Issue 定义的代码修改，不把测试执行流程再委派给 Runner。Private CA 服务端与相关测试使用 OpenSSL 3.x；运行前核对实际 `openssl version`，不要把 macOS LibreSSL 当作 OpenSSL 3。
+
 ## Documentation
 
 - `README.md`：项目入口

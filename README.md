@@ -125,6 +125,8 @@ Claim 后持续用 `report_progress` 保持租约。请求结果不确定时，�
 
 需要 Node.js ≥ 22 和 pnpm `11.19.0`。
 
+启用 Private CA 自动配对的服务端还需要 `openssl` 命令为 **OpenSSL 3.x**（macOS 自带 LibreSSL 不满足此要求）。macOS 使用已安装的 OpenSSL 3 时，将其 `bin` 放在当前服务/测试进程的 `PATH` 前端；Linux Bookworm 镜像提供 OpenSSL 3。用 `openssl version` 核对，不能靠关闭证书校验绕过依赖。
+
 ```bash
 pnpm install
 ```

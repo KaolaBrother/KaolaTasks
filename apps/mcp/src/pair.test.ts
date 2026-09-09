@@ -799,7 +799,6 @@ describe('kaola-mcp pair (#63)', { concurrency: false }, () => {
     const base = pairingTransport({ home, origin, root: nextRoot })
     const transport: PairingTransport = {
       async request(input) {
-        const url = new URL(input.url)
         const oldPem = inspectPublicRootPem(oldRoot.pem)
         if (
           input.mode === 'strict' &&
