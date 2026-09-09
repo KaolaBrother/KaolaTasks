@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `#63` 修复后本机隔离 Linux 路径 L 完整通过：三台空 `KAOLA_HOME` 设备均经真实工作台密语批准自动落 v2，并覆盖 pending 后 server/claimant 重启恢复、严格 TLS + active `whoami`、十个 MCP 工具、GitLab/Gitea OAuth 与真实合并、评审新头拒绝、依赖 restack、fencing、SSE、终止/重开和八状态。最终扫描 35 个暴露面、7 个任务、128 条事件，未发现 PAT 或 CA 私钥；14 条 lease 全部 released。实际 24h/90d 等待、Windows/macOS 物理客户端、公开 CA 干净机器、HTTPS 浏览器 OAuth 和已卸载 VPS 未执行，见 `docs/smoke-test.md`。
+- `#63` 长轮询配对改为每请求一次性 HTTPS 连接和一次性 `secureConnect` listener，避免全局 keep-alive socket 累积监听器；服务端即时回写、poller 重试与翻 ready 在同进程同 DB handle 内按任务/动作/PR/轮次共享在途 promise，防止并发重复 forge 写与成功事件，不改变顺序重新认领或失败重试，也不宣称跨进程 exactly-once。另以 Web test setup 的单调 elapsed time 隔离 Linux VM 墙钟回拨导致的 Vue 事件时间戳误丢弃；不改生产表单和既有 170 条断言。
 - `#63` 路径 L 设计沿用 2026-09-07–08 完整 smoke，只增补 Private CA（不是 Privacy AI）自动配对；历史 VPS/本机 PASS 不是本轮证据。见 `AGENTS.md` 与 `docs/smoke-test.md`。不改写 `d52352b` 产品检查点。
 - `#63` 独立复核 [5596887868](https://github.com/KaolaBrother/KaolaTasks/issues/63#issuecomment-5596887868)：OpenSSL 校验只信配置根（`-CAfile` 加 `-no-CApath`/`-no-CAstore`）；过期 leaf fixture 改用 OpenSSL 3.0 可移植的 `openssl ca -startdate/-enddate`。不改写 `e50f761` 检查点。
 - `#63` 独立复核 [5596509483](https://github.com/KaolaBrother/KaolaTasks/issues/63#issuecomment-5596509483)：启动核验改为完整链（签名/有效期/用途）与 DNS 或 IP 身份；线上探测使用 `verify_hostname`/`verify_ip`，SNI 不能替代。合法 IP SAN 不再被 `checkHost` 误拒。不改写 `f1e0a8c` 检查点。
