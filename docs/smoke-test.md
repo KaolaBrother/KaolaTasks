@@ -343,3 +343,52 @@ GitHub 发布冒烟已停（此前仓 [Issue #1](https://github.com/KaolaBrother
 验收后的数据库为 **11 个任务均终态：5 已完成、6 已取消；24 条 lease 全部 released**。GitLab/Gitea 用户均保持 `active/full`，本地用户为 `active/admin`；没有 OAuth 权限提升。核对 **191 条事件**不含两家 PAT 或管理员密码。修复版容器中的 auth 源码和新增测试 SHA-256 与工作区一致。
 
 本轮选定的 GitLab/Gitea 业务闭环、八状态／十工具扩展、macOS/Linux 客户端、真实 OAuth、设备绑定和终止 UI 已完成；此前缺项由上述本地真实环境接续补齐。Windows、公开 CA 与未制造的故障场景仍按上面的边界记录。验收后已停止本地 `kaola-tasks-local-uat` 容器（`exited`、`Running=false`），保留本地受保护的数据库、配置和证据供复现。VPS 已完成上述卸载清理。
+
+## 2026-09-09 #63 私有 CA 自动配对：UAT 前置清单（未做活网）
+
+本轮 `workflow/bundle-63` 把 #63 做到**可进入真实 UAT 的候选**，不部署、不写活网 PASS。需求以 [Issue #63](https://github.com/KaolaBrother/KaolaTasks/issues/63) 正文与正式评论 [5595041812](https://github.com/KaolaBrother/KaolaTasks/issues/63#issuecomment-5595041812) 为准。此前 #48/#60 的 macOS/Linux `trust install`、OAuth、旧绑定路径**不能**替代 `kaola-mcp pair --url`。
+
+### 本机自动门（已执行）
+
+候选 HEAD 在写入本段时核对；后续提交只追加本清单的文档句，不改产品字节则门禁证据仍有效。
+
+| 门 | 命令 | 结果 |
+|---|---|---|
+| lint | `pnpm lint` | 退出 0（`eslint .` 无 findings） |
+| typecheck | `pnpm typecheck` | 5/6 workspace 项目 Done（含 mcp） |
+| Node 测试 | `pnpm test` 前半 | **1091/1091** pass，0 fail |
+| Web 测试 | `pnpm --filter @kaola/web test` | **169/169**，9 files |
+| build | `pnpm build` | web/server/shared/forge-adapters 退出 0 |
+| whitespace | `git diff --check` | 干净 |
+| secret scan | `git diff origin/main...HEAD` 新增行 | 无私钥 PEM、无真实 `ktk_` / `glpat-` / `ghp_`；`BEGIN CERTIFICATE` 仅测试断言与占位 PEM 头；`KAOLA_PAIRING_TTL_SECONDS=900` 只作为失败关闭用例 |
+
+### Issue 验收对照（自动 vs 未执行）
+
+| 验收项 | 本轮证据 | 判定 |
+|---|---|---|
+| DESIGN / ADR / vectors 冻结后再改行为 | `65e8c7d` 冻结；TTL 纠正 `13ecac3`；90 天在后续检查点 `d572dcb`，不改写 Mission 1 result | 自动合同 PASS |
+| 期限一致：86400 / 90 天，无 15 分钟有效窗口 | `parsePairingTtlSeconds('900')` 抛错；boot `KAOLA_PAIRING_TTL_SECONDS=900` fail-closed；bind `paired_at + 90d`；升级重建 DEFAULT 90、存量 30 与既有 `expires_at` 原样 | 自动 PASS |
+| 申请接近 24h 仍可批准/恢复；到期拒绝；recover 不滑动 | `apps/server/src/pairing.test.ts` | 自动 PASS |
+| 较早 pending 不缩短一天窗口 | 同上 leftover pending 只延长 | 自动 PASS |
+| 全新库与升级后新建所有者 DEFAULT 90 | `apps/server/src/db-migration.test.ts` `issue #63 device_max_age_days default 90` | 自动 PASS |
+| 自定义策略与既有 `expires_at` 不变 | 同上 | 自动 PASS |
+| pending 不能 list/claim；bootstrap 不碰 Task/credential | pairing REST `rejectAuthorization`；pending `202`；leftover `ktk_` 401 | 自动 PASS |
+| `kaola-mcp pair --url` 严格 TLS、公开 CA 不装额外根、`pairing_required` 退出 2 | `apps/mcp/src/pair.test.ts` | 自动 PASS |
+| 重启/重放/错密语/中间人/legacy v1、overlap、错过 overlap、公开 CA 迁移 | pair + trust + pairing replay 套件 | 自动 PASS |
+| 三 forge adapter / Claim / token containment 回归 | 全量 Node 1091 含既有 adapter/claim/vault 套件 | 自动回归 PASS；**不是**活网三 forge UAT |
+| 通用客户端 `pair → 管理员批准 → strict whoami → MCP list_tasks`，认领者不碰 PEM | 进程内 harness | **未**在真实 package-bin / 真实私有 CA / 真人工作台执行 |
+| macOS / Windows / Linux package-bin Claim 客户端 | — | **未执行**；不得写 PASS |
+| 浏览器「电脑」页粘贴配对密语并授权 | — | **未执行**（配合） |
+| 真实 OAuth、活网私有 CA、部署、系统/浏览器装根 | — | **未执行**；本轮禁止部署 |
+
+### 真实 UAT 建议顺序（配合，本轮不做）
+
+1. 独立 `DEBUG_PRIVATE_CA` 入口（SAN 含 `<public-host>`），`KAOLA_PAIRING_MODE=private_ca`，公开根路径无私钥块。
+2. 干净认领端：`kaola-mcp pair --url ${PUBLIC_URL}`，确认密语只出现在本机终端，不进 bootstrap 响应。
+3. 管理员已受信工作台「电脑」页输入 `配对密语`，绑到 owner；客户端应自动落地 v2 根并 strict whoami。
+4. 随后 `kaola-mcp --url` 发现工具并 `list_tasks`（pending 阶段不得成功）。
+5. 分别重启客户端/服务端后恢复同一未过期 attempt；取消用 `--cancel` 只删本机 receipt。
+6. 负例：错密语、换根/origin、过期、公开 CA 机器不得多装根。
+7. 按平台各记一笔 macOS / Windows / Linux package-bin；未跑的平台保持「未执行」。
+
+Windows 客户端、公开 CA 干净机器、以及未制造的故障场景仍按上文既有边界，不由本清单改写为通过。

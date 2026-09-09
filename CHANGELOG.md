@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `#63` 全量验收门禁与诚实 UAT 前置清单：`pnpm lint` / `typecheck` / Node **1091** / Web **169** / `build` / `git diff --check` 通过；新增行 secret scan 无私钥与真实 forge/Claim token。活网私有 CA、浏览器密语绑定、macOS/Windows/Linux package-bin 明确未执行，见 `docs/smoke-test.md`。不部署。
 - `#63` 独立安全审查：create/recover 的 live 查找与插入收进同一事务，避免并发撞 `device_pairings_one_live`。补齐连字符密语绑定、跨设备 status 404、consumed 不再重放 proof、以及 unique live 行的失败关闭证据。未发现 bootstrap 可读 Task、secret 进事件、或 leftover `ktk_` 授权 pairing 的回归。
 - `#63` 补齐重启/重放/中间人替换/legacy v1、根 overlap 轮换与公开 CA 迁移：launcher 用旧严格 TLS + active 设备拉 `next-root`，原子写 old+new，新链证明后才丢旧根；错过 overlap 为 `pairing_required`。默认库 + 匹配 `whoami` 后只删该 origin digest 的 v2 extra root，不删 `device.json` / v1。README 认领路径改为 `kaola-mcp pair --url`；`trust install` 标明为 #48 显式兼容/恢复。
 - `#63` 交付 `kaola-mcp pair --url`：本机 `0600` receipt、批准证明核验、原子 v2 公开根、全新严格 TLS + active `whoami` 才 ready。正常路径不接触 PEM/指纹/env/重启。`kaola-mcp --url` 在 HTTPS unknown-issuer 且无 v2/v1 时 typed `pairing_required` 退出码 `2`。公开 CA 成功不装额外根。Node `UNABLE_TO_VERIFY_LEAF_SIGNATURE` 视为 unknown-issuer 类。README 用户路径与 overlap 轮换仍待下一检查点。

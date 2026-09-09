@@ -2,7 +2,7 @@
 
 - [User guide](../README.md) — how to log in, publish tasks, and connect an Agent
 - [生产向部署](../README.md#生产向部署) — 内网 + 公网入口短清单；#46 双模式 `DEBUG_PRIVATE_CA` / `STABLE_PUBLIC_CA`（文档只用占位符）
-- [安装与证书信任](../README.md#安装与证书信任) — #48 双模式 MCP 安装：`kaola-mcp trust` + launcher 只从已核验 state 注入额外 CA（DESIGN §16 / §16.7；系统/浏览器提权另一次）
+- [安装与证书信任](../README.md#安装与证书信任) — #48 双模式 MCP 安装：`kaola-mcp trust` + launcher 只从已核验 state 注入额外 CA（DESIGN §16 / §16.7；系统/浏览器提权另一次）。#63 认领默认 `kaola-mcp pair --url`（§16.8 / ADR 0031）；活网 UAT 前置清单见 [冒烟手册](smoke-test.md) 2026-09-09 一节，未执行项不得写成 PASS
 - [Design (source of truth)](DESIGN.md)
 - [Architecture](architecture.md)
 - [API](api.md)
