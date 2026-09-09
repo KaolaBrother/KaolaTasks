@@ -508,7 +508,7 @@ not run `trust install`, does not set env, and does not restart `pair`. Starting
 --url` afterwards is the first MCP launch, not an in-pairing restart. `--url` remains
 noninteractive and does not hot-reload roots.
 
-## Rotation and public-CA migration
+## Rotation
 
 Overlap (already-paired v2 client):
 
@@ -524,14 +524,17 @@ Overlap (already-paired v2 client):
 Missed overlap (unknown issuer again): `pairing_required`. No insecure resume. Admin approval
 pairing runs again.
 
-Public-CA migration: prove a strict connection to the **same** origin with the **default store
-only** (no extra CA), `whoami` active + matching device fingerprint + `instance_id`, then delete
-the v2 extra root for that origin digest. Do not silently remove OS/browser roots. Claimant-only
-machines never need elevation.
+Public-CA **direct** connect (no extra CA, no leftover v2/v1) stays #48: default store only.
+`kaola-mcp pair` still must not install an extra root when default-store TLS already succeeds.
+[#63 comment 5595770991](https://github.com/KaolaBrother/KaolaTasks/issues/63#issuecomment-5595770991)
+withdraws automatic private-to-public migration: `--url` must **not** delete a ready v2 extra
+root merely because the default store can already verify the origin. Operators who switch the
+entry to `STABLE_PUBLIC_CA` remove leftover extra CA with `kaola-mcp trust uninstall` or by
+deleting that origin digest under `$KAOLA_HOME/trust/v2/`. Do not silently remove OS/browser
+roots.
 
-`--url` may complete this migration automatically when default-store proof succeeds; it must not
-install anything. `kaola-mcp trust uninstall` remains the operator hammer and still must not
-delete `device.json` or Claim receipts.
+`kaola-mcp trust uninstall` remains the operator hammer and still must not delete `device.json`
+or Claim receipts.
 
 ## Workbench (Chinese)
 
@@ -588,7 +591,8 @@ These are frozen now so implementation cannot weaken them to get green:
    Public CA does not install an extra root.
 6. v1 remains loadable and is never disguised as v2. v2 binds origin digest, instance, and
    device.
-7. Overlap rotation, missed-overlap re-pair, and public-CA migration have focused proofs.
+7. Overlap rotation and missed-overlap re-pair have focused proofs. Automatic private-to-public
+   extra-root deletion is **out of #63 scope**.
 8. macOS / Windows / Linux package-bin UAT and live browser/OAuth are recorded only for
    environments actually executed.
 9. Three-forge behavior, Claim lifecycle, and token containment regressions stay green.
@@ -623,6 +627,12 @@ clock.
 1. This freeze (no product behavior change except documentation).
 2. Failure-first tests, then server pairing state / REST / admin transaction / Chinese UI.
 3. `kaola-mcp pair`, receipt, v2, strict handoff.
-4. Restart / replay / legacy / rotation / public-CA harness.
-5. Independent security review of the candidate.
+4. Restart / replay / legacy / private-CA rotation harness.
+5. Implementer self-review of the candidate (independent review is a later controller pass).
 6. Full repo validation and a UAT-ready checklist. No fake UAT PASS.
+
+The first implementation of this ADR on `workflow/bundle-63` added launcher auto-deletion of a
+ready v2 extra root when default-store TLS + matching `whoami` succeeded. The owner withdrew
+that private-to-public auto-migration on 2026-09-09
+([comment 5595770991](https://github.com/KaolaBrother/KaolaTasks/issues/63#issuecomment-5595770991)).
+The withdrawn branch is not #63 product behavior.

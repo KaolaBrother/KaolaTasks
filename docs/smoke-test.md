@@ -392,3 +392,11 @@ GitHub 发布冒烟已停（此前仓 [Issue #1](https://github.com/KaolaBrother
 7. 按平台各记一笔 macOS / Windows / Linux package-bin；未跑的平台保持「未执行」。
 
 Windows 客户端、公开 CA 干净机器、以及未制造的故障场景仍按上文既有边界，不由本清单改写为通过。
+
+## 2026-09-09 #63 范围纠正：不自动迁公开 CA
+
+正式评论 [5595770991](https://github.com/KaolaBrother/KaolaTasks/issues/63#issuecomment-5595770991) 取代正文中要求交付「公开 CA 迁移 / 自动删本机私有根」的段落。本检查点之后，上一节把「公开 CA 迁移」写成自动 PASS 的句子**不再是现行产品合同**；历史 Mission 4/6 result 不改写。
+
+保留：私有 CA `pair` 恢复、overlap 轮换、无 extra CA 的公开 CA 直连（`pair` 成功且不装额外根）。去掉：`--url` 在默认库 + `whoami` 后 `rm` 该 origin 的 v2 目录。
+
+受影响验证在纠正提交上重跑，不沿用上一节全量 PASS 数字。活网 UAT / 部署仍未执行。

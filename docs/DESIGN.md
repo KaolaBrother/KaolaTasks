@@ -35,7 +35,7 @@
 | D15 | Agent 感知（#53） | 保持 pull 模型。Agent 自行轮询 `list_tasks(status=待修改)`；`report_progress` 心跳携带 `percent` / `phase`。考拉不向已下线的 Agent 推送 |
 | D16 | 人的感知（#53） | 服务端提供 SSE 流，Web 看板与评审面板实时刷新，不用手工刷新 |
 | D17 | 合并（#53） | 保留给 forge 上的真人。考拉不用任务 token approve 或 merge（token 身份是发布者/bot，会让 forge 审计失真） |
-| D18 | 私有 CA 认领端配对（#63） | 通用认领端不走手工 `trust install`。私有 CA 第一次用 `kaola-mcp pair --url`：客户端高熵一次性密语不经未受信 bootstrap 传输；管理员在受信工作台录入密语并选择 owner；客户端核验批准证明后才原子安装公开根，并以全新严格 TLS + active `whoami` 就绪。`kaola-mcp --url` 不在 MCP host 内等待批准。配对 attempt 从该次申请起至少 24 小时（TTL 默认/下限 86400，到 `expires_at` 才过期）；批准后设备授权默认 **90** 天（`paired_at + device_max_age_days`）。#48 的 v1 手工 trust 仍是显式兼容/恢复路径，不伪装成 approval-bound state。公开 CA 不安装额外根。不新增 MCP 工具，不改变 Claim/Lease 或 token 揭示通道 |
+| D18 | 私有 CA 认领端配对（#63） | 通用认领端不走手工 `trust install`。私有 CA 第一次用 `kaola-mcp pair --url`：客户端高熵一次性密语不经未受信 bootstrap 传输；管理员在受信工作台录入密语并选择 owner；客户端核验批准证明后才原子安装公开根，并以全新严格 TLS + active `whoami` 就绪。`kaola-mcp --url` 不在 MCP host 内等待批准。配对 attempt 从该次申请起至少 24 小时（TTL 默认/下限 86400，到 `expires_at` 才过期）；批准后设备授权默认 **90** 天（`paired_at + device_max_age_days`）。#48 的 v1 手工 trust 仍是显式兼容/恢复路径，不伪装成 approval-bound state。公开 CA 不安装额外根；**不**自动从私有 extra root 迁到公开 CA 并删除本机私有根（[评论 5595770991](https://github.com/KaolaBrother/KaolaTasks/issues/63#issuecomment-5595770991)）。不新增 MCP 工具，不改变 Claim/Lease 或 token 揭示通道 |
 
 ## 3. 角色与核心概念
 
@@ -535,7 +535,7 @@ openssl x509 -in <dev-root-ca.pem> -noout -fingerprint -sha256
 - **根 CA 轮换（v1 操作者路径）**：先带外分发新根的指纹或签名清单；各电脑再跑 `kaola-mcp trust install`（原子替换 PEM + state），重启 MCP；若曾做系统信任则同步替换；再作废旧根。新旧根的私钥都不分发。
 - **根 CA 轮换（v2 已配对客户端）**：走 §16.8 overlap：旧严格 TLS + active device-auth 预取下一公开根；先 old+new overlap，再切 leaf；客户端证明新链后才删旧根。错过 overlap 必须重新管理员批准配对，不做不安全恢复。
 - **电脑退出团队**：管理员解除该设备；本机删除该 origin 的 v2 trust（或 `kaola-mcp trust uninstall`）；若曾做系统信任则再撤系统根。
-- **从 `DEBUG_PRIVATE_CA` 迁到 `STABLE_PUBLIC_CA`**：先证明同 origin / instance / device 的默认系统根严格连接与 active `whoami`，再移除该 origin 的 MCP extra root。不静默卸载系统/浏览器根。只保留 `--url <kaola-origin>`。
+- **从 `DEBUG_PRIVATE_CA` 迁到 `STABLE_PUBLIC_CA`**：#63 不交付 launcher 自动迁移。入口改为公开 CA 后，操作者 `kaola-mcp trust uninstall` 或删除该 origin 的 `$KAOLA_HOME/trust/v2/`；**不得**在默认库 + `whoami` 证明后由 `--url` 自动删私有 extra root（[评论 5595770991](https://github.com/KaolaBrother/KaolaTasks/issues/63#issuecomment-5595770991)）。不静默卸载系统/浏览器根。只保留 `--url <kaola-origin>`。
 
 ### 16.6 验收边界
 
