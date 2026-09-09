@@ -562,6 +562,9 @@ function httpsOnce(input: PairingHttpRequest): Promise<PairingHttpResponse> {
     const req = httpsRequest(
       input.url,
       {
+        // Pairing is low-frequency control traffic: use a one-request Agent, never
+        // leave bootstrap sockets (or handshake listeners) in the global pool.
+        agent: false,
         method: input.method,
         headers,
         rejectUnauthorized: input.mode === 'strict',
@@ -587,7 +590,7 @@ function httpsOnce(input: PairingHttpRequest): Promise<PairingHttpResponse> {
       },
     )
     req.on('socket', (socket) => {
-      socket.on('secureConnect', () => {
+      socket.once('secureConnect', () => {
         if (input.mode !== 'bootstrap') return
         try {
           verifyBootstrapPeer(socket as tls.TLSSocket, parsed.hostname)

@@ -27,6 +27,7 @@ import {
 import {
   PAIRING_REQUIRED_EXIT_CODE,
   classifyTlsFailure,
+  createDefaultPairingTransport,
   inspectV2Trust,
   isBootstrapPathAllowed,
   pairingReceiptPath,
@@ -925,6 +926,50 @@ describe('kaola-mcp pair (#63)', { concurrency: false }, () => {
 })
 
 describe('pairing_required exit contract', () => {
+  test('default transport bounds polling listeners and closes each bootstrap connection before strict handoff', async (t) => {
+    const dir = tmpHome(t)
+    const cert = join(dir, 'localhost.pem')
+    const key = join(dir, 'localhost.key')
+    execFileSync('openssl', [
+      'req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256',
+      '-nodes', '-days', '1', '-keyout', key, '-out', cert, '-subj', '/CN=localhost',
+      '-addext', 'subjectAltName=DNS:localhost',
+    ], { stdio: 'ignore' })
+    let connections = 0
+    const liveSockets = new Set<import('node:tls').TLSSocket>()
+    const server = createHttpsServer({ cert: readFileSync(cert), key: readFileSync(key) }, (req, res) => {
+      req.resume()
+      res.end('{}')
+    })
+    server.on('secureConnection', socket => {
+      connections += 1
+      liveSockets.add(socket)
+      socket.on('close', () => liveSockets.delete(socket))
+    })
+    t.after(() => { server.closeAllConnections(); server.close() })
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    const address = server.address()
+    assert.ok(address != null && typeof address !== 'string')
+    const transport = createDefaultPairingTransport()
+    for (let i = 0; i < 25; i += 1) {
+      const response = await transport.request({
+        url: `https://localhost:${address.port}/api/v1/device-pairings`,
+        method: 'POST', headers: {}, body: Buffer.from('{}'), mode: 'bootstrap',
+      })
+      assert.equal(response.status, 200)
+    }
+    assert.equal(connections, 25, 'bootstrap must not retain a pooled socket and its per-request listeners')
+    await transport.request({
+      url: `https://localhost:${address.port}/api/v1/setup`,
+      method: 'GET', headers: {}, body: Buffer.alloc(0), mode: 'strict', extraCaPem: readFileSync(cert, 'utf8'),
+    })
+    assert.equal(connections, 26, 'strict handoff must use a new connection')
+    for (let i = 0; i < 20 && liveSockets.size > 0; i += 1) {
+      await new Promise(resolve => setTimeout(resolve, 5))
+    }
+    assert.equal(liveSockets.size, 0, 'completed pairing requests leave no retained connection')
+  })
+
   test('typed pairing_required uses exit 2', () => {
     assert.equal(PAIRING_REQUIRED_EXIT_CODE, 2)
   })

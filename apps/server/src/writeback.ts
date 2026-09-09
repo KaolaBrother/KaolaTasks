@@ -25,6 +25,26 @@ const WRITEBACK_TIMEOUT_MS = 30_000
 
 export type WritebackTransition = '认领' | '提交PR' | '完成'
 
+// The response-path writer and the poller must not race the same outbound write.
+// Per-handle scope avoids cross-database task-ID collisions; no token is retained here.
+const inFlightWrites = new WeakMap<AppDb, Map<string, Promise<void>>>()
+
+export function shareInFlightWrite(db: AppDb, key: string, work: () => Promise<void>): Promise<void> {
+  let active = inFlightWrites.get(db)
+  if (active == null) {
+    active = new Map()
+    inFlightWrites.set(db, active)
+  }
+  const existing = active.get(key)
+  if (existing != null) return existing
+  // Schedule only after the map has been populated, including synchronously completing work.
+  const pending = Promise.resolve().then(work).finally(() => {
+    active.delete(key)
+  })
+  active.set(key, pending)
+  return pending
+}
+
 // Same branch as `claimTask`'s credential resolution (claim.ts), except any failure here (vault
 // unconfigured, missing profile, corrupt ciphertext) resolves to `undefined` rather than
 // throwing — there is no HTTP request to fail on this caller's behalf. Shared by the poller's
@@ -194,7 +214,18 @@ function latestWritebackOutcome(
 // failure (a real, status-bearing response) never triggers a listing call, keeping the common-path
 // cost at zero — this is the same path as before this issue, just now driven by the recorded
 // outcome instead of "no event at all means never attempted".
-export async function attemptWriteback(
+export function attemptWriteback(
+  db: AppDb,
+  task: Task,
+  transition: WritebackTransition,
+  actorUserId: number | null,
+  prUrl?: string,
+): Promise<void> {
+  return shareInFlightWrite(db, JSON.stringify([task.publicId, transition, prUrl ?? null]),
+    () => performWriteback(db, task, transition, actorUserId, prUrl))
+}
+
+async function performWriteback(
   db: AppDb,
   task: Task,
   transition: WritebackTransition,

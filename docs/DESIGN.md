@@ -613,6 +613,7 @@ openssl x509 -in <dev-root-ca.pem> -noout -fingerprint -sha256
 - 不设置进程全局 `NODE_TLS_REJECT_UNAUTHORIZED=0`，不提供可复用 `--insecure`
 - bootstrap 上仍校验 hostname/SAN、有效期、证书可解析性
 - 严格重连之前销毁该 agent
+- 配对 transport 每次请求使用一次性连接，不进入 Node 全局 keep-alive 池；请求结束即释放连接及握手监听器，长时间轮询不累积 listener，也不把 bootstrap 连接留给 strict handoff。
 
 公开 CA 默认信任成功时不得安装额外根。
 
@@ -685,6 +686,8 @@ diff 与行级锚点                      「球在谁手里」的任务状态
 | `GET /api/v1/stream` | SSE（§17.5） |
 
 翻 ready 失败不回滚 `待合并`：写失败 outcome（`回写` 事件 `transition: '翻ready'`），`retryPendingWritebacks` 同款重试；成功写 `events` `评审通过`（`details` `{ task_id, round, pr_url, head_sha, head_verified }`，#54）。翻 ready / 摘要评论走服务端解密后出站，从不返回 token。
+
+即时后台回写与轮询重试共享同一服务进程、同一 DB handle 下的在途请求：相同任务、动作和 PR/轮次的并发调用等待同一结果，不重复发出 forge 写请求或成功事件。失败后清除在途项，下一轮仍按原有明确失败重试 / 模糊失败查重规则恢复；不加队列表、不跨网络持 SQLite 事务，不改变已完成一次回写后真实重新认领的既有行为。此为单进程并发去重，不宣称跨进程或宕机 exactly-once。
 
 ### 17.3 Agent 侧（MCP）
 

@@ -36,7 +36,7 @@ import {
 import { publishStreamEvent } from './stream.ts'
 import { selectTask, taskBrief } from './tasks.ts'
 import { insertAuditEvent } from './vault.ts'
-import { decryptTaskToken, trackBackgroundWork } from './writeback.ts'
+import { decryptTaskToken, shareInFlightWrite, trackBackgroundWork } from './writeback.ts'
 
 // Issue #53 (DESIGN.md §17): the in-Kaola review loop. Code facts stay on the forge (Draft PR,
 // commits, diff, merge); rounds, verdicts, blocking items and "who holds the ball" live here.
@@ -1222,7 +1222,12 @@ function isDefiniteFailure(err: unknown): boolean {
   return status >= 400 && status < 500 && !AMBIGUOUS_STATUS_CODES.has(status)
 }
 
-export async function attemptMarkReady(db: AppDb, task: Task, prUrl: string, round: number | null): Promise<void> {
+export function attemptMarkReady(db: AppDb, task: Task, prUrl: string, round: number | null): Promise<void> {
+  return shareInFlightWrite(db, JSON.stringify([task.publicId, MARK_READY_TRANSITION, prUrl, round]),
+    () => performMarkReady(db, task, prUrl, round))
+}
+
+async function performMarkReady(db: AppDb, task: Task, prUrl: string, round: number | null): Promise<void> {
   try {
     const token = decryptTaskToken(db, task)
     if (token == null) throw new Error('markPullRequestReady: no forge credential available for task')

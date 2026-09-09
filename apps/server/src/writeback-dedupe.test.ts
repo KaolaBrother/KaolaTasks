@@ -2,9 +2,10 @@ import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { eq } from 'drizzle-orm'
 import { createDb } from './db.ts'
-import { events, tasks } from './schema.ts'
+import { events, submissions, tasks } from './schema.ts'
 import { encryptToken, insertAuditEvent } from './vault.ts'
 import { attemptWriteback, retryPendingWritebacks } from './writeback.ts'
+import { attemptMarkReady, retryPendingMarkReady } from './review.ts'
 
 // Issue #40. Independent acceptance spec for the single-writer ack-loss race described in the
 // issue: `postComment` fires the comment POST, the forge COMMITS it, but the client never reads
@@ -172,6 +173,92 @@ function requestBodyText(input: unknown, init?: RequestInit): string | undefined
 }
 
 describe('write-back ack-loss dedupe (issue #40)', () => {
+  test('approval and poller share the in-flight Draft-to-ready write and record one success', async (t) => {
+    const db = createDb(':memory:')
+    t.after(() => db.$client.close())
+    const initial = insertImportedTask(db, 'wb-inflight-ready')
+    const task = db.update(tasks).set({ status: '待合并' }).where(eq(tasks.id, initial.id)).returning().get()!
+    const prUrl = `${GITEA_BASE_URL}/${REPO_FULL_NAME}/pulls/1`
+    db.insert(submissions).values({ taskId: task.id, leaseId: 1, prUrl, summary: '', prState: 'open', reviewRound: 1 }).run()
+    insertAuditEvent(db, { type: '评审通过', actorUserId: null, details: { task_id: task.publicId } })
+    let patchCalls = 0
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    t.mock.method(globalThis, 'fetch', async (_input, init) => {
+      if (init?.method === 'PATCH') { patchCalls += 1; await gate }
+      return jsonResponse(200, { title: 'WIP: fixture', state: 'open' })
+    })
+    const first = attemptMarkReady(db, task, prUrl, 1)
+    const retry = retryPendingMarkReady(db)
+    await new Promise(resolve => setImmediate(resolve))
+    release()
+    await Promise.all([first, retry])
+    assert.equal(patchCalls, 1)
+    const successes = db.select().from(events).all().filter(row => {
+      const details = JSON.parse(row.details)
+      return details.task_id === task.publicId && details.transition === '翻ready' && details.ok === true
+    })
+    assert.equal(successes.length, 1)
+    await retryPendingMarkReady(db)
+    assert.equal(patchCalls, 1)
+  })
+
+  test('background writes and the retry sweep share an in-flight POST, then release the guard for recovery', async (t) => {
+    const db = createDb(':memory:')
+    t.after(() => db.$client.close())
+    const task = insertImportedTask(db, 'wb-inflight-0001')
+    seedClaimTransition(db, task.publicId)
+    let postCalls = 0
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    t.mock.method(globalThis, 'fetch', async (_input, init) => {
+      assert.equal(init?.method, 'POST')
+      postCalls += 1
+      await gate
+      return jsonResponse(403, {})
+    })
+    const first = attemptWriteback(db, task, '认领', null)
+    const retry = retryPendingWritebacks(db)
+    const duplicate = attemptWriteback(db, task, '认领', null)
+    await new Promise(resolve => setImmediate(resolve))
+    release()
+    await Promise.all([first, retry, duplicate])
+    assert.equal(postCalls, 1, 'only one POST may be in flight for the same task/transition')
+    await retryPendingWritebacks(db)
+    assert.equal(postCalls, 2, 'failure must release the guard so a later tick can retry')
+  })
+
+  test('concurrent successful writeback records one outcome; unrelated task and database do not block', async (t) => {
+    const db = createDb(':memory:')
+    const otherDb = createDb(':memory:')
+    t.after(() => { db.$client.close(); otherDb.$client.close() })
+    const task = insertImportedTask(db, 'wb-inflight-success')
+    const otherTask = insertImportedTask(db, 'wb-inflight-other')
+    const sameIdOtherDb = insertImportedTask(otherDb, task.publicId)
+    seedClaimTransition(db, task.publicId)
+    let postCalls = 0
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    t.mock.method(globalThis, 'fetch', async () => {
+      postCalls += 1
+      await gate
+      return jsonResponse(201, { id: postCalls })
+    })
+    const all = [
+      attemptWriteback(db, task, '认领', null),
+      retryPendingWritebacks(db),
+      attemptWriteback(db, otherTask, '认领', null),
+      attemptWriteback(otherDb, sameIdOtherDb, '认领', null),
+    ]
+    await new Promise(resolve => setImmediate(resolve))
+    release()
+    await Promise.all(all)
+    assert.equal(postCalls, 3, 'only identical in-flight work is coalesced')
+    assert.equal(successfulClaimWritebacks(db, task.publicId).length, 1)
+    await retryPendingWritebacks(db)
+    assert.equal(postCalls, 3, 'successful outcome prevents later poller retries')
+  })
+
   test('happy path is unchanged: a successful post records exactly one 回写 and posts exactly once, with zero listing calls', async (t) => {
     const db = createDb(':memory:')
     t.after(() => db.$client.close())
