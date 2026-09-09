@@ -8,6 +8,17 @@
 
 ![Kaola Tasks 从真实 Issue 到真实 PR 的自动化协作全流程](kaola-tasks-overview.png)
 
+## 按角色使用这份手册
+
+| 角色 | 能做什么 | 第一次或升级时从哪里开始 |
+|------|----------|--------------------------|
+| 服务器运维 | 维护应用、SQLite、OAuth 配置、TLS 入口和轮询；选择公开 CA 或私有 CA 模式 | 「生产向部署」和「已有服务器升级」 |
+| 管理员 | 初始化实例、管理成员、在「电脑」页批准设备和自主认领、解除设备 | 「登录与权限」「人在浏览器里做什么」以及对应 CA 方案 |
+| 发布者 / 评审者 | 保存 forge 凭证、导入或发布任务、提交评审意见、通过或终止交付，并在 forge 合并 | 「一次任务怎么走完」「人在浏览器里做什么」 |
+| MCP 主机 / Agent | 建立设备身份、列任务、认领、保持租约、提交 Draft PR、读取评审并交回修订 | 「Agent 怎么接单」和「安装与证书信任」 |
+
+服务器只负责路由、状态与授权，不运行 Agent；管理员批准的是某台认领电脑及其 owner，不是在服务器上代 Agent 认领任务。Private CA 的一次性配对密语由认领电脑生成，经受信私密渠道交给管理员，只输入已受信的工作台；不要把它写入 Issue、Task Brief、PR、日志或仓库。
+
 ## 一次任务怎么走完
 
 ```mermaid
@@ -187,6 +198,32 @@ Gitea 回调：`http://localhost:31415/login/gitea/callback`（Scopes 勾 **`rea
 5. 默认承载方式是 `docker compose up -d --build`。库在卷 `/data/kaola.sqlite`。若主机不适合再运行一套容器（例如同机已有其它 Docker 工作负载），使用下面已经过外部 Ubuntu VPS smoke 的 `systemd + Nginx` fallback。两种承载方式共用同一份应用、环境、TLS 和验收合同，不要同时启动占用同一应用端口的两套服务。密钥、主机名、证书、DNS 提供商不要进 git。没有已证明的服务器授权、选定的 `<production-subdomain>` 和 `<acme-dns-provider>` 时，不要在活网上换证。
 6. 成员本机：`kaola-mcp --url ${PUBLIC_URL}`，保持严格 TLS。HTTPS 时先按下一节「安装与证书信任」选对证书模式再绑定（`STABLE_PUBLIC_CA` 不装额外 CA；`DEBUG_PRIVATE_CA` 先 `kaola-mcp pair --url ${PUBLIC_URL}`，仅本机桥进程）。管理员在「电脑」页用配对密语绑定设备。同机默认每分钟轮询完结任务。空库只许向导；之后 GitLab / Gitea 登录成为发布者。
 
+#### 已有服务器升级
+
+如果现有服务器的 HTTPS 入口和 CA 模式不变，先备份 SQLite、`.env`、leaf/key 和上一版应用，再更新代码、重新构建并重启；数据库结构会在应用启动时幂等升级，不手工改 SQLite，也不清空数据：
+
+```bash
+# Docker Compose
+git pull --ff-only
+docker compose up -d --build
+
+# systemd（在已更新的发布目录中）
+pnpm install --frozen-lockfile
+pnpm build
+sudo systemctl restart kaola-tasks
+```
+
+证书或反代配置没有变化时不必 reload Nginx；有变化时先 `nginx -t`，通过后再 reload。两种 CA 模式的服务端差异如下：
+
+| 模式 | 服务端升级配置 | 客户端与授权 |
+|------|----------------|--------------|
+| `STABLE_PUBLIC_CA` | 保留 ACME DNS-01 取得并自动续期的公开 fullchain；不要设置 `KAOLA_PAIRING_MODE=private_ca` 或私有根路径 | 客户端直接使用 `kaola-mcp --url ${PUBLIC_URL}`；出现待授权设备后，管理员到「电脑 → 待授权电脑」选择 owner 并绑定 |
+| `DEBUG_PRIVATE_CA` | 在服务环境加入 `KAOLA_PAIRING_MODE=private_ca`、`KAOLA_PUBLIC_ROOT_CA_PATH=<public-root.pem>`；`PUBLIC_URL` 必须是 HTTPS 且被当前 leaf SAN 覆盖。应用无法从自身探测该入口时才补 `KAOLA_PUBLIC_LEAF_CHAIN_PATH=<leaf-fullchain.pem>`。公开根文件不得包含根私钥 | 每台新认领电脑运行 `kaola-mcp pair --url ${PUBLIC_URL}`；管理员到「电脑 → 待授权电脑」找到对应配对申请，输入配对密语，选择 owner 后点「绑定」（或点「绑到我自己」） |
+
+`DEBUG_PRIVATE_CA` 还要求服务进程实际使用 OpenSSL 3.x；`KAOLA_PAIRING_TTL_SECONDS` 可不设置，默认配对窗口为 86400 秒。根 CA 私钥始终留在隔离签发端，不复制到应用服务器或认领电脑。批准后客户端会自动完成严格 TLS、active `whoami` 和 v2 信任落地，无需手工 `trust install` 或重启 MCP。
+
+升级后至少确认：原 SQLite 中的任务仍可见；浏览器能经 `${PUBLIC_URL}` 登录；公开 CA 客户端由系统默认根完成严格 TLS，或私有 CA 的一台新电脑能完成 `pair → 工作台批准 → active whoami`；随后 `kaola-mcp --url ${PUBLIC_URL}` 能初始化并调用 `list_tasks`。失败时恢复升级前备份，不用 `--insecure`、`curl -k` 或关闭 TLS 校验换取连通。
+
 #### Fallback：Ubuntu + systemd + Nginx（已实测）
 
 这条路径是外部 `DEBUG_PRIVATE_CA` 完整 smoke 使用的服务器承载方式。它替代上面的 Compose 启动步骤，但不替代客户端证书信任、OAuth、设备绑定或 Claim 验收。下文只用固定产品端口和部署占位符；真实入口仍只放在未跟踪的 operator 配置。
@@ -323,13 +360,16 @@ Cookie / `trustProxy` / webhook 配置见 [docs/api.md](docs/api.md)。
 
 为什么每台电脑都要配对：开发根不在操作系统默认库里。只在一台机器上完成过，其它电脑照样 TLS 失败。
 
+这里的“配对密语”不是长期设备私钥或 forge token。它由认领电脑临时生成；初始 bootstrap 请求只提交 commitment，不发送密语原文。Agent 把一次性密语通过受信私密渠道交给管理员，管理员只在已受信的 Kaola Tasks 工作台中输入。管理员无需 SSH 登录服务器。
+
 认领者默认路径（[#63](https://github.com/KaolaBrother/KaolaTasks/issues/63) / DESIGN §16.8）：
 
 ```text
 安装 kaola-mcp
   -> kaola-mcp pair --url <kaola-origin>
   -> 本机生成 device key + 一次性配对密语并等待
-  -> 管理员在「电脑」页选择 owner、输入配对密语、授权
+  -> 管理员在「电脑 → 待授权电脑」找到对应配对申请
+  -> 输入配对密语，选择 owner 后点「绑定」（或点「绑到我自己」）
   -> 客户端验证批准证明、自动安装公开根、全新严格 TLS + active whoami
   -> ready，再用原来的 kaola-mcp --url 配置 list_tasks / claim_task
 ```
