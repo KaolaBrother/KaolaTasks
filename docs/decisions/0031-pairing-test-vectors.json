@@ -1,0 +1,164 @@
+{
+  "comment": "Issue #63 / ADR 0031 frozen oracles. Synthetic only: example.test origin, sequential nonces, no live host, no PEM, no private key. Implementation tests MUST import this file and MUST NOT re-derive a different transcript encoding.",
+  "encoding": {
+    "transcript_fields_in_order": [
+      "protocol_version",
+      "pairing_id",
+      "instance_id",
+      "origin",
+      "device_fingerprint",
+      "client_nonce",
+      "server_nonce",
+      "root_ca_sha256",
+      "expires_at"
+    ],
+    "approval_fields_in_order": [
+      "protocol_version",
+      "pairing_id",
+      "instance_id",
+      "origin",
+      "device_fingerprint",
+      "root_ca_sha256",
+      "owner_kind",
+      "owner_id",
+      "approved_at",
+      "expires_at"
+    ],
+    "field": "uint32be(length) || bytes",
+    "max_field_length": 65536,
+    "utf8_fields": [
+      "protocol_version",
+      "pairing_id",
+      "instance_id",
+      "origin",
+      "device_fingerprint",
+      "expires_at",
+      "owner_kind",
+      "owner_id",
+      "approved_at"
+    ],
+    "raw_32_byte_fields": ["client_nonce", "server_nonce", "root_ca_sha256"],
+    "commitment": "HMAC-SHA256(pairing_secret, SHA-256(transcript))",
+    "hkdf": {
+      "hash": "sha256",
+      "ikm": "pairing_secret",
+      "salt": "SHA-256(transcript)",
+      "info_utf8": "kaola-pairing-approval-v1",
+      "length": 32
+    },
+    "proof": "HMAC-SHA256(pairing_key, SHA-256(approval_transcript))",
+    "root_ca_sha256": "SHA-256 of the single certificate DER, not PEM text",
+    "device_fingerprint": "SHA-256 of Ed25519 SPKI DER as 64 lowercase hex, UTF-8 in the transcript",
+    "origin": "WHATWG URL origin: protocol + '//' + host, trailing slash stripped; same string hashed by apps/mcp originDigest",
+    "unix_seconds": "decimal ASCII with no sign and no leading zeros; zero is the single character 0",
+    "pairing_secret_wire": "16+ bytes; admin bind accepts lowercase hex with optional dashes/spaces/colons"
+  },
+  "vectors": [
+    {
+      "vector_id": "kaola-pairing-v1-primary",
+      "protocol_version": "kaola-pairing/1",
+      "pairing_id": "kpr_000102030405060708090a0b0c0d0e0f",
+      "instance_id": "01234567-89ab-4def-8123-456789abcdef",
+      "origin": "https://kaola.example.test",
+      "origin_digest_sha256": "b4a0acc93c0d428147e2d997df8a033370269bec5bdf0cc9db1de2e1d5432f38",
+      "device_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "client_nonce_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "server_nonce_hex": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+      "root_ca_sha256_hex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+      "expires_at": 1893456000,
+      "pairing_secret_hex": "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+      "pairing_secret_display": "a0a1-a2a3-a4a5-a6a7-a8a9-aaab-acad-aeaf",
+      "transcript_hex": "0000000f6b616f6c612d70616972696e672f31000000246b70725f30303031303230333034303530363037303830393061306230633064306530660000002430313233343536372d383961622d346465662d383132332d3435363738396162636465660000001a68747470733a2f2f6b616f6c612e6578616d706c652e74657374000000406161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616100000020000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f00000020202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000020404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f0000000a31383933343536303030",
+      "transcript_sha256_hex": "4c7be1e17c27516284f89548e1d3be49f8d033ef7261e687f9f1bb79331f05a4",
+      "commitment_hex": "f8c42144f580a4a2d86e46526f973abd181919c260dbba31374c04f5277bbc2d",
+      "hkdf": {
+        "hash": "sha256",
+        "salt": "SHA-256(transcript)",
+        "info": "kaola-pairing-approval-v1",
+        "length": 32,
+        "pairing_key_hex": "be3ffd5db6cb8dc2331c03d545763962d5fa8ad6844f2d824a6feeed41e80205"
+      },
+      "approval": {
+        "protocol_version": "kaola-pairing-approval/1",
+        "owner_kind": "claimant",
+        "owner_id": "7",
+        "approved_at": 1700000000,
+        "transcript_hex": "000000186b616f6c612d70616972696e672d617070726f76616c2f31000000246b70725f30303031303230333034303530363037303830393061306230633064306530660000002430313233343536372d383961622d346465662d383132332d3435363738396162636465660000001a68747470733a2f2f6b616f6c612e6578616d706c652e74657374000000406161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616100000020404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f00000008636c61696d616e7400000001370000000a313730303030303030300000000a31383933343536303030",
+        "transcript_sha256_hex": "a7c9f2a90c5f7a521c0c5db87b5f4ef7a970efbe792314434024cc33e1e37e45",
+        "proof_hex": "48d3f85269f8940c3e9235c068a47b03859149803b5fb50dc61532e229b5f095"
+      },
+      "bind_to_self_approval": {
+        "owner_kind": "user",
+        "owner_id": "3",
+        "transcript_hex": "000000186b616f6c612d70616972696e672d617070726f76616c2f31000000246b70725f30303031303230333034303530363037303830393061306230633064306530660000002430313233343536372d383961622d346465662d383132332d3435363738396162636465660000001a68747470733a2f2f6b616f6c612e6578616d706c652e74657374000000406161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616100000020404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f000000047573657200000001330000000a313730303030303030300000000a31383933343536303030",
+        "transcript_sha256_hex": "a7cac767b8e47688cd203666b68e19ad6f07b7914e27eed02d24b8003855fa99",
+        "proof_hex": "3c28f040355ea8817a714f805c038095ea2d988f2e593a096d5cb590e31855c4"
+      },
+      "negative": {
+        "wrong_secret_commitment_hex": "8631842029e02ba83524eb34034618b34a3077a314f3a48caeb05661221b42f9",
+        "expiry_mutated_approval_proof_hex": "647498df33d11b12e9ec93d31408c56c315c2f254e9cec67ac13c4b73f9ad065",
+        "field_substitution_commitment_hex": {
+          "protocol_version": "8ba07742596bee47a0904d472705d90375cddd9416bda962a719128655eeabc6",
+          "pairing_id": "1d6109e5a8b399af9ac9d7a4237760ddd91d0022f488bb274e03545e68c1f68e",
+          "instance_id": "28d1ad4e1846dccf9d2b70b82dffc1b4d8b04e1bbd6aed079830385fc54b75cc",
+          "origin": "82a32540ccf0c5eddd7b6816e27fcb631c7d452c7760372293353e354093232d",
+          "device_fingerprint": "4c3120ce665c16037c9d69e7d9f88d88dd5c28fb6e219f9d5e9000731ebc9a2b",
+          "client_nonce": "482abd065d6fa88b9b3bbc00684263405f85a7f611974ba466b944e71b6ded88",
+          "server_nonce": "1b6024068618e5f57d1615991d8e7f1131aa00b18b0dbb85458e702bef1ba268",
+          "root_ca_sha256": "53791b70d4d7a3b5d41311261138eb69c07d5dc7f4ae66e0513b1c0512276121",
+          "expires_at": "58939de6d48a2346a94eeeef1cdd06efb9725c5e7269ae5771c5bb560fc8195e"
+        }
+      }
+    }
+  ],
+  "fail_closed_assertions": [
+    {
+      "id": "wrong_secret",
+      "expect": "bind rejects; devices.status stays pending; no approval proof; no v2 trust write"
+    },
+    {
+      "id": "field_substitution",
+      "expect": "any one-byte XOR of a transcript field yields the listed commitment, never the primary commitment; client and server fail closed"
+    },
+    {
+      "id": "root_substitution",
+      "expect": "proof bound to a different root_ca_sha256 must not install that PEM"
+    },
+    {
+      "id": "instance_or_origin_mismatch",
+      "expect": "descriptor or proof that disagrees with --url / PUBLIC_URL origin or persisted instance_id must not write ready trust"
+    },
+    {
+      "id": "device_mismatch",
+      "expect": "proof for another device fingerprint must not activate this device.json"
+    },
+    {
+      "id": "expired_attempt",
+      "expect": "status expired; bind 409 pairing_expired; no ready trust"
+    },
+    {
+      "id": "replay_approval",
+      "expect": "consumed pairing does not re-issue proof; a second device cannot consume it"
+    },
+    {
+      "id": "non_admin_bind",
+      "expect": "publisher session 403 forbidden; pending remains pending"
+    },
+    {
+      "id": "bootstrap_cannot_claim",
+      "expect": "pairing REST never lists tasks, never returns forge token, never reaches /api/mcp"
+    },
+    {
+      "id": "hostname_mismatch_no_bootstrap",
+      "expect": "ERR_TLS_CERT_ALTNAME_INVALID and expired/not-yet-valid certs do not enter bootstrap"
+    },
+    {
+      "id": "public_ca_no_extra_root",
+      "expect": "default-store success must not install a private root"
+    },
+    {
+      "id": "v1_not_v2",
+      "expect": "legacy $KAOLA_HOME/trust/state.json v:1 is never rewritten as v2 and never claims approval-bound pairing"
+    }
+  ]
+}

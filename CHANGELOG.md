@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `#63` 冻结管理员批准绑定的私有 CA 自动配对合同（DESIGN v0.8 §16.8 / ADR 0031 + test vectors）。认领端 `kaola-mcp pair --url`、密语不经 bootstrap、批准证明绑定 instance/origin/device/root/nonces/owner/expiry、原子公开根与全新严格 TLS + active whoami 才 ready；`kaola-mcp --url` 保持严格非交互。产品行为、README 用户路径、schema/REST/Web/launcher 尚未改，本条只是设计冻结。
+
 - `#60` 修复 `/login` 备用向导／登录表单返回 415：仅 setup/login 接受 urlencoded，成功建立会话后 303 回工作台，JSON 201/200 不变；跨 origin 表单返回 403。补齐 GitLab/Gitea 真实 OAuth、macOS/Linux 设备、评审循环与 restack 的综合 UAT 记录；Web 单次异步提示波动另见 #61。
 
 - 冒烟 Path C 合并后等待进程内「完成」回写落地再断言 `回写` 事件（`settleWritebacks` + `retryPendingWritebacks`）。2s poller 与脚本第二路 sqlite 竞态时，forge 评论可能已在、事件行尚未写入。仅 harness。
