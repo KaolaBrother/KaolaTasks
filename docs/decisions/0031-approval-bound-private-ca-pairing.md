@@ -431,6 +431,7 @@ Enter bootstrap only for:
 - `UNABLE_TO_GET_ISSUER_CERT_LOCALLY`
 - `SELF_SIGNED_CERT_IN_CHAIN`
 - `DEPTH_ZERO_SELF_SIGNED_CERT`
+- `UNABLE_TO_VERIFY_LEAF_SIGNATURE` (Node/OpenSSL wording for an unknown-issuer leaf; "unable to verify the first certificate")
 
 Fail closed, no bootstrap, for at least:
 

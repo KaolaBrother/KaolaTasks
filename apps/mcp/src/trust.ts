@@ -647,18 +647,28 @@ export function forbiddenLauncherArgv(argv: readonly string[]): string | null {
   return null
 }
 
-export function resolveLauncherTrust(env: NodeJS.ProcessEnv): LauncherTrust {
+export function resolveLauncherTrust(
+  env: NodeJS.ProcessEnv,
+  options?: { extraCaPemPath?: string },
+): LauncherTrust {
   if (callerDisabledTlsVerification(env)) {
     return {
       ok: false,
       message: 'NODE_TLS_REJECT_UNAUTHORIZED=0/false is not a success path',
     }
   }
-  const inspected = inspectInstalledTrust(resolveKaolaHome(env))
   const callerExtra = env.NODE_EXTRA_CA_CERTS
   const hasCallerExtra = typeof callerExtra === 'string' && callerExtra.trim().length > 0
   const next: NodeJS.ProcessEnv = { ...env }
   delete next.NODE_EXTRA_CA_CERTS
+
+  const v2Path = typeof options?.extraCaPemPath === 'string' ? options.extraCaPemPath.trim() : ''
+  if (v2Path.length > 0) {
+    next.NODE_EXTRA_CA_CERTS = v2Path
+    return { ok: true, env: next }
+  }
+
+  const inspected = inspectInstalledTrust(resolveKaolaHome(env))
 
   if (!inspected.present) {
     if (hasCallerExtra) {

@@ -31,9 +31,18 @@ import { resolveCarrierIntent, runnerSessionLocator, type CarrierIntent } from '
 import {
   forbiddenLauncherArgv,
   readVerifiedExtraCaPem,
+  resolveKaolaHome,
   resolveLauncherTrust,
   runTrustCli,
 } from './trust.ts'
+import {
+  extraCaPemForOrigin,
+  inspectV2Trust,
+  PAIRING_REQUIRED_EXIT_CODE,
+  pairingRequiredMessage,
+  probeHttpsOrigin,
+  runPairCli,
+} from './pair.ts'
 
 const DEFAULT_ORIGIN = 'http://localhost:31415'
 const MCP_PATH = '/api/mcp'
@@ -980,16 +989,61 @@ if (isDirectRun()) {
       process.stderr.write(`${message}\n`)
       process.exit(1)
     }
+  } else if (argv[0] === 'pair') {
+    runPairCli(argv.slice(1), process.env)
+      .then((code) => {
+        process.exit(code)
+      })
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : 'kaola-mcp pair failed'
+        process.stderr.write(`${message}\n`)
+        process.exit(1)
+      })
   } else {
-    const resolved = resolveLauncherTrust(process.env)
+    const url = resolveKaolaUrl(argv, process.env)
+    const home = resolveKaolaHome(process.env)
+    const v2 = url.startsWith('https:')
+      ? inspectV2Trust(home, url)
+      : ({ present: false, ready: false } as const)
+    if (v2.present && !v2.ready) {
+      process.stderr.write(`${v2.message}\n`)
+      process.exit(1)
+    }
+    const extraCaPemPath = v2.present && v2.ready ? v2.pemPath : undefined
+    const resolved = resolveLauncherTrust(process.env, { extraCaPemPath })
     if (!resolved.ok) {
       process.stderr.write(`${resolved.message}\n`)
       process.exit(1)
     }
-    runStdioBridge(argv, resolved.env).catch((err: unknown) => {
-      const message = err instanceof Error ? err.message : 'kaola-mcp failed'
-      process.stderr.write(`${message}\n`)
-      process.exit(1)
-    })
+    const launch = (): void => {
+      runStdioBridge(argv, resolved.env).catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : 'kaola-mcp failed'
+        process.stderr.write(`${message}\n`)
+        process.exit(1)
+      })
+    }
+    if (!url.startsWith('https:')) {
+      launch()
+    } else {
+      const extraPem = extraCaPemForOrigin(home, url)
+      probeHttpsOrigin(url, extraPem)
+        .then((probe) => {
+          if (probe.ok) {
+            launch()
+            return
+          }
+          if (probe.class === 'unknown_issuer' && extraPem == null) {
+            process.stderr.write(`${pairingRequiredMessage(url)}\n`)
+            process.exit(PAIRING_REQUIRED_EXIT_CODE)
+          }
+          process.stderr.write(`${probe.message}\n`)
+          process.exit(1)
+        })
+        .catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : 'kaola-mcp failed'
+          process.stderr.write(`${message}\n`)
+          process.exit(1)
+        })
+    }
   }
 }
