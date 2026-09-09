@@ -2,7 +2,7 @@ import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
 import { X509Certificate } from 'node:crypto'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import Database from 'better-sqlite3'
@@ -69,6 +69,8 @@ function restoreEnv(t) {
     next: process.env.KAOLA_NEXT_PUBLIC_ROOT_CA_PATH,
     leaf: process.env.KAOLA_PUBLIC_LEAF_CHAIN_PATH,
     publicUrl: process.env.PUBLIC_URL,
+    sslCertDir: process.env.SSL_CERT_DIR,
+    sslCertFile: process.env.SSL_CERT_FILE,
   }
   t.after(() => {
     if (saved.mode == null) delete process.env.KAOLA_PAIRING_MODE
@@ -83,6 +85,10 @@ function restoreEnv(t) {
     else process.env.KAOLA_PUBLIC_LEAF_CHAIN_PATH = saved.leaf
     if (saved.publicUrl == null) delete process.env.PUBLIC_URL
     else process.env.PUBLIC_URL = saved.publicUrl
+    if (saved.sslCertDir == null) delete process.env.SSL_CERT_DIR
+    else process.env.SSL_CERT_DIR = saved.sslCertDir
+    if (saved.sslCertFile == null) delete process.env.SSL_CERT_FILE
+    else process.env.SSL_CERT_FILE = saved.sslCertFile
   })
 }
 
@@ -176,12 +182,67 @@ function mintTestRoot(t, hostnameOrOpts = 'localhost') {
     'ext',
   ]
   if (opts.notBefore != null && opts.notAfter != null) {
-    signArgs.push('-not_before', opts.notBefore, '-not_after', opts.notAfter)
+    const caDir = join(dir, 'demoCA')
+    mkdirSync(join(caDir, 'newcerts'), { recursive: true })
+    writeFileSync(join(caDir, 'index.txt'), '')
+    writeFileSync(join(caDir, 'serial'), '01\n')
+    const caCnf = join(dir, 'ca.cnf')
+    writeFileSync(
+      caCnf,
+      [
+        '[ca]',
+        'default_ca = CA_default',
+        '[CA_default]',
+        `database = ${join(caDir, 'index.txt')}`,
+        `serial = ${join(caDir, 'serial')}`,
+        `new_certs_dir = ${join(caDir, 'newcerts')}`,
+        `certificate = ${pem}`,
+        `private_key = ${key}`,
+        'default_md = sha256',
+        'policy = policy_any',
+        'x509_extensions = ext',
+        'copy_extensions = copy',
+        'unique_subject = no',
+        '[policy_any]',
+        'commonName = supplied',
+        '',
+      ].join('\n'),
+    )
+    execFileSync('openssl', [
+      'ca',
+      '-batch',
+      '-config',
+      caCnf,
+      '-in',
+      leafCsr,
+      '-out',
+      leafPem,
+      '-startdate',
+      opts.notBefore,
+      '-enddate',
+      opts.notAfter,
+      '-extfile',
+      cnf,
+      '-extensions',
+      'ext',
+    ])
   } else {
     signArgs.push('-days', String(opts.days ?? 1))
+    execFileSync('openssl', signArgs)
   }
-  execFileSync('openssl', signArgs)
   return { pem, leaf: leafPem, key: leafKey, dir }
+}
+
+function writeHashedCaPath(t, pemPath) {
+  const dir = mkdtempSync(join(tmpdir(), 'kaola-capath-'))
+  t.after(() => {
+    rmSync(dir, { recursive: true, force: true })
+  })
+  const hash = execFileSync('openssl', ['x509', '-in', pemPath, '-noout', '-subject_hash'], {
+    encoding: 'utf8',
+  }).trim()
+  writeFileSync(join(dir, `${hash}.0`), readFileSync(pemPath))
+  return dir
 }
 
 function writeCorruptedSignatureLeaf(src, dest) {
@@ -890,6 +951,36 @@ describe('issue #63 approval-bound private-CA pairing', { concurrency: false }, 
     const db = createDb()
     t.after(() => db.$client.close())
     assert.throws(() => loadPairingConfig(db), /KAOLA_PUBLIC_LEAF_CHAIN_PATH/)
+  })
+
+  test('configured root does not accept a leaf that only verifies via default CApath', (t) => {
+    restoreEnv(t)
+    const configured = mintTestRoot(t)
+    const actual = mintTestRoot(t)
+    process.env.SSL_CERT_DIR = writeHashedCaPath(t, actual.pem)
+    delete process.env.SSL_CERT_FILE
+    process.env.KAOLA_PAIRING_MODE = 'private_ca'
+    process.env.KAOLA_PUBLIC_ROOT_CA_PATH = configured.pem
+    process.env.KAOLA_PUBLIC_LEAF_CHAIN_PATH = actual.leaf
+    const db = createDb()
+    t.after(() => db.$client.close())
+    assert.throws(() => loadPairingConfig(db), /does not verify/)
+  })
+
+  test('https origin probe ignores a signer that is only in the default CApath', async (t) => {
+    restoreEnv(t)
+    const configured = mintTestRoot(t)
+    const actual = mintTestRoot(t)
+    const { port } = await spawnTlsOrigin(t, { keyPath: actual.key, certPath: actual.leaf })
+    process.env.SSL_CERT_DIR = writeHashedCaPath(t, actual.pem)
+    delete process.env.SSL_CERT_FILE
+    process.env.KAOLA_PAIRING_MODE = 'private_ca'
+    process.env.KAOLA_PUBLIC_ROOT_CA_PATH = configured.pem
+    delete process.env.KAOLA_PUBLIC_LEAF_CHAIN_PATH
+    process.env.PUBLIC_URL = `https://localhost:${port}`
+    const db = createDb()
+    t.after(() => db.$client.close())
+    assert.throws(() => loadPairingConfig(db), /does not root PUBLIC_URL/)
   })
 
   test('leaf with matching issuer but corrupted signature fails closed at boot', (t) => {

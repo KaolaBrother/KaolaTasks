@@ -635,7 +635,7 @@ openssl x509 -in <dev-root-ca.pem> -noout -fingerprint -sha256
 | `POST /api/v1/devices/:id/bind` | 有 pairing 行的设备额外要求 `pairing_id` + `pairing_secret`；仍 exactly-one owner；错密语 `403 pairing_secret_invalid`（8 次后拒绝该 attempt）；无 pairing 行的遗留 pending 保持原 bind body。已 active 且存在 live `created`/`committed` pairing 时为 repair：校验密语后只写 approval，不改 owner / `expires_at`；未批准不得装新根 |
 | `POST /api/v1/device-trust/next-root` | 严格 TLS + **active** 设备；overlap 期间返回下一公开根 |
 
-`KAOLA_PAIRING_MODE` 非 `private_ca` 时 pairing REST 为 `404 pairing_mode_disabled`。`private_ca` 启动时配置根须以完整链核验（签名、有效期、用途、路径约束）加上 DNS 或 IP 身份对准 `PUBLIC_URL`；线上探测用 `verify_hostname` / `verify_ip`，SNI 不能替代。Bootstrap 设备仍是 pending，不能 list/claim。bind 成功不自动 claim，不揭示 forge token。`GET /api/v1/devices/pending` 可带 `pairing_id` / `pairing_expires_at` / `requires_pairing_secret`，不含密语/commitment/proof/PEM。
+`KAOLA_PAIRING_MODE` 非 `private_ca` 时 pairing REST 为 `404 pairing_mode_disabled`。`private_ca` 启动时配置根须以完整链核验（签名、有效期、用途、路径约束）加上 DNS 或 IP 身份对准 `PUBLIC_URL`；线上探测用 `verify_hostname` / `verify_ip`，SNI 不能替代。两条 OpenSSL 路径都只信配置根：`-CAfile` 同时关闭默认 `-CApath` / `-CAstore`，默认库里的无关根不能替代。Bootstrap 设备仍是 pending，不能 list/claim。bind 成功不自动 claim，不揭示 forge token。`GET /api/v1/devices/pending` 可带 `pairing_id` / `pairing_expires_at` / `requires_pairing_secret`，不含密语/commitment/proof/PEM。
 
 **本机状态**
 

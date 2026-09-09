@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `#63` 独立复核 [5596887868](https://github.com/KaolaBrother/KaolaTasks/issues/63#issuecomment-5596887868)：OpenSSL 校验只信配置根（`-CAfile` 加 `-no-CApath`/`-no-CAstore`）；过期 leaf fixture 改用 OpenSSL 3.0 可移植的 `openssl ca -startdate/-enddate`。不改写 `e50f761` 检查点。
 - `#63` 独立复核 [5596509483](https://github.com/KaolaBrother/KaolaTasks/issues/63#issuecomment-5596509483)：启动核验改为完整链（签名/有效期/用途）与 DNS 或 IP 身份；线上探测使用 `verify_hostname`/`verify_ip`，SNI 不能替代。合法 IP SAN 不再被 `checkHost` 误拒。不改写 `f1e0a8c` 检查点。
 - `#63` 独立审查 [5596014744](https://github.com/KaolaBrother/KaolaTasks/issues/63#issuecomment-5596014744) 合同修复：批准后同一 receipt 可恢复；错过 overlap 可再 pair；启动核验配置根与 origin/leaf；默认 TLS 探测隔离 `NODE_EXTRA_CA_CERTS`；v2 替换保留 `.previous`。不改写历史检查点。
 - `#63` 按 [评论 5595967717](https://github.com/KaolaBrother/KaolaTasks/issues/63#issuecomment-5595967717) 恢复公开 CA 迁移：默认库 + 匹配 `whoami` 后删除该 origin digest 的 v2 extra root（不删 `device.json` / v1）。不改写 `5a4f1e1` 移除检查点。

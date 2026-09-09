@@ -207,7 +207,9 @@ When `KAOLA_PAIRING_MODE=private_ca`, boot fails closed unless:
    purpose; plus DNS `verify_hostname` or IP `verify_ip` matching `PUBLIC_URL` (bracketed
    IPv6 is normalized). SNI (`-servername`) is not identity verification. Either a TLS probe
    of `PUBLIC_URL` using **only** that extra root, or `KAOLA_PUBLIC_LEAF_CHAIN_PATH` verifies
-   to that root with a SAN covering the `PUBLIC_URL` DNS name or IP.
+   to that root with a SAN covering the `PUBLIC_URL` DNS name or IP. Both OpenSSL paths pass
+   `-CAfile` together with `-no-CApath` and `-no-CAstore` so a signer that is only in the
+   default CApath/CAstore cannot substitute for the configured root.
 
 Root private keys stay on the issuing host. The app never loads them.
 

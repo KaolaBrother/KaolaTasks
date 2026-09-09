@@ -142,6 +142,10 @@ function certMatchesPeer(
   return cert.checkHost(identity.value) != null
 }
 
+function opensslTrustOnlyConfiguredRoot(rootPath: string): string[] {
+  return ['-CAfile', rootPath, '-no-CApath', '-no-CAstore']
+}
+
 function opensslConnectTarget(hostname: string, port: string): string {
   return isIP(hostname) === 6 ? `[${hostname}]:${port}` : `${hostname}:${port}`
 }
@@ -168,7 +172,7 @@ function verifyLeafChainToRoot(leafPemText: string, rootPath: string, origin: st
   try {
     const leafFile = join(dir, 'leaf.pem')
     writeFileSync(leafFile, `${leaf.toString()}\n`)
-    const args = ['verify', '-CAfile', rootPath, '-purpose', 'sslserver']
+    const args = ['verify', ...opensslTrustOnlyConfiguredRoot(rootPath), '-purpose', 'sslserver']
     if (intermediates.length > 0) {
       const untrusted = join(dir, 'untrusted.pem')
       writeFileSync(untrusted, `${intermediates.map((cert) => cert.toString()).join('\n')}\n`)
@@ -191,8 +195,7 @@ function probeOriginWithOnlyRoot(origin: string, rootPath: string): void {
     's_client',
     '-connect',
     opensslConnectTarget(hostname, port),
-    '-CAfile',
-    rootPath,
+    ...opensslTrustOnlyConfiguredRoot(rootPath),
     '-verify_return_error',
     '-no_ign_eof',
   ]
