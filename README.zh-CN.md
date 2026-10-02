@@ -1,0 +1,487 @@
+# 考拉任务
+
+**[English](README.md) | [简体中文](README.zh-CN.md)**
+
+团队内部的中文任务板：**人发任务，Agent 接单，PR 交付**。
+
+成员把编码任务发到看板上（手工填写，或从 GitHub / GitLab / Gitea 的 Issue 导入），并附上该仓库的访问令牌。同事的 Agent（Cursor、Claude Code 等任意 MCP 客户端）认领任务后，用揭示出的令牌直接在原仓库上改代码、开 PR。考拉跟踪状态直到 PR 合并。
+
+考拉**只做路由与协调**：不跑 Agent、不托管代码、不做沙箱。Agent 跑在各自主人的电脑上，代码仍在你们现有的 forge 上。
+
+![Kaola Tasks 从真实 Issue 到真实 PR 的自动化协作全流程](kaola-tasks-overview.png)
+
+## 按角色使用这份手册
+
+| 角色 | 能做什么 | 第一次或升级时从哪里开始 |
+|------|----------|--------------------------|
+| 服务器运维 | 维护应用、SQLite、OAuth 配置、TLS 入口和轮询；选择公开 CA 或私有 CA 模式 | 「生产向部署」和「已有服务器升级」 |
+| 管理员 | 初始化实例、管理成员、在「电脑」页批准设备和自主认领、解除设备 | 「登录与权限」「人在浏览器里做什么」以及对应 CA 方案 |
+| 发布者 / 评审者 | 保存 forge 凭证、导入或发布任务、提交评审意见、通过或终止交付，并在 forge 合并 | 「一次任务怎么走完」「人在浏览器里做什么」 |
+| MCP 主机 / Agent | 建立设备身份、列任务、认领、保持租约、提交 Draft PR、读取评审并交回修订 | 「Agent 怎么接单」和「安装与证书信任」 |
+
+服务器只负责路由、状态与授权，不运行 Agent；管理员批准的是某台认领电脑及其 owner，不是在服务器上代 Agent 认领任务。Private CA 的一次性配对密语由认领电脑生成，经受信私密渠道交给管理员，只输入已受信的工作台；不要把它写入 Issue、Task Brief、PR、日志或仓库。
+
+## 一次任务怎么走完
+
+```mermaid
+sequenceDiagram
+    participant P as 发布者
+    participant K as 考拉任务
+    participant A as 认领者的 Agent
+    participant F as GitHub / GitLab / Gitea
+    P->>K: 发布任务（附仓库令牌）
+    A->>K: claim_task
+    K-->>A: 任务说明 + 仓库令牌
+    A->>F: clone / 实现 / 推分支 / 开 Draft PR
+    A->>K: submit_pr
+    P->>K: 评审面板：多轮意见 / 提交本轮意见
+    K-->>A: 待修改（任意 Agent 认领修订）
+    A->>K: get_review_feedback / submit_revision
+    P->>K: 通过
+    K->>F: Draft 翻 ready
+    P->>F: 合并
+    F-->>K: 轮询或 webhook
+    K->>K: 任务变为已完成
+```
+
+1. 空库先走**初始向导**（用户名/密码）创建本地管理员。之后用本地密码登录，或用 GitLab / Gitea 登录成为发布者。没有 GitHub 登录按钮。
+2. 保存一份仓库凭证，填好任务后点「发布」。发布时会校验令牌能否读、推、开 PR。
+3. 认领者本机跑 `kaola-mcp --url http://localhost:31415`（或 `KAOLA_URL`）。不要把 token 写进 mcp.json。公网 `https://…` 入口先看「安装与证书信任」，不要为了连上而关闭 TLS。
+4. 管理员在工作台 **电脑** 页把 **待授权电脑** 绑到自己或 **认领者**。已绑定后 `claim_task` 才拿到该任务的可复用仓库凭证（并非按次铸造的一次性令牌）；Claim 租约默认 TTL 24 小时，到期只收回考拉侧的认领锁定，不吊销 forge 侧凭证本身。
+5. Agent 实现、推分支、开 **Draft PR**（GitHub draft / GitLab `Draft:` / Gitea `WIP:`），再 `submit_pr`。任务变为「待验收」——球在评审者手里。
+6. 你在考拉的任务详情「评审」面板里写意见（阻塞 / 建议 / 提问，可贴 forge 的代码链接当锚点），攒够后点「提交本轮意见」：含阻塞项就转「待修改」，任何 Agent 都可以 `claim_task` 认领它做修订，先 `get_review_feedback` 再在同一 PR 上推新提交，改完 `submit_revision` 交回「待验收」。没有阻塞项就只记一轮不翻状态。
+7. 你点「通过」，任务变为「待合并」，考拉在后台用任务凭证把 Draft 翻成 ready；失败会重试，不回滚任务状态。确认 forge 上已 ready 后由你合并（考拉不 approve、不 merge）。考拉默认每分钟看一次 PR；也可以配 webhook。「撤回通过」回到「待修改」，「终止本次交付」直接「已退回」。
+8. 任务变为「已完成」。从 Issue 导入的会在源 Issue 上留一条状态评论。看板与评审面板经 SSE 实时刷新，不用手动刷。
+
+大 Issue 可以拆成有先后顺序的子任务：发布向导里选「拆为子任务」指定父任务。父任务提交 PR 后子任务才能认领，子任务的基线分支就是父 PR 的分支（堆叠）；父任务合并后考拉自动给子任务追加一轮 `restack` 意见，由处理子任务的 Agent 按 Review Brief 的新基线 rebase；只有「待验收」的子任务会自动转「待修改」，其它非终态只追加意见。子任务的「通过」要等父任务「已完成」；父任务被退回或取消时只通知子任务，由发布者决定后续处理。
+
+「已退回」任务可以重新开放为「待认领」，开始新一轮交付：新建 PR 后用 `submit_pr`，旧交付留作历史。仍在当前交付中的修订继续使用同一 PR 和 `submit_revision`。
+
+页面上没有「认领」按钮。认领只通过 Agent。认领者不必在目标仓库有账号——任务所附令牌就是访问权。
+
+## 登录与权限
+
+封闭加入：空库（无可登录管理员）**只许设置向导**（`POST /api/v1/setup`），OAuth 不得抢权。向导创建 `provider: 'local'`、`permission_level: 'admin'`。已有管理员之后，GitLab / Gitea 登录一律建 `active` + `full` 发布者（管理员可 `POST /api/v1/users/:id/promote` 升级）。`GET /login/github` 为 404。`KAOLA_ADMINS` 若仍设置则**忽略**，不作为邀请名单。`POST /api/v1/users/:id/approve` 已退役（404）。
+
+| | 空库 / 零可登录管理员 | 已有管理员之后 |
+|--|--|--|
+| 进工作台 | 仅设置向导创建本地管理员 | 本地密码，或 GitLab / Gitea OAuth（发布者） |
+| 发任务 / 凭证档案 | 管理员可发 | 管理员或发布者（`admin` 或 `full`） |
+| 电脑绑定 / 升级 / 待确认认领 | 仅管理员 | 仅 `admin`；发布者不能绑电脑 |
+| 认领 | 电脑绑到该管理员或 **认领者** 后，由 Agent 认领 | 认领者不自助铸 Agent Key |
+
+任务状态：待认领 → 进行中 → 待验收 → 待合并 → 已完成；评审需修改时进入待修改，再由 Agent 认领修订、交回待验收。PR 关闭或终止交付进入已退回（可重新开放）；待认领／已退回可取消。
+
+备用 `/login` 页面也支持本地密码登录与空库向导：表单成功后返回工作台。浏览器回调与表单使用 `PUBLIC_URL` 的 origin，开发时保持为 `http://localhost:31415`。
+
+## 人在浏览器里做什么
+
+打开 **http://localhost:31415**（开发时请用 `localhost`，不要用 `127.0.0.1`，否则登录 cookie 对不上）。工作台是四栏：**看板 / 发布 / 电脑 / 审计**（窄屏下导航改成横排）。
+
+**发布者（GitLab / Gitea）**
+
+1. 登录后进入工作台（头栏显示「发布者」）。
+2. 在「发布」栏保存凭证档案（forge + 仓库地址 + 仓库全名），或在单条任务里临时贴令牌。
+3. 「发布」栏：自有任务填标题和说明；从 Issue 导入则点「导入」。共享档案会带出仓库，导入时从下拉选 Issue；一次性 token 仍手填仓库。分支和目录在「高级」里。
+4. 「看板」看进度；自己发的任务可「取消」或把已退回的「重新开放」。
+5. 「审计」看日志和团队统计。
+
+推荐的仓库令牌（尽量限定单个仓库）：GitHub fine-grained PAT；GitLab Project Access Token（Developer，`api` + `write_repository`）；Gitea 仓库级 token。需要能读仓库、推分支、开 PR。
+
+**认领者**
+
+认领者不是 Web 自助账号，不铸 Agent Key。管理员在 **电脑** 页把 **待授权电脑** 绑到自己（**绑到我自己**）或绑到命名 **认领者**。
+
+若 Agent **自己轮询**去认领，管理员的「电脑」栏可能出现「待确认认领」；批准后才会拿到令牌。你口头让 Agent 去认领时，已绑定即授权。「受信自动化」打开后不再排队确认。
+
+## Agent 怎么接单
+
+对来自外部 forge Issue、随任务携带该 Issue 凭证的任务，`claim_task` 成功后，当前 Agent **必须直接启动或续跑 Kaola Workflow**，以 `source.issue_url` 为目标；首次交付完成后必须调用 `submit_pr`。只有用户明确要求时才使用 Kaola Project Runner 承载 Workflow。没有随附 forge Issue 的原生任务不在这一约定范围内，不能直接为其启动 Workflow，考拉也不会自动补建 Issue。详见 [Workflow 执行指引](docs/workflow-default.md) 与 [Runner 承载指引](docs/runner-carrier.md)。
+
+Claim 后持续用 `report_progress` 保持租约。请求结果不确定时，复用同一个 `request_id` 恢复 Claim；一旦已有 PR，就复用该 PR 前向恢复，不因响应丢失再开一个 PR。修订 Claim 先读取 `get_review_feedback`，把 Review Brief 作为本轮工作输入，完成后用 `submit_revision` 交回。
+
+本机跑 `kaola-mcp --url http://localhost:31415`（或 `KAOLA_URL`；生产用 `${PUBLIC_URL}`）。桥代签；MCP 配置里不要放 forge token、设备私钥、`ktk_` 或根私钥。换任务不改配置，再调 `claim_task`。未绑定的电脑不能列出或认领，先在工作台「电脑」页绑定。`--url` 为 `https://…` 时保持严格 TLS（运行时默认信任库），不要设 `NODE_TLS_REJECT_UNAUTHORIZED=0`。按下面「安装与证书信任」选择公开 CA 或私有 CA 路径：`STABLE_PUBLIC_CA` 不装额外 CA，也不要把 `NODE_EXTRA_CA_CERTS` 写进 MCP 配置；`DEBUG_PRIVATE_CA` 认领端默认 `kaola-mcp pair --url ${PUBLIC_URL}`，管理员在「电脑」页输入配对密语后自动落地公开根。HTTPS 尚未配对时 `--url` 打印 `pairing_required` 并退出码 `2`。`kaola-mcp trust install` 仍是 #48 显式兼容/恢复路径。调用方环境里的 `NODE_EXTRA_CA_CERTS` 不是信任源。
+
+```json
+{
+  "mcpServers": {
+    "kaola-tasks": {
+      "command": "kaola-mcp",
+      "args": ["--url", "http://localhost:31415"]
+    }
+  }
+}
+```
+
+| 工具 | 做什么 |
+|------|--------|
+| `list_tasks` | 列出任务（无 token）；`status=待认领` 是新任务，`status=待修改` 是等人认领的修订；每张卡带 `parent_task_id`、`review_round` |
+| `get_task_brief` | 看一条任务的完整说明（无 token） |
+| `claim_task` | 认领。人指定任务时不要带 `autonomous`；可选 `request_id` 让重试幂等（同一 `(设备, request_id)` 重放拿回同一个 Claim）。成功才拿到**该任务**的仓库令牌，租约里的 `claim_id` 之后心跳/释放/提交都要带上。自主轮询才设 `autonomous: true` |
+| `report_progress` | 心跳，可选备注、`percent`（0–100）、`phase`（看板实时显示）；带过 `request_id` 的新式 Claim 必须带 `claim_id` |
+| `release_task` | 放弃，任务回到待认领（已有 PR 的回到待修改）；同上 `claim_id` 规则，重复释放同一 Claim 是幂等的 |
+| `submit_pr` | 首次交付：forge 上已有 **Draft** PR/MR 后再交 URL（可带 `head_sha`、`head_branch`；webhook 模式要供子任务堆叠时应传 `head_branch`）；同上 `claim_id` 规则，重复提交同一 Claim + 同一 URL 是幂等的。任务已有 PR 时回 `use_submit_revision` |
+| `get_review_feedback` | 读 Review Brief：本轮判定、阻塞项（带锚点、是否已解决）、非阻塞项、全部对话、`head_sha`、`base_branch`（restack 轮是新基线）。只读，不需要 Claim |
+| `post_discussion_message` | 持有活动 Claim 时在讨论里回答（`answer`）、提问、备注，或 `resolution` + `resolves` 标记某条阻塞项已处理 |
+| `submit_revision` | 修订交回：同一 PR 上推了新提交后交新 `head_sha`（必须与上一轮不同）和摘要，任务回「待验收」，租约释放。评审者「通过」前核对 forge 报告的 PR 头（见下文边界），已知不一致会拒绝；交回后不要再推未申报的提交 |
+| `open_review_round` | 在子任务的 Claim 上给父任务开一轮意见；父任务在「待验收」时会被打回「待修改」 |
+
+用返回的 `clone` 去克隆：按 `extra_header` 带令牌，不要把 token 写进 remote URL。首次提交用 MCP 的 `submit_pr`，同一交付的后续修订用 `submit_revision`。协议细节见 [docs/api.md](docs/api.md)。
+
+### 评审「通过」核对的是哪次提交
+
+「通过」前，考拉读取 forge 的 PR 头并与 Agent 交回的 `head_sha` 比较。已知不一致时返回 `409 head_sha_stale`，任务不翻状态。评审者应写阻塞意见并「提交本轮意见」，让 Agent 重新认领、交回新头；没有一键采纳未申报提交的入口。
+
+这不是无条件的实时保证：forge 不可达时，考拉改用最近观察值；已知不一致仍拒绝，否则允许通过，并在响应及审计事件中标记 `head_verified: false`。GitLab 的 MR 头可能比实际 push 晚数秒更新，核对依据是 forge 报告值。轮询发现变化后，评审面板显示「forge 头已变化」；webhook 模式不轮询，仍会在「通过」时核对。完整规则见 [DESIGN §17.7](docs/DESIGN.md#177-评审锚定核对54)。
+
+## 本机跑起来
+
+需要 Node.js ≥ 22 和 pnpm `11.19.0`。
+
+启用 Private CA 自动配对的服务端还需要 `openssl` 命令为 **OpenSSL 3.x**（macOS 自带 LibreSSL 不满足此要求）。macOS 使用已安装的 OpenSSL 3 时，将其 `bin` 放在当前服务/测试进程的 `PATH` 前端；Linux Bookworm 镜像提供 OpenSSL 3。用 `openssl version` 核对，不能靠关闭证书校验绕过依赖。
+
+```bash
+pnpm install
+```
+
+进程启动时下列变量必须非空（GitHub 客户端仍要占位，即使没有 GitHub 登录）：
+
+- `SESSION_SECRET`
+- `OAUTH_GITHUB_CLIENT_ID` / `OAUTH_GITHUB_CLIENT_SECRET`（`registerAuth` 仍 `requireEnv`；登录不用 GitHub OAuth 应用）
+- `OAUTH_GITLAB_CLIENT_ID` / `OAUTH_GITLAB_CLIENT_SECRET` / `OAUTH_GITLAB_BASE_URL`
+- `OAUTH_GITEA_CLIENT_ID` / `OAUTH_GITEA_CLIENT_SECRET` / `OAUTH_GITEA_BASE_URL`
+
+发任务或保存凭证还需要 `VAULT_MASTER_KEY`：64 位十六进制（32 字节）。缺了会在保存凭证时报错，进程仍能起来。
+
+`KAOLA_ADMINS` 若设置则**忽略**。可选 `KAOLA_HOME` 覆盖设备目录（默认 `~/.kaola`）。
+
+建议一并设置：
+
+| 变量 | 建议 |
+|------|------|
+| `PUBLIC_URL` | `http://localhost:31415`（OAuth 回调按这个拼） |
+| `SQLITE_PATH` | 某个 `.sqlite` 文件。默认是内存库，重启就丢 |
+| `POLL_INTERVAL_MS` | 默认 `60000`。`<= 0` 关闭 PR 轮询 |
+
+仓库不读取 `.env` 文件：把变量 `export` 进当前 shell，或用你自己的方式注入后再执行：
+
+```bash
+pnpm dev
+```
+
+浏览器打开 **http://localhost:31415**。这会同时起 Fastify（默认端口 31415）和本机 Vite（`127.0.0.1:5173`，只给代理用）。
+
+### 配一个登录用的 OAuth 应用
+
+以 GitLab.com 为例（界面是英文）：
+
+1. 打开 <https://gitlab.com/-/user_settings/applications>
+2. **Add new application**
+3. **Name**：任意，例如 `Kaola Tasks local`
+4. **Redirect URI**（必须一字不差）：`http://localhost:31415/login/gitlab/callback`
+5. Scopes 只勾 **`read_user`**
+6. **Save application**，把 **Application ID** / **Secret** 赋给上面的 GitLab 环境变量
+
+Gitea 回调：`http://localhost:31415/login/gitea/callback`（Scopes 勾 **`read:user`**）  
+自托管 GitLab / Gitea 把 `OAUTH_*_BASE_URL` 改成实例根地址即可。没有 GitHub 登录（`GET /login/github` 为 404）；GitHub OAuth 应用对登录是可选的，但 `OAUTH_GITHUB_CLIENT_ID` / `OAUTH_GITHUB_CLIENT_SECRET` 启动时仍必须非空，可填 `unused`。
+
+本机只测 GitLab 登录时，Gitea 的 Client ID 可填 `unused`，不要去点那个按钮。
+
+### 生产向部署
+
+内网跑考拉和本地 GitLab / Gitea；公网 IP（或主机名）当入口。不要把云开发机当生产。本机开发仍用上一节。
+
+浏览器 / `kaola-mcp` → 公网 TLS 反代 `<https-port>` → `127.0.0.1:31415`（不要假设入站 80；HTTP-01 在动态名 + 无 80 时不可行）
+
+1. 复制 `.env.example` 为 `.env`，填密钥和 `PUBLIC_URL`（团队浏览器打开的地址，不带尾斜杠）。`DEBUG_PRIVATE_CA` 用 `https://<public-host>:<https-port>`；`STABLE_PUBLIC_CA` 优先 `https://<production-subdomain>`。真实值只进 gitignore 的 `.env`、操作者配置或用户本机 MCP 配置，不得写进仓库。OAuth 回调、`kaola-mcp --url`、回写链接都跟它。
+2. OAuth Redirect URI：`${PUBLIC_URL}/login/gitlab/callback`（Gitea 同形）。可与 localhost 回调并存。`OAUTH_*_BASE_URL` 填服务器访问 forge 的**内网**地址。不要配 GitHub 登录回调（该路径 404）。
+3. 反代转到 `127.0.0.1:31415`，不要把 31415 放到公网。HTTPS 时用对外 scheme **覆盖** `X-Forwarded-Proto`。
+4. 证书按 [DESIGN §12](docs/DESIGN.md) 双模式：`DEBUG_PRIVATE_CA` 用受控开发根 CA 签发 **SAN 含 `<public-host>`** 的 leaf；认领端默认 `kaola-mcp pair --url ${PUBLIC_URL}`，管理员批准后客户端自动安装**公开根 CA 证书（不含私钥）**，launcher 只给本机桥注入额外 CA；这只证明已登记测试机，不是干净机器公网信任。`kaola-mcp trust install` 是操作者显式兼容/恢复路径。`STABLE_PUBLIC_CA` 用 ACME **DNS-01**（`<acme-dns-provider>` API；无 API 时手工 DNS-01 仅临时；可选 `_acme-challenge` CNAME 委派）在 `<https-port>` 上发送 fullchain，自动续期，配置测试后再 reload。CN-only 自签名 leaf 不是交付物。禁止 `NODE_TLS_REJECT_UNAUTHORIZED=0` 与把 `curl -k` 当验收。
+5. 默认承载方式是 `docker compose up -d --build`。库在卷 `/data/kaola.sqlite`。若主机不适合再运行一套容器（例如同机已有其它 Docker 工作负载），使用下面已经过外部 Ubuntu VPS smoke 的 `systemd + Nginx` fallback。两种承载方式共用同一份应用、环境、TLS 和验收合同，不要同时启动占用同一应用端口的两套服务。密钥、主机名、证书、DNS 提供商不要进 git。没有已证明的服务器授权、选定的 `<production-subdomain>` 和 `<acme-dns-provider>` 时，不要在活网上换证。
+6. 成员本机：`kaola-mcp --url ${PUBLIC_URL}`，保持严格 TLS。HTTPS 时先按下一节「安装与证书信任」选对证书模式再绑定（`STABLE_PUBLIC_CA` 不装额外 CA；`DEBUG_PRIVATE_CA` 先 `kaola-mcp pair --url ${PUBLIC_URL}`，仅本机桥进程）。管理员在「电脑」页用配对密语绑定设备。同机默认每分钟轮询完结任务。空库只许向导；之后 GitLab / Gitea 登录成为发布者。
+
+#### 已有服务器升级
+
+如果现有服务器的 HTTPS 入口和 CA 模式不变，先备份 SQLite、`.env`、leaf/key 和上一版应用，再更新代码、重新构建并重启；数据库结构会在应用启动时幂等升级，不手工改 SQLite，也不清空数据：
+
+为保留现有登录、设备授权、活动 Claim、任务/评审记录和已加密的 forge 凭证，普通升级必须保持以下身份材料不变：
+
+- 继续挂载原 `SQLITE_PATH` 或 Compose 的 `kaola-data` 卷；禁止 `docker compose down -v`、删除卷、换成空库或把 `SQLITE_PATH` 留空变成内存库。
+- 保持原 `VAULT_MASTER_KEY`；更换它会使库中已有 forge 凭证无法解密。保持原 `SESSION_SECRET` 可避免现有浏览器会话失效。
+- 保持 `${PUBLIC_URL}` 的 scheme、hostname 和 port，以及原实例 SQLite 中的 `instance_id`。改变 origin 会被客户端视为另一套服务，不能冒充普通升级。
+- 保持当前 CA/root 与 leaf 链。需要换 root、域名或入口时，按后文「卸载、轮换、退出团队、迁到公开 CA」执行，不与普通应用升级同时偷换。
+
+```bash
+# Docker Compose
+git pull --ff-only
+docker compose up -d --build
+
+# systemd（在已更新的发布目录中）
+pnpm install --frozen-lockfile
+pnpm build
+sudo systemctl restart kaola-tasks
+```
+
+证书或反代配置没有变化时不必 reload Nginx；有变化时先 `nginx -t`，通过后再 reload。两种 CA 模式的服务端差异如下：
+
+| 模式 | 服务端升级配置 | 客户端与授权 |
+|------|----------------|--------------|
+| `STABLE_PUBLIC_CA` | 保留 ACME DNS-01 取得并自动续期的公开 fullchain；不要设置 `KAOLA_PAIRING_MODE=private_ca` 或私有根路径 | 客户端直接使用 `kaola-mcp --url ${PUBLIC_URL}`；出现待授权设备后，管理员到「电脑 → 待授权电脑」选择 owner 并绑定 |
+| `DEBUG_PRIVATE_CA` | 在服务环境加入 `KAOLA_PAIRING_MODE=private_ca`、`KAOLA_PUBLIC_ROOT_CA_PATH=<public-root.pem>`；`PUBLIC_URL` 必须是 HTTPS 且被当前 leaf SAN 覆盖。应用无法从自身探测该入口时才补 `KAOLA_PUBLIC_LEAF_CHAIN_PATH=<leaf-fullchain.pem>`。公开根文件不得包含根私钥 | 每台新认领电脑运行 `kaola-mcp pair --url ${PUBLIC_URL}`；管理员到「电脑 → 待授权电脑」找到对应配对申请，输入配对密语，选择 owner 后点「绑定」（或点「绑到我自己」） |
+
+`DEBUG_PRIVATE_CA` 还要求服务进程实际使用 OpenSSL 3.x；`KAOLA_PAIRING_TTL_SECONDS` 可不设置，默认配对窗口为 86400 秒。根 CA 私钥始终留在隔离签发端，不复制到应用服务器或认领电脑。批准后，正在等待（或随后恢复）的 `pair` CLI 会自动完成严格 TLS、active `whoami` 和 v2 信任落地，无需手工 `trust install` 或为了安装根证书额外重启；此前因 `pairing_required` 退出的普通 MCP 连接仍须由 MCP 宿主重新启动或重连。
+
+满足上述保持条件时，启动迁移保留已有数据和策略，不重写既有设备到期时间；活动 Claim/lease 仍在原 SQLite 中。重启期间 MCP 连接和 poller 暂停，服务恢复后客户端用原设备身份、v2 信任、`claim_id` 和本机 receipt 重连并继续，不需要重新配对或重新认领。服务重启本身不轮换、吊销或重新揭示 forge token。
+
+升级后至少确认：原 SQLite 中的任务仍可见；浏览器能经 `${PUBLIC_URL}` 登录；公开 CA 客户端由系统默认根完成严格 TLS，或私有 CA 的一台新电脑能完成 `pair → 工作台批准 → active whoami`；随后 `kaola-mcp --url ${PUBLIC_URL}` 能初始化并调用 `list_tasks`。失败时恢复升级前备份，不用 `--insecure`、`curl -k` 或关闭 TLS 校验换取连通。
+
+#### Fallback：Ubuntu + systemd + Nginx（已实测）
+
+这条路径是外部 `DEBUG_PRIVATE_CA` 完整 smoke 使用的服务器承载方式。它替代上面的 Compose 启动步骤，但不替代客户端证书信任、OAuth、设备绑定或 Claim 验收。下文只用固定产品端口和部署占位符；真实入口仍只放在未跟踪的 operator 配置。
+
+服务器准备 Node.js 22+、pnpm 和 Nginx。创建不可登录的服务用户，把当前发布字节放到 `/opt/kaola-tasks`，把 SQLite 放到单独可写目录：
+
+```bash
+sudo useradd --system --home /var/lib/kaola-tasks --shell /usr/sbin/nologin kaola
+sudo install -d -o kaola -g kaola -m 0750 /opt/kaola-tasks
+sudo install -d -o kaola -g kaola -m 0750 /var/lib/kaola-tasks
+sudo install -d -o root -g root -m 0750 /etc/kaola-tasks/certs
+```
+
+如果 `kaola` 已存在，不要重复创建。由操作者把仓库字节复制或拉取到 `/opt/kaola-tasks`；`.env` 来自仓库外的 secret/operator 材料，安装后只让服务用户可读。然后以服务用户安装和构建：
+
+```bash
+sudo install -o kaola -g kaola -m 0600 <operator-env-file> /opt/kaola-tasks/.env
+sudo -u kaola -H sh -lc 'cd /opt/kaola-tasks && pnpm install --frozen-lockfile && pnpm build'
+```
+
+`DEBUG_PRIVATE_CA` 的根私钥始终留在签发端，**不得复制到 VPS**。服务器只安装该根签发的 SAN leaf 和 leaf 私钥；SAN 是主机名时用 `DNS:<public-host>`，入口是 IP 时用 `IP:<public-ip>`，不要只写 CN：
+
+```bash
+sudo install -o root -g root -m 0644 <leaf-cert.pem> /etc/kaola-tasks/certs/leaf.pem
+sudo install -o root -g root -m 0600 <leaf-key.pem> /etc/kaola-tasks/certs/leaf.key
+```
+
+安装 `/etc/systemd/system/kaola-tasks.service`。先用 `command -v node` 核对本机 Node 绝对路径，再替换示例中的 `/usr/local/bin/node`：
+
+```ini
+[Unit]
+Description=Kaola Tasks
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kaola
+Group=kaola
+WorkingDirectory=/opt/kaola-tasks
+EnvironmentFile=/opt/kaola-tasks/.env
+Environment=PORT=31415
+Environment=HOST=127.0.0.1
+Environment=SQLITE_PATH=/var/lib/kaola-tasks/kaola.sqlite
+Environment=WEB_DIST=/opt/kaola-tasks/apps/web/dist
+Environment=POLL_INTERVAL_MS=60000
+ExecStart=/usr/local/bin/node --experimental-strip-types /opt/kaola-tasks/apps/server/src/index.ts
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/kaola-tasks
+
+[Install]
+WantedBy=multi-user.target
+```
+
+启用应用前先检查 unit；应用必须只监听 loopback：
+
+```bash
+sudo systemd-analyze verify /etc/systemd/system/kaola-tasks.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now kaola-tasks
+sudo systemctl is-active kaola-tasks
+curl --fail --silent --show-error http://127.0.0.1:31415/login >/dev/null
+```
+
+在 Debian/Ubuntu 的 `/etc/nginx/sites-available/kaola-tasks` 安装 TLS 反代，再链接到 `sites-enabled`。`X-Forwarded-Proto` 必须由反代覆盖为 `https`：
+
+```nginx
+server {
+    listen <https-port> ssl;
+    listen [::]:<https-port> ssl;
+    server_name <public-host>;
+
+    ssl_certificate /etc/kaola-tasks/certs/leaf.pem;
+    ssl_certificate_key /etc/kaola-tasks/certs/leaf.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    client_max_body_size 2m;
+
+    location / {
+        proxy_pass http://127.0.0.1:31415;
+        proxy_http_version 1.1;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-Host $http_host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Connection "";
+        proxy_read_timeout 75s;
+    }
+}
+```
+
+首次启用或每次换证都必须先检查 Nginx 配置，通过后才 reload。云安全组/防火墙只开放 `<https-port>`，不要开放 31415：
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+sudo systemctl is-active nginx kaola-tasks
+```
+
+服务器承载通过后，继续执行下一节的严格 TLS 负例、`kaola-mcp pair --url`（或操作者恢复路径的带外根指纹核验 / `kaola-mcp trust install`）、显式系统/浏览器信任、设备 pending/绑定和绑定后 MCP。应用或证书更新前保留上一版应用字节、`.env`、leaf/key 和 SQLite 备份；失败时恢复上一版，分别运行 `systemctl restart kaola-tasks` 和 `nginx -t` 后 reload。不要重启、清理或接管同机无关的 Docker/systemd 工作负载。
+
+Cookie / `trustProxy` / webhook 配置见 [docs/api.md](docs/api.md)。
+
+## 安装与证书信任
+
+公网 HTTPS 入口只有两种模式。**先问管理员当前入口属于哪一种**，再选对应安装路径。模式写在未跟踪的本地运维配置里，不要根据第一次 TLS 报错去下载服务器给出的 CA。
+
+| 模式 | 何时用 | 本机要做什么 |
+|------|--------|--------------|
+| `STABLE_PUBLIC_CA` | 叶子由公开 CA 签发，操作系统默认根证书库就能验证 | 只装 MCP、只配 `--url`。不装额外 CA，不设 `NODE_EXTRA_CA_CERTS` |
+| `DEBUG_PRIVATE_CA` | 入口由受控开发根 CA 签发；默认根证书库不含该根 | **每台纳管电脑**跑一次 `kaola-mcp pair --url`；认领者不手工处理 PEM / 指纹 |
+
+真实域名、服务器名、端口、证书指纹、DNS 提供商和本机路径不得写入本仓库。下文只用占位符：`<kaola-origin>`、`<dev-root-ca.pem>`、`<sha256-fingerprint>`。根私钥永远只留在签发端。
+
+产品合同见 [docs/DESIGN.md](docs/DESIGN.md) §16 / §16.7 / §16.8。服务端怎么签发、续期公网证书由 [#46](https://github.com/KaolaBrother/KaolaTasks/issues/46) 拥有，本节不复制。`kaola-mcp pair` 与 `kaola-mcp trust` 都是 package bin 子命令，不是新的 MCP 工具。系统/浏览器装证仍要操作者自己提权。
+
+### 方案 1：公开 CA（默认，干净电脑）
+
+为什么不需要安装证书：操作系统已经内置公开 CA 的根。再装私有根只会扩大信任面。
+
+1. 安装 `kaola-mcp`。
+2. 配置 `kaola-mcp --url <kaola-origin>`（或 `KAOLA_URL`）。`PUBLIC_URL` 与这个 origin 一致。
+3. 不要设置 `NODE_EXTRA_CA_CERTS`，不要 `NODE_TLS_REJECT_UNAUTHORIZED=0`，不要 `--insecure`，不要 `curl -k`，不要点浏览器证书例外。
+4. 若本机 MCP 配置或进程环境还留着 `NODE_EXTRA_CA_CERTS`，或系统信任库还留着测试私有根，说明还没从测试模式迁完，先按下面「卸载、轮换、迁移」清掉再连。
+
+浏览器 OAuth、MCP `authorization_required`、管理员绑定、绑定后 `list_tasks` 都走系统默认信任链。入口从私有 CA 迁到公开 CA 后，已配对客户端会在默认库能验证同一 origin 且 `whoami` 匹配后自动删除该 origin 的 v2 extra root。
+
+### 方案 2：私有 CA（测试，每台电脑都要配对）
+
+为什么每台电脑都要配对：开发根不在操作系统默认库里。只在一台机器上完成过，其它电脑照样 TLS 失败。
+
+这里的“配对密语”不是长期设备私钥或 forge token。它由认领电脑临时生成；初始 bootstrap 请求只提交 commitment，不发送密语原文。Agent 把一次性密语通过受信私密渠道交给管理员，管理员只在已受信的 Kaola Tasks 工作台中输入。管理员无需 SSH 登录服务器。
+
+管理员绑定不会向 MCP 推送“开始任务”命令，也不会自动认领任务。绑定后，`pair` CLI 只负责完成批准证明校验、v2 信任落地和 active `whoami`；它成功退出后，MCP 宿主启动或重连原来的 `kaola-mcp --url <kaola-origin>`，Agent 才通过 `list_tasks`、`get_task_brief` 和 `claim_task` 自己选择并认领任务。若等待中的 `pair` 进程已中断，重跑同一条 `pair --url` 会用本机未过期 receipt 恢复原申请。
+
+认领者默认路径（[#63](https://github.com/KaolaBrother/KaolaTasks/issues/63) / DESIGN §16.8）：
+
+```text
+安装 kaola-mcp
+  -> kaola-mcp pair --url <kaola-origin>
+  -> 本机生成 device key + 一次性配对密语并等待
+  -> 管理员在「电脑 → 待授权电脑」找到对应配对申请
+  -> 输入配对密语，选择 owner 后点「绑定」（或点「绑到我自己」）
+  -> 客户端验证批准证明、自动安装公开根、全新严格 TLS + active whoami
+  -> pair 成功退出；MCP 宿主启动或重连原来的 kaola-mcp --url
+  -> Agent 调用 list_tasks / get_task_brief / claim_task，不自动接单
+```
+
+认领者不接触 PEM、证书指纹、`NODE_EXTRA_CA_CERTS` 或重启。`kaola-mcp --url` 保持严格、非交互；HTTPS 尚未配对时打印 `pairing_required` 并退出码 `2`，提示同一条 `pair --url` 命令。`--cancel` 只删本机回执，不撤销服务端申请。
+
+然后用原来的配置启动桥（仓库示例仍只有 `command` + `--url`，不要把 `NODE_EXTRA_CA_CERTS`、PEM、指纹或私钥写进 mcp.json）：
+
+```json
+{
+  "mcpServers": {
+    "kaola-tasks": {
+      "command": "kaola-mcp",
+      "args": ["--url", "<kaola-origin>"]
+    }
+  }
+}
+```
+
+`kaola-mcp --url` 只从本机已核验的 v2（或遗留 v1）state 给桥子进程注入额外 CA。调用方环境里的 `NODE_EXTRA_CA_CERTS` 不是信任源；公开 CA 模式下若仍设置它，launcher 会拒绝启动。禁止 `NODE_TLS_REJECT_UNAUTHORIZED=0`。
+
+#### 操作者恢复路径（#48 `trust install`，不是认领默认）
+
+`kaola-mcp trust install` 仍是显式兼容/恢复路径，不得把 v1 `state.json` 写成批准绑定的 v2。先从带外材料拿到同一份公开根证书 PEM（`<dev-root-ca.pem>`）和它的 SHA-256（`<sha256-fingerprint>`）。**不要**用第一次连 `<kaola-origin>` 时服务器返回的 CA 当信任锚。
+
+```bash
+openssl x509 -in <dev-root-ca.pem> -noout -fingerprint -sha256
+kaola-mcp trust install --pem <dev-root-ca.pem> --fingerprint <sha256-fingerprint>
+```
+
+或用发布者签名清单（PEM 的 DER 上的 Ed25519）。清单里的 `publicKeySpki` 与签名在同一文件，不是产品内置公钥钉：只有整份清单来自安装包或其它已认证带外渠道时才代表该渠道身份，任意自带密钥的 JSON 不能当独立信任锚。否则请用上面的 `--fingerprint`。
+
+```bash
+kaola-mcp trust install --pem <dev-root-ca.pem> --manifest <trust-manifest.json>
+```
+
+v1 `trust install` 之后必须**重启 MCP 客户端**。`pair` 本身在进程内完成安装与严格重连，认领者不必再跑 `trust install`。
+
+查看状态 / 打印系统提权命令（只打印，不执行）。`system-plan` 只有本机信任已核验 ready 时才输出提权命令；未安装或 PEM 被替换时失败且不打印 `security` / `certutil` / `update-ca-certificates` / `trust anchor`。
+
+```bash
+kaola-mcp trust status
+kaola-mcp trust system-plan
+```
+
+Linux 必须显式传 `--platform linux-debian` 或 `--platform linux-fedora`，不要把两套命令混用。
+
+#### 需要浏览器 / OAuth / 管理员绑定的电脑
+
+进程级 extra CA 不够。还要显式把同一份已核验公开根装进操作系统（或浏览器）信任库。这是第二次授权，涉及提权时不得静默：
+
+- macOS：系统钥匙串 / `security add-trusted-cert`（需管理员认证）
+- Windows：本机受信任根 / `certutil -addstore Root`（需 UAC）
+- Linux：发行版各异。Debian/Ubuntu 用 `update-ca-certificates`；Fedora/RHEL 用 `trust anchor`。二者不要混用。需 root。
+
+未完成系统信任时，浏览器 / OAuth 必须失败。点证书例外不算通过。
+
+### 卸载、轮换、退出团队、迁到公开 CA
+
+- **核验**：`kaola-mcp trust status`，或用上面恢复路径的 `openssl` 命令对照带外指纹。不一致就停止连接。
+- **卸载 MCP 额外 CA**：`kaola-mcp trust uninstall` 卸 v1；v2 可在公开 CA 证明后由 launcher 自动删除该 origin digest 目录，或由操作者删除 `$KAOLA_HOME/trust/v2/`。不要删 `device.json` / Claim receipts。卸载后公开 CA 路径不得再注入额外 CA；调用方若仍设置 `NODE_EXTRA_CA_CERTS`，launcher 必须拒绝。
+- **卸载系统/浏览器信任**：按各 OS 提权命令手工删除该根；卸载 MCP 信任不会同时撤系统信任。Pair / launcher 从不静默装/卸系统根。
+- **根 CA 轮换（已配对 v2）**：服务端 overlap 期间，已配对客户端用旧严格 TLS + 活跃设备证明 `POST /api/v1/device-trust/next-root`，原子写入 old+new；切 leaf 并证明新链后才丢旧根。错过 overlap 再跑 `kaola-mcp pair`，不做不安全恢复。v1 操作者路径仍是带外分发新根指纹或清单后 `kaola-mcp trust install` 并重启 MCP。新旧根的私钥都不分发。
+- **电脑退出团队**：管理员解除该设备；本机卸 extra CA；若曾做系统信任则再撤系统根。
+- **迁到 `STABLE_PUBLIC_CA`**：入口改为公开 CA 链之后，已配对客户端在默认库 + 匹配 `whoami` 后删除该 origin 的 v2 extra root，只保留 `--url <kaola-origin>`。系统级测试根仍须操作者手工撤。
+
+## 给开发者
+
+```bash
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+```
+
+真实 forge 联调有三条路径：
+
+- **A：真实浏览器 / OAuth**，按手册完成人在场的登录、设备与界面操作。
+- **B：注入会话脚本**，`pnpm smoke:forge -- gitlab`（或 `gitea`）；考拉会话是模拟的，forge 仓库和 PAT 必须真实。
+- **C：注入会话浏览器 UAT**，`pnpm smoke:uat -- gitlab --web`（或 `gitea`）；默认只监听 `127.0.0.1`，浏览器打开 `http://localhost:31416`，用本地管理员代替 OAuth。`UAT_WEB_HOST` 仅显式设置时覆盖监听地址。脚本等待手册指定的 `go` 旗标，错误的非空值会立即失败。
+
+B / C 通过不代表真实 OAuth 或公网证书信任已通过。最新综合 UAT 的执行范围、未执行项与后续清理记录见 [冒烟手册](docs/smoke-test.md)，每次验证以实际执行证据为准。
+
+产品契约在 [docs/DESIGN.md](docs/DESIGN.md)。HTTP / MCP 细节在 [docs/api.md](docs/api.md)。实现记录在 [CHANGELOG.md](CHANGELOG.md)。贡献约定见仓库根目录 `AGENTS.md`（Claude 入口仍是 `CLAUDE.md`，只桥接到该合同）。
+
+## 文档
+
+- [设计文档](docs/DESIGN.md) — 产品与架构源头（§16 冻结双模式 MCP 安装与证书信任）
+- [GitLab / Gitea 冒烟手册](docs/smoke-test.md) — 浏览器 **配合** vs 脚本 B vs 路径 C（B 只模拟考拉进程；C 把同一进程 listen 出来用真实工作台点评审面板；`GITLAB_TOKEN` / `GITEA_TOKEN` 仍须真实 PAT）
+- [Workflow 执行指引](docs/workflow-default.md) — 外部 Issue 任务的强制 Workflow、恢复与 PR 收尾
+- [Runner 承载指引](docs/runner-carrier.md) — 仅在明确选用时承载 Workflow
+- [文档索引](docs/README.md)
+- [变更日志](CHANGELOG.md)
+
+## 授权与使用
+
+本项目源码公开（source-available），但**不采用 OSI 认可的开源许可证**。你可以为个人学习、研究、评估和其他非商业目的查看、运行和修改本项目。
+
+未经著作权人事先书面授权，不得将本项目或其衍生作品用于商业目的，包括销售、收费服务、SaaS、商业产品集成，或以本项目为核心提供有偿产品或服务。商业授权请联系仓库所有者。
+
+除上述有限许可外，著作权人保留全部权利。本项目按“现状”提供，不作任何明示或默示保证。
